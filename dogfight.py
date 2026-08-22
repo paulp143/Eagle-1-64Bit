@@ -16,10 +16,9 @@ PLAYER_RELOAD_TIME=5000
 PLAYER_ATTACK_DAMAGE_KAMIKAZE=4
 PLAYER_INVINCIBLE_TIME=1000
 PLAYER_MAX_SHIELD=20
-PLAYER_SPACE_LOCK_TIME=1000
 PLAYER_MOVEMENT_SPEED_Y=6
 PLAYER_MOVEMENT_SPEED_X=6
-PLAYER_TURN_RATE=4
+PLAYER_TURN_RATE=3
 
 BULLET_WIDTH=9
 BULLET_HEIGHT=12
@@ -114,6 +113,7 @@ player_image=load_image(r"C:\Users\paul\OneDrive\Desktop\Python\Pygame\Dogfight\
 bullet_image=load_image(r"C:\Users\paul\OneDrive\Desktop\Python\Pygame\Dogfight\images\bullet.png", (BULLET_WIDTH,BULLET_HEIGHT))
 light_enemy_image=load_image(r"C:\Users\paul\OneDrive\Desktop\Python\Pygame\Dogfight\images\enemy1.png",(LIGHT_ENEMY_WIDTH,LIGHT_ENEMY_HEIGHT))
 enemy_bullet_image=load_image(r"C:\Users\paul\OneDrive\Desktop\Python\Pygame\Dogfight\images\enemy_bullet.png", (BULLET_WIDTH,BULLET_HEIGHT))
+main_menu_image=load_image(r"C:\Users\paul\OneDrive\Desktop\Python\Pygame\Dogfight\images\20260820_085135933_iOS.webp",(GAME_WIDTH,GAME_HEIGHT))
 backround_image=load_image(r"C:\Users\paul\OneDrive\Desktop\Python\Pygame\Dogfight\images\backround.png",(GAME_WIDTH,GAME_HEIGHT))
 light_enemy_explosion_image=load_image(r"C:\Users\paul\OneDrive\Desktop\Python\Pygame\Dogfight\images\light_enemy_explosion.png", (LIGHT_ENEMY_WIDTH,LIGHT_ENEMY_HEIGHT))
 health_image=load_image(r"C:\Users\paul\OneDrive\Desktop\Python\Pygame\Images\health.png",(HEALTH_WIDTH,HEALTH_HEIGHT))
@@ -367,11 +367,11 @@ def respawn():
 
 def main_menu():
     canvas.fill((0,0,0))
-    canvas.blit(backround_image,(0,0))
+    canvas.blit(main_menu_image,(0,0))
     title_surface=title_font.render("Starblast",True,(255,255,255))
     title_rect=title_surface.get_rect(centerx=GAME_WIDTH/2,bottom=GAME_HEIGHT*0.2)
     canvas.blit(title_surface,title_rect)
-    play_surface=font.render("To play press SPACE",True,(255,255,255))
+    play_surface=font.render("To play press SHIFT",True,(255,255,255))
     play_rect=play_surface.get_rect(centerx=GAME_WIDTH/2,bottom=GAME_HEIGHT/2+50)
     canvas.blit(play_surface,play_rect)
 def draw():
@@ -464,7 +464,6 @@ while True:
                 player.shield+=1
 
 
-
                 
             
     keys=pygame.key.get_pressed()
@@ -478,13 +477,17 @@ while True:
         dx = -math.sin(rad)
         dy = -math.cos(rad)
 
-        if keys[pygame.K_w] or keys[pygame.K_UP]:
-            player.pos_x += dx * PLAYER_MOVEMENT_SPEED_X
-            player.pos_y += dy * PLAYER_MOVEMENT_SPEED_Y
         if keys[pygame.K_s] or keys[pygame.K_DOWN]:
-            player.pos_x -= dx * PLAYER_MOVEMENT_SPEED_X
-            player.pos_y -= dy * PLAYER_MOVEMENT_SPEED_Y
+            player.pos_x += dx * (PLAYER_MOVEMENT_SPEED_X-2)
+            player.pos_y += dy * (PLAYER_MOVEMENT_SPEED_Y-2)
+        else:
+            player.pos_x+=dx*PLAYER_MOVEMENT_SPEED_X
+            player.pos_y += dy * PLAYER_MOVEMENT_SPEED_Y
 
+        if keys[pygame.K_w] or keys[pygame.K_UP]:
+            player.pos_x += dx * PLAYER_MOVEMENT_SPEED_X+0.5
+            player.pos_y += dy * PLAYER_MOVEMENT_SPEED_Y+0.5
+        
         player.angle %= 360
         player.x = int(player.pos_x)
         player.y = int(player.pos_y)
@@ -501,7 +504,7 @@ while True:
             game_state="main_menu"
     if game_state=="main_menu":
         main_menu()
-        if (keys[pygame.K_SPACE])  :
+        if (keys[pygame.K_LSHIFT]) or (keys[pygame.K_RSHIFT]) :
             respawn()
             game_state=""
         if (keys[pygame.K_LSHIFT]) and (keys[pygame.K_RSHIFT]):
@@ -520,4 +523,3 @@ while True:
 
     pygame.display.update()
     clock.tick(60)
-
