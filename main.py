@@ -21,6 +21,9 @@ PLAYER_INVINCIBLE_TIME=1000
 PLAYER_MAX_SHIELD=20
 PLAYER_MOVEMENT_SPEED_Y=6
 PLAYER_MOVEMENT_SPEED_X=6
+PLAYER_MIN_SPEED=2.0
+PLAYER_MAX_SPEED=12.0
+PLAYER_ACCELERATION=0.15
 PLAYER_TURN_RATE=3
 
 BULLET_WIDTH=9
@@ -204,6 +207,11 @@ class Player (pygame.Rect):
         self.invincible_time=PLAYER_INVINCIBLE_TIME
         self.shield=PLAYER_MAX_SHIELD
         self.highscore=load_highscore()
+        self.min_speed=PLAYER_MIN_SPEED
+        self.max_speed=PLAYER_MAX_SPEED
+        self.acceleration=PLAYER_ACCELERATION
+        self.velocity_y=float(PLAYER_MOVEMENT_SPEED_Y)
+        self.velocity_x=float(PLAYER_MOVEMENT_SPEED_X)
     def set_shoot(self):
         if self.reloading:
             return
@@ -369,6 +377,8 @@ def respawn():
     player.x = PLAYER_X
     player.y = PLAYER_Y
     player.angle = 0
+    player.velocity_x = float(PLAYER_MOVEMENT_SPEED_X)
+    player.velocity_y = float(PLAYER_MOVEMENT_SPEED_Y)
     if player.score > player.highscore:
         player.highscore = player.score
         add_highscore(player.score)
@@ -486,16 +496,24 @@ def draw():
         pygame.draw.rect(canvas,"black",(shield_x,shield_y,shield_ui_width,SHIELD_UI_HEIGHT))
         pygame.draw.rect(canvas,"#09c8f1",(shield_x+1,shield_y+1,current_shield_width,6))
 
-        # --- OUT OF BOUNDS WARNING ---
-        if player.pos_x < 0 or player.pos_x + PLAYER_WIDTH > MAP_WIDTH or \
-           player.pos_y < 0 or player.pos_y + PLAYER_HEIGHT > MAP_HEIGHT:
-            oob_font = pygame.font.SysFont("arial", 22, bold=True)
-            oob_surface = oob_font.render("WARNING: OUT OF BOUNDS! TAKING DAMAGE!", True, (255, 50, 50))
-            oob_rect = oob_surface.get_rect(centerx=GAME_WIDTH / 2, top=55)
-            canvas.blit(oob_surface, oob_rect)
+        # --- SPEEDOMETER UI ---
+        mm_size = MINIMAP_SIZE
+        speed_font = pygame.font.SysFont("arial", 18, bold=True)
+        speed_text = speed_font.render(f"Speed: {player.velocity_x:.1f} / {player.max_speed:.1f}", True, (255, 255, 255))
+        
+        speed_x = 20
+        speed_y = GAME_HEIGHT - mm_size - 50
+        
+        bar_width = mm_size
+        bar_height = 10
+        fill_width = max(0, min(bar_width, int((player.velocity_x / player.max_speed) * bar_width)))
+        
+        canvas.blit(speed_text, (speed_x, speed_y))
+        pygame.draw.rect(canvas, (0, 0, 0), (speed_x, speed_y + 22, bar_width, bar_height))
+        pygame.draw.rect(canvas, (255, 180, 0), (speed_x, speed_y + 22, fill_width, bar_height))
+        pygame.draw.rect(canvas, (100, 120, 160), (speed_x, speed_y + 22, bar_width, bar_height), 1)
 
         # --- MINIMAP UI ---
-        mm_size = MINIMAP_SIZE
         mm_x = 20
         mm_y = GAME_HEIGHT - mm_size - 20
         
@@ -588,16 +606,15 @@ while True:
         dx = -math.sin(rad)
         dy = -math.cos(rad)
 
-        if keys[pygame.K_s] or keys[pygame.K_DOWN]:
-            player.pos_x += dx * (PLAYER_MOVEMENT_SPEED_X-2)
-            player.pos_y += dy * (PLAYER_MOVEMENT_SPEED_Y-2)
-        else:
-            player.pos_x+=dx*PLAYER_MOVEMENT_SPEED_X
-            player.pos_y += dy * PLAYER_MOVEMENT_SPEED_Y
-
         if keys[pygame.K_w] or keys[pygame.K_UP]:
-            player.pos_x += dx * PLAYER_MOVEMENT_SPEED_X+0.5
-            player.pos_y += dy * PLAYER_MOVEMENT_SPEED_Y+0.5
+            player.velocity_x = min(player.max_speed, player.velocity_x + player.acceleration)
+            player.velocity_y = min(player.max_speed, player.velocity_y + player.acceleration)
+        elif keys[pygame.K_s] or keys[pygame.K_DOWN]:
+            player.velocity_x = max(player.min_speed, player.velocity_x - player.acceleration)
+            player.velocity_y = max(player.min_speed, player.velocity_y - player.acceleration)
+
+        player.pos_x += dx * player.velocity_x
+        player.pos_y += dy * player.velocity_y
         
         player.angle %= 360
         player.x = int(player.pos_x)
