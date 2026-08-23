@@ -308,15 +308,14 @@ def move():
     if player.health <= 0:
         return
 
-    # Clamp player inside map boundaries
-    if player.pos_x < 0:
-        player.pos_x = 0
-    if player.pos_x + PLAYER_WIDTH > MAP_WIDTH:
-        player.pos_x = MAP_WIDTH - PLAYER_WIDTH
-    if player.pos_y < 0:
-        player.pos_y = 0
-    if player.pos_y + PLAYER_HEIGHT > MAP_HEIGHT:
-        player.pos_y = MAP_HEIGHT - PLAYER_HEIGHT
+    # Check if player is outside map boundaries and apply damage per tick
+    if player.pos_x < 0 or player.pos_x + PLAYER_WIDTH > MAP_WIDTH or \
+       player.pos_y < 0 or player.pos_y + PLAYER_HEIGHT > MAP_HEIGHT:
+        damage = 0.05
+        if player.shield > 0:
+            player.shield = max(0.0, player.shield - damage)
+        else:
+            player.health = max(0.0, player.health - damage)
 
     player.x = int(player.pos_x)
     player.y = int(player.pos_y)
