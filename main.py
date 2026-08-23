@@ -6,8 +6,11 @@ import os,random,math
 GAME_WIDTH=1280
 GAME_HEIGHT=720
 
-PLAYER_Y=256
-PLAYER_X=256
+MAP_WIDTH=3000
+MAP_HEIGHT=3000
+
+PLAYER_Y=1470
+PLAYER_X=1476
 PLAYER_WIDTH=48
 PLAYER_HEIGHT=61
 PLAYER_MAX_HEALTH=5
@@ -122,6 +125,11 @@ light_enemy_image=load_image(os.path.join("images", "enemy1.png"),(LIGHT_ENEMY_W
 enemy_bullet_image=load_image(os.path.join("images", "enemy_bullet.png"), (BULLET_WIDTH,BULLET_HEIGHT))
 main_menu_image=load_image(os.path.join("images", "20260820_085135933_iOS.webp"),(GAME_WIDTH,GAME_HEIGHT))
 backround_image=load_image(os.path.join("images", "backround.png"),(GAME_WIDTH,GAME_HEIGHT))
+MINIMAP_SIZE = 160
+MINIMAP_SCALE = MINIMAP_SIZE / MAP_WIDTH
+MINIMAP_BG_WIDTH = int(GAME_WIDTH * MINIMAP_SCALE)
+MINIMAP_BG_HEIGHT = int(GAME_HEIGHT * MINIMAP_SCALE)
+minimap_bg_image = pygame.transform.scale(backround_image, (MINIMAP_BG_WIDTH, MINIMAP_BG_HEIGHT))
 light_enemy_explosion_image=load_image(os.path.join("images", "light_enemy_explosion.png"), (LIGHT_ENEMY_WIDTH,LIGHT_ENEMY_HEIGHT))
 health_image=load_image(os.path.join("images", "health.png"),(HEALTH_WIDTH,HEALTH_HEIGHT))
 bullet_ui_image=load_image(os.path.join("images", "bullet_ui.png"),(BULLET_UI_WIDTH,BULLET_UI_HEIGHT))
@@ -263,10 +271,13 @@ class Light_Enemy (pygame.Rect):
             self.velocity_y = LIGHT_ENEMY_BULLET_VELOCITY_Y
             
 
-    def __init__(self, x=None, y=0):
-        if x is None:
-            x = random.randrange(0, GAME_WIDTH - LIGHT_ENEMY_WIDTH, LIGHT_ENEMY_WIDTH * 2)
-        pygame.Rect.__init__(self, x, y, LIGHT_ENEMY_WIDTH, LIGHT_ENEMY_HEIGHT)
+    def __init__(self, x=None, y=None):
+        if x is None or y is None:
+            if x is None:
+                x = random.randrange(100, MAP_WIDTH - LIGHT_ENEMY_WIDTH - 100, LIGHT_ENEMY_WIDTH * 2)
+            if y is None:
+                y = random.randrange(100, 400)
+        pygame.Rect.__init__(self, int(x), int(y), LIGHT_ENEMY_WIDTH, LIGHT_ENEMY_HEIGHT)
         self.image = light_enemy_image
         self.health = LIGHT_ENEMY_HEALTH
         self.velocity_y = 2
@@ -276,7 +287,8 @@ class Light_Enemy (pygame.Rect):
         self.explosion_damage=LIGHT_ENEMY_EXPLOSION_DAMAGE
         self.exploding=False
         self.bullet_damage=LIGHT_ENEMY_BULLET_DAMAGE
-        self.x=x
+        self.x=int(x)
+        self.y=int(y)
     def set_shoot(self):
         bullet_x = self.x + (LIGHT_ENEMY_WIDTH // 2) - (BULLET_WIDTH // 2)
         bullet_y = self.y + LIGHT_ENEMY_HEIGHT
@@ -288,14 +300,16 @@ def move():
     if player.health <= 0:
         return
 
+    # Clamp player inside map boundaries
     if player.pos_x < 0:
         player.pos_x = 0
-    if player.pos_x + PLAYER_WIDTH > GAME_WIDTH:
-        player.pos_x = GAME_WIDTH - PLAYER_WIDTH
+    if player.pos_x + PLAYER_WIDTH > MAP_WIDTH:
+        player.pos_x = MAP_WIDTH - PLAYER_WIDTH
     if player.pos_y < 0:
         player.pos_y = 0
-    if player.pos_y + PLAYER_HEIGHT > GAME_HEIGHT:
-        player.pos_y = GAME_HEIGHT - PLAYER_HEIGHT
+    if player.pos_y + PLAYER_HEIGHT > MAP_HEIGHT:
+        player.pos_y = MAP_HEIGHT - PLAYER_HEIGHT
+
     player.x = int(player.pos_x)
     player.y = int(player.pos_y)
 
@@ -306,11 +320,10 @@ def move():
             light_enemy.health -= 1
 
     if player.colliderect(light_enemy):
-        light_enemy.health-=player.kamikaze_attack_damage
+        light_enemy.health -= player.kamikaze_attack_damage
         player.take_damage(light_enemy.explosion_damage)
         
     if light_enemy.health <= 0 and not light_enemy.exploding:
-        
         light_enemy.exploding = True
         explosion = Large_explosion_a(
                 light_enemy.x + LIGHT_ENEMY_WIDTH // 2, 
@@ -329,7 +342,7 @@ def move():
         light_enemy.velocity_y = 0
 
     player.bullets = [bullet for bullet in player.bullets if not bullet.used \
-                    and 0 <= bullet.x <= GAME_WIDTH and 0 <= bullet.y <= GAME_HEIGHT]
+                    and 0 <= bullet.x <= MAP_WIDTH and 0 <= bullet.y <= MAP_HEIGHT]
 
     light_enemy.y += light_enemy.velocity_y
     
@@ -340,9 +353,9 @@ def move():
             player.take_damage(light_enemy.bullet_damage)
 
     light_enemy.bullets = [bullet for bullet in light_enemy.bullets if not bullet.used \
-                           and bullet.y < GAME_HEIGHT]
+                           and 0 <= bullet.y <= MAP_HEIGHT]
 
-    if light_enemy.y > GAME_HEIGHT:
+    if light_enemy.y > MAP_HEIGHT:
         old_bullets = light_enemy.bullets
         light_enemy = Light_Enemy()
         light_enemy.bullets = old_bullets
@@ -357,18 +370,17 @@ def respawn():
     player.x = PLAYER_X
     player.y = PLAYER_Y
     player.angle = 0
-    if player.score>player.highscore:
-        player.highscore=player.score
+    if player.score > player.highscore:
+        player.highscore = player.score
         add_highscore(player.score)
-    player.health=player.max_health
+    player.health = player.max_health
     player.bullets.clear()
     
-    player.score=0
-    light_enemy.x=random.randrange(0, GAME_WIDTH - LIGHT_ENEMY_WIDTH, LIGHT_ENEMY_WIDTH * 2)
-    light_enemy.y=0
-    light_enemy.health=LIGHT_ENEMY_HEALTH
+    player.score = 0
+    global light_enemy
+    light_enemy = Light_Enemy()
     light_enemy.bullets.clear()
-    player.shield=PLAYER_MAX_SHIELD
+    player.shield = PLAYER_MAX_SHIELD
     explosion_group.empty()
 
 
@@ -383,7 +395,27 @@ def main_menu():
     canvas.blit(play_surface,play_rect)
 def draw():
     canvas.fill((0,0,0))
-    canvas.blit(backround_image,(0,0))
+
+    # Calculate camera offset bounded to map dimensions
+    camera_x = max(0, min(MAP_WIDTH - GAME_WIDTH, player.pos_x + PLAYER_WIDTH / 2 - GAME_WIDTH / 2))
+    camera_y = max(0, min(MAP_HEIGHT - GAME_HEIGHT, player.pos_y + PLAYER_HEIGHT / 2 - GAME_HEIGHT / 2))
+
+    # Seamless background tiling inside map boundaries
+    bg_w, bg_h = backround_image.get_size()
+    start_col = max(0, int(camera_x // bg_w))
+    end_col = min(int(math.ceil(MAP_WIDTH / bg_w)), int((camera_x + GAME_WIDTH) // bg_w) + 1)
+    start_row = max(0, int(camera_y // bg_h))
+    end_row = min(int(math.ceil(MAP_HEIGHT / bg_h)), int((camera_y + GAME_HEIGHT) // bg_h) + 1)
+
+    for col in range(start_col, end_col):
+        for row in range(start_row, end_row):
+            world_tile_x = col * bg_w
+            world_tile_y = row * bg_h
+            canvas.blit(backround_image, (world_tile_x - camera_x, world_tile_y - camera_y))
+
+    # Draw red border line around world bounds
+    border_rect = pygame.Rect(-camera_x, -camera_y, MAP_WIDTH, MAP_HEIGHT)
+    pygame.draw.rect(canvas, (255, 60, 60), border_rect, 4)
 
     if player.health <= 0:
         respawn_surface=font.render("Press R to Respawn", True, (255, 255, 255))
@@ -394,22 +426,40 @@ def draw():
         canvas.blit(loby_surface,loby_rect)
         
     else:
+        # Player rendered relative to camera
+        screen_player_x = player.x - camera_x
+        screen_player_y = player.y - camera_y
         rotated_player_image = pygame.transform.rotate(player.original_image, player.angle)
-        player_rect = rotated_player_image.get_rect(center=(player.x + PLAYER_WIDTH // 2, player.y + PLAYER_HEIGHT // 2))
+        player_rect = rotated_player_image.get_rect(center=(screen_player_x + PLAYER_WIDTH // 2, screen_player_y + PLAYER_HEIGHT // 2))
         canvas.blit(rotated_player_image, player_rect.topleft)
 
+        # Draw player bullets with camera offset
         for bullet in player.bullets:
-            bullet_rect = bullet.image.get_rect(center=(bullet.x + BULLET_WIDTH // 2, bullet.y + BULLET_HEIGHT // 2))
+            b_screen_x = bullet.x - camera_x
+            b_screen_y = bullet.y - camera_y
+            bullet_rect = bullet.image.get_rect(center=(b_screen_x + BULLET_WIDTH // 2, b_screen_y + BULLET_HEIGHT // 2))
             canvas.blit(bullet.image, bullet_rect.topleft)
 
+        # Draw enemy bullets with camera offset
         for bullet in light_enemy.bullets:
-            canvas.blit(enemy_bullet_image,bullet)
+            b_screen_x = bullet.x - camera_x
+            b_screen_y = bullet.y - camera_y
+            canvas.blit(enemy_bullet_image, (b_screen_x, b_screen_y))
+
+        # Draw light enemy with camera offset
         if not light_enemy.exploding:
-            canvas.blit(light_enemy.image, (light_enemy.x,light_enemy.y))
+            enemy_screen_x = light_enemy.x - camera_x
+            enemy_screen_y = light_enemy.y - camera_y
+            canvas.blit(light_enemy.image, (enemy_screen_x, enemy_screen_y))
 
+        # Draw explosions with camera offset
         explosion_group.update()
-        explosion_group.draw(canvas)
+        for explosion in explosion_group:
+            exp_screen_x = explosion.rect.x - camera_x
+            exp_screen_y = explosion.rect.y - camera_y
+            canvas.blit(explosion.image, (exp_screen_x, exp_screen_y))
 
+        # UI elements (Screen space, fixed overlay)
         score_surface = font.render(f"Score: {player.score}", True, (255, 255, 255))
         score_rect = score_surface.get_rect(centerx=GAME_WIDTH // 2, bottom=GAME_HEIGHT - 10)
         canvas.blit(score_surface, score_rect)
@@ -436,6 +486,53 @@ def draw():
         shield_y=32
         pygame.draw.rect(canvas,"black",(shield_x,shield_y,shield_ui_width,SHIELD_UI_HEIGHT))
         pygame.draw.rect(canvas,"#09c8f1",(shield_x+1,shield_y+1,current_shield_width,6))
+
+        # --- MINIMAP UI ---
+        mm_size = MINIMAP_SIZE
+        mm_x = 20
+        mm_y = GAME_HEIGHT - mm_size - 20
+        
+        minimap_surface = pygame.Surface((mm_size, mm_size), pygame.SRCALPHA)
+
+        # Render tiled background image on minimap bounded to map
+        start_col = 0
+        end_col = int(math.ceil(MAP_WIDTH / bg_w))
+        start_row = 0
+        end_row = int(math.ceil(MAP_HEIGHT / bg_h))
+        for col in range(start_col, end_col):
+            for row in range(start_row, end_row):
+                bx = col * MINIMAP_BG_WIDTH
+                by = row * MINIMAP_BG_HEIGHT
+                if bx < mm_size and by < mm_size:
+                    minimap_surface.blit(minimap_bg_image, (bx, by))
+
+        # Dark overlay
+        dim_overlay = pygame.Surface((mm_size, mm_size), pygame.SRCALPHA)
+        dim_overlay.fill((0, 0, 0, 90))
+        minimap_surface.blit(dim_overlay, (0, 0))
+
+        # Screen Viewport rectangle on minimap showing active camera region inside the map
+        view_x = camera_x * MINIMAP_SCALE
+        view_y = camera_y * MINIMAP_SCALE
+        view_w = GAME_WIDTH * MINIMAP_SCALE
+        view_h = GAME_HEIGHT * MINIMAP_SCALE
+        pygame.draw.rect(minimap_surface, (0, 200, 255, 220), (view_x, view_y, view_w, view_h), 1)
+
+        # Player dot at exact position on minimap
+        player_mm_x = (player.pos_x + PLAYER_WIDTH / 2) * MINIMAP_SCALE
+        player_mm_y = (player.pos_y + PLAYER_HEIGHT / 2) * MINIMAP_SCALE
+        pygame.draw.circle(minimap_surface, (0, 255, 100), (int(player_mm_x), int(player_mm_y)), 4)
+
+        # Enemies as RED dots on minimap
+        if not light_enemy.exploding:
+            enemy_mm_x = (light_enemy.x + LIGHT_ENEMY_WIDTH / 2) * MINIMAP_SCALE
+            enemy_mm_y = (light_enemy.y + LIGHT_ENEMY_HEIGHT / 2) * MINIMAP_SCALE
+            pygame.draw.circle(minimap_surface, (255, 30, 30), (int(enemy_mm_x), int(enemy_mm_y)), 4)
+
+        # Minimap frame border
+        pygame.draw.rect(minimap_surface, (100, 120, 160), (0, 0, mm_size, mm_size), 2)
+        
+        canvas.blit(minimap_surface, (mm_x, mm_y))
 
 
 player=Player()
