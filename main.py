@@ -49,28 +49,35 @@ HEALTH_WIDTH=16
 HEALTH_HEIGHT=4
 
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+HIGHSCORE_FILE = os.path.join(BASE_DIR, "data", "highscore.txt")
+
 def load_image(image_path, scale=None):
-    if os.path.exists(image_path):
-        image = pygame.image.load(image_path)
+    if not os.path.isabs(image_path):
+        candidate = os.path.join(BASE_DIR, image_path)
+        if not os.path.exists(candidate):
+            candidate = os.path.join(BASE_DIR, "images", image_path)
+        image = pygame.image.load(candidate)
     else:
-        image = pygame.image.load(os.path.join("Images", image_path))
+        image = pygame.image.load(image_path)
     if scale is not None:
         image = pygame.transform.scale(image, scale)
     return image
 
-def load_highscore(filepath=r"C:\Users\paul\OneDrive\Desktop\Python\Pygame\Dogfight\data\highscore.txt"):
+def load_highscore(filepath=HIGHSCORE_FILE):
     try:
         with open(filepath,"r") as file:
             return int(file.read().strip())
     except (FileNotFoundError,ValueError):
         return 0
     
-def add_highscore(new_highscore,filepath=r"C:\Users\paul\OneDrive\Desktop\Python\Pygame\Dogfight\data\highscore.txt"):
-    with open(filepath,"w") as file:
-        
-        file.write(str(new_highscore))
-        
-        print("it works")
+def add_highscore(new_highscore,filepath=HIGHSCORE_FILE):
+    try:
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        with open(filepath,"w") as file:
+            file.write(str(new_highscore))
+    except Exception as e:
+        print(f"Error saving highscore: {e}")
             
 class Spritesheet:
     def __init__(self,image_name,cols):
@@ -109,16 +116,16 @@ class Large_explosion_a(pygame.sprite.Sprite):
         else:
             self.image=self.frames[int(self.current_frame)]
 
-player_image=load_image(r"C:\Users\paul\OneDrive\Desktop\Python\Pygame\Dogfight\images\Space-Invaders-Ship.png", (PLAYER_WIDTH,PLAYER_HEIGHT))
-bullet_image=load_image(r"C:\Users\paul\OneDrive\Desktop\Python\Pygame\Dogfight\images\bullet.png", (BULLET_WIDTH,BULLET_HEIGHT))
-light_enemy_image=load_image(r"C:\Users\paul\OneDrive\Desktop\Python\Pygame\Dogfight\images\enemy1.png",(LIGHT_ENEMY_WIDTH,LIGHT_ENEMY_HEIGHT))
-enemy_bullet_image=load_image(r"C:\Users\paul\OneDrive\Desktop\Python\Pygame\Dogfight\images\enemy_bullet.png", (BULLET_WIDTH,BULLET_HEIGHT))
-main_menu_image=load_image(r"C:\Users\paul\OneDrive\Desktop\Python\Pygame\Dogfight\images\20260820_085135933_iOS.webp",(GAME_WIDTH,GAME_HEIGHT))
-backround_image=load_image(r"C:\Users\paul\OneDrive\Desktop\Python\Pygame\Dogfight\images\backround.png",(GAME_WIDTH,GAME_HEIGHT))
-light_enemy_explosion_image=load_image(r"C:\Users\paul\OneDrive\Desktop\Python\Pygame\Dogfight\images\light_enemy_explosion.png", (LIGHT_ENEMY_WIDTH,LIGHT_ENEMY_HEIGHT))
-health_image=load_image(r"C:\Users\paul\OneDrive\Desktop\Python\Pygame\Images\health.png",(HEALTH_WIDTH,HEALTH_HEIGHT))
-bullet_ui_image=load_image(r"C:\Users\paul\OneDrive\Desktop\Python\Pygame\Dogfight\images\bullet_ui.png",(BULLET_UI_WIDTH,BULLET_UI_HEIGHT))
-large_explosion_a_spritesheet=Spritesheet(r"C:\Users\paul\OneDrive\Desktop\Python\Pygame\Dogfight\Animation\LargeExplosionA\Spritesheet\LargeExplosionA_spritesheet.png",23)
+player_image=load_image(os.path.join("images", "Space-Invaders-Ship.png"), (PLAYER_WIDTH,PLAYER_HEIGHT))
+bullet_image=load_image(os.path.join("images", "bullet.png"), (BULLET_WIDTH,BULLET_HEIGHT))
+light_enemy_image=load_image(os.path.join("images", "enemy1.png"),(LIGHT_ENEMY_WIDTH,LIGHT_ENEMY_HEIGHT))
+enemy_bullet_image=load_image(os.path.join("images", "enemy_bullet.png"), (BULLET_WIDTH,BULLET_HEIGHT))
+main_menu_image=load_image(os.path.join("images", "20260820_085135933_iOS.webp"),(GAME_WIDTH,GAME_HEIGHT))
+backround_image=load_image(os.path.join("images", "backround.png"),(GAME_WIDTH,GAME_HEIGHT))
+light_enemy_explosion_image=load_image(os.path.join("images", "light_enemy_explosion.png"), (LIGHT_ENEMY_WIDTH,LIGHT_ENEMY_HEIGHT))
+health_image=load_image(os.path.join("images", "health.png"),(HEALTH_WIDTH,HEALTH_HEIGHT))
+bullet_ui_image=load_image(os.path.join("images", "bullet_ui.png"),(BULLET_UI_WIDTH,BULLET_UI_HEIGHT))
+large_explosion_a_spritesheet=Spritesheet(os.path.join("images", "LargeExplosionA_spritesheet.png"),23)
 
 
 pygame.init()
