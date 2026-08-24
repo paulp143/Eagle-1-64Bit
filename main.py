@@ -403,6 +403,11 @@ def main_menu():
     play_surface=font.render("To play press SHIFT",True,(255,255,255))
     play_rect=play_surface.get_rect(centerx=GAME_WIDTH/2,bottom=GAME_HEIGHT/2+50)
     canvas.blit(play_surface,play_rect)
+
+def pause_menu():
+    canvas.fill((0,0,0))
+    pause_surface=font.render("Pause",True)
+
 def draw():
     canvas.fill((0,0,0))
 
@@ -613,6 +618,8 @@ while True:
         elif keys[pygame.K_s] or keys[pygame.K_DOWN]:
             player.velocity_x = max(player.min_speed, player.velocity_x - player.acceleration)
             player.velocity_y = max(player.min_speed, player.velocity_y - player.acceleration)
+        elif keys[pygame.K_p]:
+            pause_menu()
 
         player.pos_x += dx * player.velocity_x
         player.pos_y += dy * player.velocity_y
