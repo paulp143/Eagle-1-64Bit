@@ -25,6 +25,7 @@ PLAYER_MIN_SPEED=2.0
 PLAYER_MAX_SPEED=12.0
 PLAYER_ACCELERATION=0.15
 PLAYER_TURN_RATE=3
+PLAYER_BULLET_DAMAGE=1
 
 BULLET_WIDTH=9
 BULLET_HEIGHT=12
@@ -127,7 +128,7 @@ bullet_image=load_image(os.path.join("images", "bullet.png"), (BULLET_WIDTH,BULL
 light_enemy_image=load_image(os.path.join("images", "enemy1.png"),(LIGHT_ENEMY_WIDTH,LIGHT_ENEMY_HEIGHT))
 enemy_bullet_image=load_image(os.path.join("images", "enemy_bullet.png"), (BULLET_WIDTH,BULLET_HEIGHT))
 main_menu_image=load_image(os.path.join("images", "20260820_085135933_iOS.webp"),(GAME_WIDTH,GAME_HEIGHT))
-backround_image=load_image(os.path.join("images", "backround.png"),(GAME_WIDTH,GAME_HEIGHT))
+backround_image=load_image(os.path.join("images", "newbackround.png"),(GAME_WIDTH,GAME_HEIGHT))
 MINIMAP_SIZE = 160
 MINIMAP_SCALE = MINIMAP_SIZE / MAP_WIDTH
 MINIMAP_BG_WIDTH = int(GAME_WIDTH * MINIMAP_SCALE)
@@ -324,7 +325,7 @@ def move():
         bullet.update_position()
         if bullet.colliderect(light_enemy) and not light_enemy.exploding:
             bullet.used = True
-            light_enemy.health -= 1
+            light_enemy.health -= PLAYER_BULLET_DAMAGE
 
     if player.colliderect(light_enemy):
         light_enemy.health -= player.kamikaze_attack_damage
