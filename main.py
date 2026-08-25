@@ -403,6 +403,9 @@ def main_menu():
     play_surface=font.render("To play press SHIFT",True,(255,255,255))
     play_rect=play_surface.get_rect(centerx=GAME_WIDTH/2,bottom=GAME_HEIGHT/2+50)
     canvas.blit(play_surface,play_rect)
+    return_surface=font.render("To return to the menu press ESC",True,(255,255,255))
+    return_rect=return_surface.get_rect(centerx=GAME_WIDTH/2,bottom=GAME_HEIGHT/2+50)
+    canvas.blit(return_surface,return_rect)
 
 def pause_menu():
     canvas.fill((0,0,0))
@@ -635,8 +638,10 @@ while True:
         if (keys[pygame.K_SPACE]) and not player.reloading :
             player.set_shoot()
 
-
-            
+        if (keys[pygame.K_p])and game_state!="pause_menu":
+            :
+            game_state="pause_menu"
+        elif 
     else:
         if keys[pygame.K_r]:
             respawn()
