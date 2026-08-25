@@ -406,8 +406,12 @@ def main_menu():
 
 def pause_menu():
     canvas.fill((0,0,0))
-    pause_surface=font.render("Pause",True)
-
+    pause_surface=font.render("Pause",True,(255,255,255))
+    pause_rect=pause_surface.get_rect(centerx=GAME_WIDTH/2,bottom=GAME_HEIGHT*0.2)
+    canvas.blit(pause_surface,pause_rect)
+    continue_surface=font.render("To continue press p",True,(255,255,255))
+    continue_rect=continue_surface.get_rect(centerx=GAME_WIDTH/2,bottom=GAME_HEIGHT*0.5)
+    canvas.blit(continue_surface,continue_rect)
 def draw():
     canvas.fill((0,0,0))
 
