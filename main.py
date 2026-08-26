@@ -521,7 +521,7 @@ def draw():
         for i in range(remaining_icons):
             canvas.blit(bullet_ui_image, (GAME_WIDTH - 32, 32 + i * BULLET_UI_HEIGHT))
 
-        current_shield_width=max(0,(player.shield/PLAYER_MAX_SHIELD)*238)
+        current_shield_width=max(-1,(player.shield/PLAYER_MAX_SHIELD)*238)
         shield_ui_width=SHIELD_UI_WIDTH*PLAYER_MAX_SHIELD
         shield_x=GAME_WIDTH/2-shield_ui_width/2
         shield_y=32
