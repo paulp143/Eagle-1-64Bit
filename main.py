@@ -406,24 +406,31 @@ def respawn():
 def main_menu():
     canvas.fill((0,0,0))
     canvas.blit(main_menu_image,(0,0))
+
     title_surface=title_font.render("Starblast",True,(255,255,255))
     title_rect=title_surface.get_rect(centerx=GAME_WIDTH/2,bottom=GAME_HEIGHT*0.2)
     canvas.blit(title_surface,title_rect)
+
     play_surface=font.render("To play press SHIFT",True,(255,255,255))
     play_rect=play_surface.get_rect(centerx=GAME_WIDTH/2,bottom=GAME_HEIGHT/2+50)
     canvas.blit(play_surface,play_rect)
+
     reset_surface=font.render("Hold L-SHIFT + R-SHIFT + R to reset Highscore",True,(255,255,255))
     reset_rect=reset_surface.get_rect(centerx=GAME_WIDTH/2,bottom=GAME_HEIGHT/2+90)
     canvas.blit(reset_surface,reset_rect)
 
 def pause_menu():
     canvas.fill((0,0,0))
+    canvas.blit(backround_image,(0,0))
+
     pause_surface=font.render("Pause",True,(255,255,255))
     pause_rect=pause_surface.get_rect(centerx=GAME_WIDTH/2,bottom=GAME_HEIGHT*0.2)
     canvas.blit(pause_surface,pause_rect)
+
     continue_surface=font.render("To continue press P",True,(255,255,255))
     continue_rect=continue_surface.get_rect(centerx=GAME_WIDTH/2,bottom=GAME_HEIGHT*0.5)
     canvas.blit(continue_surface,continue_rect)
+
     menu_surface=font.render("To return to main menu press ESC",True,(255,255,255))
     menu_rect=menu_surface.get_rect(centerx=GAME_WIDTH/2,bottom=GAME_HEIGHT*0.5+40)
     canvas.blit(menu_surface,menu_rect)
@@ -591,13 +598,14 @@ player.bullets=[]
 explosion_group=pygame.sprite.Group()
 
 
-while True:
+running = True
+while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             if player.score > player.highscore:
                 add_highscore(player.score)
-            pygame.quit()
-            exit()
+            running = False
+            break
         if event.type == SHOOTING_END:
             player.shooting = False
         if event.type == ADD_SCORE:
@@ -636,6 +644,9 @@ while True:
                         respawn()
                     elif event.key == pygame.K_SPACE:
                         game_state = "main_menu"
+
+    if not running:
+        break
 
     keys = pygame.key.get_pressed()
 
@@ -686,3 +697,5 @@ while True:
 
     pygame.display.update()
     clock.tick(60)
+
+pygame.quit()
