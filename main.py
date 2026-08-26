@@ -412,18 +412,21 @@ def main_menu():
     play_surface=font.render("To play press SHIFT",True,(255,255,255))
     play_rect=play_surface.get_rect(centerx=GAME_WIDTH/2,bottom=GAME_HEIGHT/2+50)
     canvas.blit(play_surface,play_rect)
-    return_surface=font.render("To return to the menu press ESC",True,(255,255,255))
-    return_rect=return_surface.get_rect(centerx=GAME_WIDTH/2,bottom=GAME_HEIGHT/2+50)
-    canvas.blit(return_surface,return_rect)
+    reset_surface=font.render("Hold L-SHIFT + R-SHIFT + R to reset Highscore",True,(255,255,255))
+    reset_rect=reset_surface.get_rect(centerx=GAME_WIDTH/2,bottom=GAME_HEIGHT/2+90)
+    canvas.blit(reset_surface,reset_rect)
 
 def pause_menu():
     canvas.fill((0,0,0))
     pause_surface=font.render("Pause",True,(255,255,255))
     pause_rect=pause_surface.get_rect(centerx=GAME_WIDTH/2,bottom=GAME_HEIGHT*0.2)
     canvas.blit(pause_surface,pause_rect)
-    continue_surface=font.render("To continue press p",True,(255,255,255))
+    continue_surface=font.render("To continue press P",True,(255,255,255))
     continue_rect=continue_surface.get_rect(centerx=GAME_WIDTH/2,bottom=GAME_HEIGHT*0.5)
     canvas.blit(continue_surface,continue_rect)
+    menu_surface=font.render("To return to main menu press ESC",True,(255,255,255))
+    menu_rect=menu_surface.get_rect(centerx=GAME_WIDTH/2,bottom=GAME_HEIGHT*0.5+40)
+    canvas.blit(menu_surface,menu_rect)
 def draw():
     canvas.fill((0,0,0))
 
@@ -589,38 +592,64 @@ explosion_group=pygame.sprite.Group()
 
 
 while True:
-    keys=pygame.key.get_pressed()
     for event in pygame.event.get():
-        if event.type==pygame.QUIT:
-            if player.score>player.highscore:
+        if event.type == pygame.QUIT:
+            if player.score > player.highscore:
                 add_highscore(player.score)
             pygame.quit()
             exit()
-        if event.type==SHOOTING_END:
-            player.shooting=False
-        if event.type==ADD_SCORE:
-            player.add_score()
-        if event.type==LIGHT_ENEMY_SHOOT and not light_enemy.exploding:
-            light_enemy.set_shoot()
-        if event.type==RELOAD_END:
-            player.used_bullets=0
-            player.reloading=False
+        if event.type == SHOOTING_END:
+            player.shooting = False
+        if event.type == ADD_SCORE:
+            if game_state == "":
+                player.add_score()
+        if event.type == LIGHT_ENEMY_SHOOT and not light_enemy.exploding:
+            if game_state == "":
+                light_enemy.set_shoot()
+        if event.type == RELOAD_END:
+            player.used_bullets = 0
+            player.reloading = False
         if event.type == LIGHT_ENEMY_EXPLOSION:
             old_bullets = light_enemy.bullets
             light_enemy = Light_Enemy()
             light_enemy.bullets = old_bullets
-        if event.type==INVINCIBLE_END:
-            player.invincible=False
-        if event.type==SHIELD_REGENERATION:
-            if player.shield<PLAYER_MAX_SHIELD:
-                player.shield+=1
+        if event.type == INVINCIBLE_END:
+            player.invincible = False
+        if event.type == SHIELD_REGENERATION:
+            if player.shield < PLAYER_MAX_SHIELD:
+                player.shield += 1
+        if event.type == pygame.KEYDOWN:
+            if game_state == "main_menu":
+                if event.key in (pygame.K_LSHIFT, pygame.K_RSHIFT):
+                    respawn()
+                    game_state = ""
+            elif game_state == "pause_menu":
+                if event.key == pygame.K_p:
+                    game_state = ""
+                elif event.key == pygame.K_ESCAPE:
+                    game_state = "main_menu"
+            elif game_state == "":
+                if event.key == pygame.K_p:
+                    game_state = "pause_menu"
+                elif player.health <= 0:
+                    if event.key == pygame.K_r:
+                        respawn()
+                    elif event.key == pygame.K_SPACE:
+                        game_state = "main_menu"
 
+    keys = pygame.key.get_pressed()
 
-                
-            
-    keys=pygame.key.get_pressed()
-    if game_state=="":
-        if player.health>0:
+    if game_state == "main_menu":
+        main_menu()
+        if keys[pygame.K_LSHIFT] and keys[pygame.K_RSHIFT] and keys[pygame.K_r]:
+            player.highscore = 0
+            add_highscore(player.highscore)
+
+    elif game_state == "pause_menu":
+        pause_menu()
+
+    elif game_state == "":
+        if player.health > 0:
             if keys[pygame.K_a] or keys[pygame.K_LEFT]:
                 player.angle += player.turn_rate
             if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
@@ -636,54 +665,24 @@ while True:
             elif keys[pygame.K_s] or keys[pygame.K_DOWN]:
                 player.velocity_x = max(player.min_speed, player.velocity_x - player.acceleration)
                 player.velocity_y = max(player.min_speed, player.velocity_y - player.acceleration)
-            elif keys[pygame.K_p]:
-                pause_menu()
 
             player.pos_x += dx * player.velocity_x
             player.pos_y += dy * player.velocity_y
-            
+
             player.angle %= 360
             player.x = int(player.pos_x)
             player.y = int(player.pos_y)
 
-            if (keys[pygame.K_SPACE]) and not player.reloading :
+            if keys[pygame.K_SPACE] and not player.reloading:
                 player.set_shoot()
 
-            if (keys[pygame.K_p]):
-                game_state="pause_menu"
-    
+            move()
+            draw()
         else:
-            if keys[pygame.K_r]:
-                respawn()
-            elif keys[pygame.K_SPACE]:
-                game_state="main_menu"
-    elif game_state=="main_menu":
-        main_menu()
-        if (keys[pygame.K_LSHIFT]) or (keys[pygame.K_RSHIFT]) :
-            respawn()
-            game_state=""
-        if (keys[pygame.K_LSHIFT]) and (keys[pygame.K_RSHIFT]):
-            if (keys[pygame.K_r]):
-                player.highscore=0
-                add_highscore(player.highscore)
-    elif game_state=="pause_menu":
-        if (keys[pygame.K_p]):
-            game_state=""
-        elif (keys[pygame.K_LSHIFT]) or (keys[pygame.K_RSHIFT]):
-            game_state=main_menu
-        else:
-            pause_menu()
-        
-        
+            draw()
 
-        
-    else:
-        move()
-        draw()
-    
     scaled_surface = pygame.transform.scale(canvas, window.get_size())
     window.blit(scaled_surface, (0, 0))
 
     pygame.display.update()
     clock.tick(60)
-no 
