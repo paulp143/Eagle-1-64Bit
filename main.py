@@ -1,5 +1,5 @@
 import pygame 
-from sys import exit
+import sys
 import os,random,math
 
 
@@ -56,26 +56,35 @@ HEALTH_WIDTH=16
 HEALTH_HEIGHT=4
 
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+try:
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    if os.path.exists(os.path.join(current_dir, "images")):
+        BASE_DIR = current_dir
+    else:
+        BASE_DIR = r"C:\Users\paul\OneDrive\Desktop\Python\Pygame\Eagle-1-64Bit"
+except Exception:
+    BASE_DIR = r"C:\Users\paul\OneDrive\Desktop\Python\Pygame\Eagle-1-64Bit"
+
 HIGHSCORE_FILE = os.path.join(BASE_DIR, "data", "highscore.txt")
 
 def load_image(image_path, scale=None):
     if not os.path.isabs(image_path):
         candidate = os.path.join(BASE_DIR, image_path)
-        if not os.path.exists(candidate):
+        if not os.path.exists(candidate) and not image_path.startswith("images"):
             candidate = os.path.join(BASE_DIR, "images", image_path)
         image = pygame.image.load(candidate)
     else:
         image = pygame.image.load(image_path)
+        
     if scale is not None:
         image = pygame.transform.scale(image, scale)
     return image
 
 def load_highscore(filepath=HIGHSCORE_FILE):
     try:
-        with open(filepath,"r") as file:
+        with open(filepath, "r") as file:
             return int(file.read().strip())
-    except (FileNotFoundError,ValueError):
+    except (FileNotFoundError, ValueError):
         return 0
     
 def add_highscore(new_highscore,filepath=HIGHSCORE_FILE):
@@ -580,6 +589,7 @@ explosion_group=pygame.sprite.Group()
 
 
 while True:
+    keys=pygame.key.get_pressed()
     for event in pygame.event.get():
         if event.type==pygame.QUIT:
             if player.score>player.highscore:
@@ -609,45 +619,45 @@ while True:
                 
             
     keys=pygame.key.get_pressed()
-    if player.health > 0:
-        if keys[pygame.K_a] or keys[pygame.K_LEFT]:
-            player.angle += player.turn_rate
-        if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
-            player.angle -= player.turn_rate
+    if game_state=="":
+        if player.health>0:
+            if keys[pygame.K_a] or keys[pygame.K_LEFT]:
+                player.angle += player.turn_rate
+            if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
+                player.angle -= player.turn_rate
 
-        rad = math.radians(player.angle)
-        dx = -math.sin(rad)
-        dy = -math.cos(rad)
+            rad = math.radians(player.angle)
+            dx = -math.sin(rad)
+            dy = -math.cos(rad)
 
-        if keys[pygame.K_w] or keys[pygame.K_UP]:
-            player.velocity_x = min(player.max_speed, player.velocity_x + player.acceleration)
-            player.velocity_y = min(player.max_speed, player.velocity_y + player.acceleration)
-        elif keys[pygame.K_s] or keys[pygame.K_DOWN]:
-            player.velocity_x = max(player.min_speed, player.velocity_x - player.acceleration)
-            player.velocity_y = max(player.min_speed, player.velocity_y - player.acceleration)
-        elif keys[pygame.K_p]:
-            pause_menu()
+            if keys[pygame.K_w] or keys[pygame.K_UP]:
+                player.velocity_x = min(player.max_speed, player.velocity_x + player.acceleration)
+                player.velocity_y = min(player.max_speed, player.velocity_y + player.acceleration)
+            elif keys[pygame.K_s] or keys[pygame.K_DOWN]:
+                player.velocity_x = max(player.min_speed, player.velocity_x - player.acceleration)
+                player.velocity_y = max(player.min_speed, player.velocity_y - player.acceleration)
+            elif keys[pygame.K_p]:
+                pause_menu()
 
-        player.pos_x += dx * player.velocity_x
-        player.pos_y += dy * player.velocity_y
-        
-        player.angle %= 360
-        player.x = int(player.pos_x)
-        player.y = int(player.pos_y)
+            player.pos_x += dx * player.velocity_x
+            player.pos_y += dy * player.velocity_y
+            
+            player.angle %= 360
+            player.x = int(player.pos_x)
+            player.y = int(player.pos_y)
 
-        if (keys[pygame.K_SPACE]) and not player.reloading :
-            player.set_shoot()
+            if (keys[pygame.K_SPACE]) and not player.reloading :
+                player.set_shoot()
 
-        if (keys[pygame.K_p])and game_state!="pause_menu":
-            :
-            game_state="pause_menu"
-        elif 
-    else:
-        if keys[pygame.K_r]:
-            respawn()
-        elif keys[pygame.K_SPACE]:
-            game_state="main_menu"
-    if game_state=="main_menu":
+            if (keys[pygame.K_p]):
+                game_state="pause_menu"
+    
+        else:
+            if keys[pygame.K_r]:
+                respawn()
+            elif keys[pygame.K_SPACE]:
+                game_state="main_menu"
+    elif game_state=="main_menu":
         main_menu()
         if (keys[pygame.K_LSHIFT]) or (keys[pygame.K_RSHIFT]) :
             respawn()
@@ -656,6 +666,14 @@ while True:
             if (keys[pygame.K_r]):
                 player.highscore=0
                 add_highscore(player.highscore)
+    elif game_state=="pause_menu":
+        if (keys[pygame.K_p]):
+            game_state=""
+        elif (keys[pygame.K_LSHIFT]) or (keys[pygame.K_RSHIFT]):
+            game_state=main_menu
+        else:
+            pause_menu()
+        
         
 
         
@@ -668,3 +686,4 @@ while True:
 
     pygame.display.update()
     clock.tick(60)
+no 
