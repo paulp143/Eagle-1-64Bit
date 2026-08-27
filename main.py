@@ -223,6 +223,7 @@ class Player (pygame.Rect):
         self.acceleration=PLAYER_ACCELERATION
         self.velocity_y=float(PLAYER_MOVEMENT_SPEED_Y)
         self.velocity_x=float(PLAYER_MOVEMENT_SPEED_X)
+        self.boundaries=False
     def set_shoot(self):
         if self.reloading:
             return
@@ -323,12 +324,13 @@ def move():
     if player.pos_x < 0 or player.pos_x + PLAYER_WIDTH > MAP_WIDTH or \
        player.pos_y < 0 or player.pos_y + PLAYER_HEIGHT > MAP_HEIGHT:
         damage = BORDER_TICK_DAMAGE
-        player.boundaries=True #try making it so that you cant regenerate shield during out of bounds
+        player.boundaries=True 
         if player.shield > 0:
             player.shield = max(0.0, player.shield - damage)
         else:
             player.health = max(0.0, player.health - damage)
-
+    
+    player.boundaries=False
     player.x = int(player.pos_x)
     player.y = int(player.pos_y)
 
@@ -626,7 +628,7 @@ while running:
         if event.type == INVINCIBLE_END:
             player.invincible = False
         if event.type == SHIELD_REGENERATION:
-            if player.shield < PLAYER_MAX_SHIELD:
+            if player.shield < PLAYER_MAX_SHIELD and player.boundaries:
                 player.shield += 1
         if event.type == pygame.KEYDOWN:
             if game_state == "main_menu":
