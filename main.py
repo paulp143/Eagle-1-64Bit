@@ -1,5 +1,5 @@
 import pygame 
-from sys import exit
+import sys
 import os,random,math
 
 
@@ -56,26 +56,35 @@ HEALTH_WIDTH=16
 HEALTH_HEIGHT=4
 
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+try:
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    if os.path.exists(os.path.join(current_dir, "images")):
+        BASE_DIR = current_dir
+    else:
+        BASE_DIR = r"C:\Users\paul\OneDrive\Desktop\Python\Pygame\Eagle-1-64Bit"
+except Exception:
+    BASE_DIR = r"C:\Users\paul\OneDrive\Desktop\Python\Pygame\Eagle-1-64Bit"
+
 HIGHSCORE_FILE = os.path.join(BASE_DIR, "data", "highscore.txt")
 
 def load_image(image_path, scale=None):
     if not os.path.isabs(image_path):
         candidate = os.path.join(BASE_DIR, image_path)
-        if not os.path.exists(candidate):
+        if not os.path.exists(candidate) and not image_path.startswith("images"):
             candidate = os.path.join(BASE_DIR, "images", image_path)
         image = pygame.image.load(candidate)
     else:
         image = pygame.image.load(image_path)
+        
     if scale is not None:
         image = pygame.transform.scale(image, scale)
     return image
 
 def load_highscore(filepath=HIGHSCORE_FILE):
     try:
-        with open(filepath,"r") as file:
+        with open(filepath, "r") as file:
             return int(file.read().strip())
-    except (FileNotFoundError,ValueError):
+    except (FileNotFoundError, ValueError):
         return 0
     
 def add_highscore(new_highscore,filepath=HIGHSCORE_FILE):
@@ -123,6 +132,80 @@ class Large_explosion_a(pygame.sprite.Sprite):
         else:
             self.image=self.frames[int(self.current_frame)]
 
+
+class TextBox:
+    """Wiederverwendbare Klasse für UI-Texte und klickbare Knöpfe mit Hover-Effekten."""
+    def __init__(
+        self,
+        text,
+        font,
+        text_color=(255, 255, 255),
+        bg_color=None,
+        hover_bg_color=None,
+        padding=(20, 10),
+        border_radius=8,
+        border_color=None,
+        hover_border_color=None,
+        border_width=2,
+        **rect_kwargs
+    ):
+        self.text = str(text)
+        self.font = font
+        self.text_color = text_color
+        self.bg_color = bg_color
+        self.hover_bg_color = hover_bg_color
+        self.padding = padding
+        self.border_radius = border_radius
+        self.border_color = border_color
+        self.hover_border_color = hover_border_color
+        self.border_width = border_width
+        self.rect_kwargs = rect_kwargs
+        self.update_surface()
+
+    def update_surface(self):
+        self.text_surface = self.font.render(self.text, True, self.text_color)
+        self.text_rect = self.text_surface.get_rect(**self.rect_kwargs)
+        if self.bg_color is not None or self.border_color is not None or self.hover_bg_color is not None or self.hover_border_color is not None:
+            self.bg_rect = self.text_rect.inflate(self.padding[0], self.padding[1])
+        else:
+            self.bg_rect = self.text_rect.copy()
+
+    def set_text(self, new_text):
+        new_text = str(new_text)
+        if new_text != self.text:
+            self.text = new_text
+            self.update_surface()
+
+    def get_hitbox(self):
+        return self.bg_rect if self.bg_rect is not None else self.text_rect
+
+    def is_hovered(self, mouse_pos):
+        if mouse_pos is None:
+            return False
+        return self.get_hitbox().collidepoint(mouse_pos)
+
+    def is_clicked(self, event, mouse_pos):
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            return self.is_hovered(mouse_pos)
+        return False
+
+    def draw(self, surface, mouse_pos=None):
+        hovered = self.is_hovered(mouse_pos)
+        
+        # Hintergrund (mit Hover-Effekt)
+        current_bg = self.hover_bg_color if (hovered and self.hover_bg_color) else self.bg_color
+        if current_bg and self.bg_rect:
+            pygame.draw.rect(surface, current_bg, self.bg_rect, border_radius=self.border_radius)
+
+        # Rahmen (mit Hover-Effekt)
+        current_border = self.hover_border_color if (hovered and self.hover_border_color) else self.border_color
+        if current_border and self.bg_rect:
+            pygame.draw.rect(surface, current_border, self.bg_rect, width=self.border_width, border_radius=self.border_radius)
+
+        # Text
+        surface.blit(self.text_surface, self.text_rect)
+
+
 player_image=load_image(os.path.join("images", "Space-Invaders-Ship.png"), (PLAYER_WIDTH,PLAYER_HEIGHT))
 bullet_image=load_image(os.path.join("images", "bullet.png"), (BULLET_WIDTH,BULLET_HEIGHT))
 light_enemy_image=load_image(os.path.join("images", "enemy1.png"),(LIGHT_ENEMY_WIDTH,LIGHT_ENEMY_HEIGHT))
@@ -143,6 +226,7 @@ large_explosion_a_spritesheet=Spritesheet(os.path.join("images", "LargeExplosion
 pygame.init()
 font = pygame.font.SysFont("arial", 24, bold=True)
 title_font=pygame.font.SysFont("arial",48,bold=True)
+speed_font = pygame.font.SysFont("arial", 18, bold=True)
 clock=pygame.time.Clock()
 window=pygame.display.set_mode((GAME_WIDTH,GAME_HEIGHT), pygame.RESIZABLE)
 canvas=pygame.Surface((GAME_WIDTH,GAME_HEIGHT))
@@ -150,6 +234,119 @@ frame_number=23
 frame_width=large_explosion_a_spritesheet.sheet.get_width()/23
 frame_height=large_explosion_a_spritesheet.sheet.get_height()
 game_state="main_menu"
+
+
+def get_canvas_mouse_pos():
+    """Skaliert die Mauskoordinaten des Fensters auf die interne Canvas-Auflösung."""
+    win_w, win_h = window.get_size()
+    if win_w == 0 or win_h == 0:
+        return pygame.mouse.get_pos()
+    mx, my = pygame.mouse.get_pos()
+    return (mx * (GAME_WIDTH / win_w), my * (GAME_HEIGHT / win_h))
+
+
+# UI TextBoxes & Buttons vorbereiten
+title_box = TextBox(
+    "Starblast",
+    title_font,
+    bg_color="blue",
+    padding=(40, 40),
+    border_radius=8,
+    centerx=GAME_WIDTH/2,
+    bottom=GAME_HEIGHT*0.2
+)
+
+menu_play_box = TextBox(
+    "To play press SHIFT",
+    font,
+    bg_color=(20, 25, 35),
+    hover_bg_color=(40, 60, 100),
+    border_color=(80, 100, 140),
+    hover_border_color=(0, 200, 255),
+    padding=(30, 16),
+    border_radius=8,
+    centerx=GAME_WIDTH/2,
+    bottom=GAME_HEIGHT/2+50
+)
+
+menu_reset_box = TextBox(
+    "Hold L-SHIFT + R-SHIFT + R to reset Highscore",
+    font,
+    bg_color=(20, 25, 35),
+    hover_bg_color=(80, 30, 30),
+    border_color=(80, 100, 140),
+    hover_border_color=(255, 80, 80),
+    padding=(24, 12),
+    border_radius=8,
+    centerx=GAME_WIDTH/2,
+    bottom=GAME_HEIGHT/2+110
+)
+
+pause_title_box = TextBox(
+    "Pause",
+    font,
+    bg_color=(30, 35, 50),
+    padding=(30, 14),
+    border_radius=8,
+    centerx=GAME_WIDTH/2,
+    bottom=GAME_HEIGHT*0.2
+)
+
+pause_continue_box = TextBox(
+    "To continue press P",
+    font,
+    bg_color=(20, 25, 35),
+    hover_bg_color=(40, 60, 100),
+    border_color=(80, 100, 140),
+    hover_border_color=(0, 200, 255),
+    padding=(30, 16),
+    border_radius=8,
+    centerx=GAME_WIDTH/2,
+    bottom=GAME_HEIGHT*0.5
+)
+
+pause_menu_box = TextBox(
+    "To return to main menu press ESC",
+    font,
+    bg_color=(20, 25, 35),
+    hover_bg_color=(40, 60, 100),
+    border_color=(80, 100, 140),
+    hover_border_color=(0, 200, 255),
+    padding=(30, 16),
+    border_radius=8,
+    centerx=GAME_WIDTH/2,
+    bottom=GAME_HEIGHT*0.5+65
+)
+
+gameover_respawn_box = TextBox(
+    "Press R to Respawn",
+    font,
+    bg_color=(20, 25, 35),
+    hover_bg_color=(30, 80, 45),
+    border_color=(80, 100, 140),
+    hover_border_color=(0, 255, 120),
+    padding=(30, 16),
+    border_radius=8,
+    centerx=GAME_WIDTH/2,
+    bottom=GAME_HEIGHT/2
+)
+
+gameover_lobby_box = TextBox(
+    "Press SPACE to go back to the Main Menu",
+    font,
+    bg_color=(20, 25, 35),
+    hover_bg_color=(40, 60, 100),
+    border_color=(80, 100, 140),
+    hover_border_color=(0, 200, 255),
+    padding=(30, 16),
+    border_radius=8,
+    centerx=GAME_WIDTH/2,
+    bottom=GAME_HEIGHT/2+60
+)
+
+score_box = TextBox("Score: 0", font, centerx=GAME_WIDTH//2, bottom=GAME_HEIGHT-10)
+highscore_box = TextBox("highscore: 0", font, centerx=GAME_WIDTH//2, bottom=GAME_HEIGHT-30)
+speed_box = TextBox("Speed: 0.0 / 0.0", speed_font, topleft=(20, GAME_HEIGHT - MINIMAP_SIZE - 50))
 
 
 SHOOTING_END=pygame.USEREVENT+1
@@ -394,28 +591,24 @@ def respawn():
     explosion_group.empty()
 
 
-def main_menu():
+
+def main_menu(mouse_pos=None):
     canvas.fill((0,0,0))
     canvas.blit(main_menu_image,(0,0))
-    title_surface=title_font.render("Starblast",True,(255,255,255))
-    title_rect=title_surface.get_rect(centerx=GAME_WIDTH/2,bottom=GAME_HEIGHT*0.2)
-    canvas.blit(title_surface,title_rect)
-    play_surface=font.render("To play press SHIFT",True,(255,255,255))
-    play_rect=play_surface.get_rect(centerx=GAME_WIDTH/2,bottom=GAME_HEIGHT/2+50)
-    canvas.blit(play_surface,play_rect)
-    return_surface=font.render("To return to the menu press ESC",True,(255,255,255))
-    return_rect=return_surface.get_rect(centerx=GAME_WIDTH/2,bottom=GAME_HEIGHT/2+50)
-    canvas.blit(return_surface,return_rect)
 
-def pause_menu():
+    title_box.draw(canvas, mouse_pos)
+    menu_play_box.draw(canvas, mouse_pos)
+    menu_reset_box.draw(canvas, mouse_pos)
+
+def pause_menu(mouse_pos=None):
     canvas.fill((0,0,0))
-    pause_surface=font.render("Pause",True,(255,255,255))
-    pause_rect=pause_surface.get_rect(centerx=GAME_WIDTH/2,bottom=GAME_HEIGHT*0.2)
-    canvas.blit(pause_surface,pause_rect)
-    continue_surface=font.render("To continue press p",True,(255,255,255))
-    continue_rect=continue_surface.get_rect(centerx=GAME_WIDTH/2,bottom=GAME_HEIGHT*0.5)
-    canvas.blit(continue_surface,continue_rect)
-def draw():
+    canvas.blit(backround_image,(0,0))
+
+    pause_title_box.draw(canvas, mouse_pos)
+    pause_continue_box.draw(canvas, mouse_pos)
+    pause_menu_box.draw(canvas, mouse_pos)
+
+def draw(mouse_pos=None):
     canvas.fill((0,0,0))
 
     # Calculate camera offset bounded to map dimensions
@@ -440,12 +633,8 @@ def draw():
     pygame.draw.rect(canvas, (255, 60, 60), border_rect, 4)
 
     if player.health <= 0:
-        respawn_surface=font.render("Press R to Respawn", True, (255, 255, 255))
-        respawn_rect=respawn_surface.get_rect(centerx=GAME_WIDTH / 2, bottom=GAME_HEIGHT/2)
-        loby_surface=font.render("Press SPACE to go back to the Main Menu",True,(255,255,255))
-        loby_rect=loby_surface.get_rect(centerx=GAME_WIDTH/2,bottom=GAME_HEIGHT/2+30)
-        canvas.blit(respawn_surface, respawn_rect)
-        canvas.blit(loby_surface,loby_rect)
+        gameover_respawn_box.draw(canvas, mouse_pos)
+        gameover_lobby_box.draw(canvas, mouse_pos)
         
     else:
         # Player rendered relative to camera
@@ -482,13 +671,11 @@ def draw():
             canvas.blit(explosion.image, (exp_screen_x, exp_screen_y))
 
         # UI elements (Screen space, fixed overlay)
-        score_surface = font.render(f"Score: {player.score}", True, (255, 255, 255))
-        score_rect = score_surface.get_rect(centerx=GAME_WIDTH // 2, bottom=GAME_HEIGHT - 10)
-        canvas.blit(score_surface, score_rect)
+        score_box.set_text(f"Score: {player.score}")
+        score_box.draw(canvas)
 
-        highscore_surface = font.render(f"highscore: {player.highscore}", True, (255, 255, 255))
-        highscore_rect = highscore_surface.get_rect(centerx=GAME_WIDTH // 2, bottom=GAME_HEIGHT - 30)
-        canvas.blit(highscore_surface, highscore_rect)
+        highscore_box.set_text(f"highscore: {player.highscore}")
+        highscore_box.draw(canvas)
 
         pygame.draw.rect(canvas,"black",(32,32,HEALTH_WIDTH,HEALTH_HEIGHT*player.max_health))
         for i in range(int(player.max_health - player.health), player.max_health):
@@ -502,7 +689,7 @@ def draw():
         for i in range(remaining_icons):
             canvas.blit(bullet_ui_image, (GAME_WIDTH - 32, 32 + i * BULLET_UI_HEIGHT))
 
-        current_shield_width=max(0,(player.shield/PLAYER_MAX_SHIELD)*238)
+        current_shield_width=max(-1,(player.shield/PLAYER_MAX_SHIELD)*238)
         shield_ui_width=SHIELD_UI_WIDTH*PLAYER_MAX_SHIELD
         shield_x=GAME_WIDTH/2-shield_ui_width/2
         shield_y=32
@@ -511,9 +698,6 @@ def draw():
 
         # --- SPEEDOMETER UI ---
         mm_size = MINIMAP_SIZE
-        speed_font = pygame.font.SysFont("arial", 18, bold=True)
-        speed_text = speed_font.render(f"Speed: {player.velocity_x:.1f} / {player.max_speed:.1f}", True, (255, 255, 255))
-        
         speed_x = 20
         speed_y = GAME_HEIGHT - mm_size - 50
         
@@ -521,7 +705,9 @@ def draw():
         bar_height = 10
         fill_width = max(0, min(bar_width, int((player.velocity_x / player.max_speed) * bar_width)))
         
-        canvas.blit(speed_text, (speed_x, speed_y))
+        speed_box.set_text(f"Speed: {player.velocity_x:.1f} / {player.max_speed:.1f}")
+        speed_box.draw(canvas)
+
         pygame.draw.rect(canvas, (0, 0, 0), (speed_x, speed_y + 22, bar_width, bar_height))
         pygame.draw.rect(canvas, (255, 180, 0), (speed_x, speed_y + 22, fill_width, bar_height))
         pygame.draw.rect(canvas, (100, 120, 160), (speed_x, speed_y + 22, bar_width, bar_height), 1)
@@ -579,92 +765,133 @@ player.bullets=[]
 explosion_group=pygame.sprite.Group()
 
 
-while True:
+running = True
+while running:
+    canvas_mouse_pos = get_canvas_mouse_pos()
+
     for event in pygame.event.get():
-        if event.type==pygame.QUIT:
-            if player.score>player.highscore:
+        if event.type == pygame.QUIT:
+            if player.score > player.highscore:
                 add_highscore(player.score)
-            pygame.quit()
-            exit()
-        if event.type==SHOOTING_END:
-            player.shooting=False
-        if event.type==ADD_SCORE:
-            player.add_score()
-        if event.type==LIGHT_ENEMY_SHOOT and not light_enemy.exploding:
-            light_enemy.set_shoot()
-        if event.type==RELOAD_END:
-            player.used_bullets=0
-            player.reloading=False
+            running = False
+            break
+        if event.type == SHOOTING_END:
+            player.shooting = False
+        if event.type == ADD_SCORE:
+            if game_state == "":
+                player.add_score()
+        if event.type == LIGHT_ENEMY_SHOOT and not light_enemy.exploding:
+            if game_state == "":
+                light_enemy.set_shoot()
+        if event.type == RELOAD_END:
+            player.used_bullets = 0
+            player.reloading = False
         if event.type == LIGHT_ENEMY_EXPLOSION:
             old_bullets = light_enemy.bullets
             light_enemy = Light_Enemy()
             light_enemy.bullets = old_bullets
-        if event.type==INVINCIBLE_END:
-            player.invincible=False
-        if event.type==SHIELD_REGENERATION:
-            if player.shield<PLAYER_MAX_SHIELD:
-                player.shield+=1
+        if event.type == INVINCIBLE_END:
+            player.invincible = False
+        if event.type == SHIELD_REGENERATION:
+            if player.shield < PLAYER_MAX_SHIELD:
+                player.shield += 1
 
+        # Maus-Klick Interaktion für Knöpfe
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if game_state == "main_menu":
+                if menu_play_box.is_clicked(event, canvas_mouse_pos):
+                    respawn()
+                    game_state = ""
+                elif menu_reset_box.is_clicked(event, canvas_mouse_pos):
+                    player.highscore = 0
+                    add_highscore(player.highscore)
+                    highscore_box.set_text("highscore: 0")
 
-                
-            
-    keys=pygame.key.get_pressed()
-    if player.health > 0:
-        if keys[pygame.K_a] or keys[pygame.K_LEFT]:
-            player.angle += player.turn_rate
-        if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
-            player.angle -= player.turn_rate
+            elif game_state == "pause_menu":
+                if pause_continue_box.is_clicked(event, canvas_mouse_pos):
+                    game_state = ""
+                elif pause_menu_box.is_clicked(event, canvas_mouse_pos):
+                    game_state = "main_menu"
 
-        rad = math.radians(player.angle)
-        dx = -math.sin(rad)
-        dy = -math.cos(rad)
+            elif game_state == "":
+                if player.health <= 0:
+                    if gameover_respawn_box.is_clicked(event, canvas_mouse_pos):
+                        respawn()
+                    elif gameover_lobby_box.is_clicked(event, canvas_mouse_pos):
+                        game_state = "main_menu"
 
-        if keys[pygame.K_w] or keys[pygame.K_UP]:
-            player.velocity_x = min(player.max_speed, player.velocity_x + player.acceleration)
-            player.velocity_y = min(player.max_speed, player.velocity_y + player.acceleration)
-        elif keys[pygame.K_s] or keys[pygame.K_DOWN]:
-            player.velocity_x = max(player.min_speed, player.velocity_x - player.acceleration)
-            player.velocity_y = max(player.min_speed, player.velocity_y - player.acceleration)
-        elif keys[pygame.K_p]:
-            pause_menu()
+        # Tastatur-Steuerung für Menüs
+        if event.type == pygame.KEYDOWN:
+            if game_state == "main_menu":
+                if event.key in (pygame.K_LSHIFT, pygame.K_RSHIFT):
+                    respawn()
+                    game_state = ""
+            elif game_state == "pause_menu":
+                if event.key == pygame.K_p:
+                    game_state = ""
+                elif event.key == pygame.K_ESCAPE:
+                    game_state = "main_menu"
+            elif game_state == "":
+                if event.key == pygame.K_p:
+                    game_state = "pause_menu"
+                elif player.health <= 0:
+                    if event.key == pygame.K_r:
+                        respawn()
+                    elif event.key == pygame.K_SPACE:
+                        game_state = "main_menu"
 
-        player.pos_x += dx * player.velocity_x
-        player.pos_y += dy * player.velocity_y
-        
-        player.angle %= 360
-        player.x = int(player.pos_x)
-        player.y = int(player.pos_y)
+    if not running:
+        break
 
-        if (keys[pygame.K_SPACE]) and not player.reloading :
-            player.set_shoot()
+    keys = pygame.key.get_pressed()
 
-        if (keys[pygame.K_p])and game_state!="pause_menu":
-            :
-            game_state="pause_menu"
-        elif 
-    else:
-        if keys[pygame.K_r]:
-            respawn()
-        elif keys[pygame.K_SPACE]:
-            game_state="main_menu"
-    if game_state=="main_menu":
-        main_menu()
-        if (keys[pygame.K_LSHIFT]) or (keys[pygame.K_RSHIFT]) :
-            respawn()
-            game_state=""
-        if (keys[pygame.K_LSHIFT]) and (keys[pygame.K_RSHIFT]):
-            if (keys[pygame.K_r]):
-                player.highscore=0
-                add_highscore(player.highscore)
-        
+    if game_state == "main_menu":
+        main_menu(canvas_mouse_pos)
+        if keys[pygame.K_LSHIFT] and keys[pygame.K_RSHIFT] and keys[pygame.K_r]:
+            player.highscore = 0
+            add_highscore(player.highscore)
+            highscore_box.set_text("highscore: 0")
 
-        
-    else:
-        move()
-        draw()
-    
+    elif game_state == "pause_menu":
+        pause_menu(canvas_mouse_pos)
+
+    elif game_state == "":
+        if player.health > 0:
+            if keys[pygame.K_a] or keys[pygame.K_LEFT]:
+                player.angle += player.turn_rate
+            if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
+                player.angle -= player.turn_rate
+
+            rad = math.radians(player.angle)
+            dx = -math.sin(rad)
+            dy = -math.cos(rad)
+
+            if keys[pygame.K_w] or keys[pygame.K_UP]:
+                player.velocity_x = min(player.max_speed, player.velocity_x + player.acceleration)
+                player.velocity_y = min(player.max_speed, player.velocity_y + player.acceleration)
+            elif keys[pygame.K_s] or keys[pygame.K_DOWN]:
+                player.velocity_x = max(player.min_speed, player.velocity_x - player.acceleration)
+                player.velocity_y = max(player.min_speed, player.velocity_y - player.acceleration)
+
+            player.pos_x += dx * player.velocity_x
+            player.pos_y += dy * player.velocity_y
+
+            player.angle %= 360
+            player.x = int(player.pos_x)
+            player.y = int(player.pos_y)
+
+            if keys[pygame.K_SPACE] and not player.reloading:
+                player.set_shoot()
+
+            move()
+            draw(canvas_mouse_pos)
+        else:
+            draw(canvas_mouse_pos)
+
     scaled_surface = pygame.transform.scale(canvas, window.get_size())
     window.blit(scaled_surface, (0, 0))
 
     pygame.display.update()
     clock.tick(60)
+
+pygame.quit()
