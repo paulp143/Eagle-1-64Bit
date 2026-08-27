@@ -1,5 +1,4 @@
 import pygame 
-import sys
 import os,random,math
 
 
@@ -693,7 +692,7 @@ def draw(mouse_pos=None):
         for i in range(remaining_icons):
             canvas.blit(bullet_ui_image, (GAME_WIDTH - 32, 32 + i * BULLET_UI_HEIGHT))
 
-        current_shield_width=max(-1,(player.shield/PLAYER_MAX_SHIELD)*238)
+        current_shield_width=max(0,(player.shield/PLAYER_MAX_SHIELD)*238)
         shield_ui_width=SHIELD_UI_WIDTH*PLAYER_MAX_SHIELD
         shield_x=GAME_WIDTH/2-shield_ui_width/2
         shield_y=32
@@ -798,7 +797,10 @@ while running:
             player.invincible = False
         if event.type == SHIELD_REGENERATION:
             if player.shield < PLAYER_MAX_SHIELD:
-                player.shield += 1
+                if PLAYER_MAX_SHIELD-player.shield>1:
+                    player.shield += 1
+                else:
+                    player.shield=PLAYER_MAX_SHIELD
 
         # Maus-Klick Interaktion für Knöpfe
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
