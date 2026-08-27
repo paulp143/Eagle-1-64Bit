@@ -31,6 +31,7 @@ BULLET_HEIGHT=12
 BULLET_VELOCITY_Y=8
 BULLET_UI_WIDTH = BULLET_WIDTH / 2  # 4 px
 BULLET_UI_HEIGHT =BULLET_HEIGHT / 2
+BULLET_SHOOTING_TIMER=100
 
 SHIELD_UI_WIDTH=12
 SHIELD_UI_HEIGHT=8
@@ -439,7 +440,7 @@ class Player (pygame.Rect):
                 by = cy + rot_ry - BULLET_HEIGHT / 2
                 self.bullets.append(Player.Bullet(bx, by, self.angle))
 
-            pygame.time.set_timer(SHOOTING_END, 100, 1)
+            pygame.time.set_timer(SHOOTING_END, BULLET_SHOOTING_TIMER, 1)
 
         elif self.used_bullets >= self.max_bullets:
             self.reloading = True
