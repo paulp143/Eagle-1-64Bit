@@ -235,10 +235,10 @@ frame_number=23
 frame_width=large_explosion_a_spritesheet.sheet.get_width()/23
 frame_height=large_explosion_a_spritesheet.sheet.get_height()
 game_state="main_menu"
-
+pygame.display.set_caption("Eagle 1 64Bit")
 
 def get_canvas_mouse_pos():
-    """Skaliert die Mauskoordinaten des Fensters auf die interne Canvas-Auflösung."""
+    #Skaliert die Mauskoordinaten des Fensters auf die interne Canvas-Auflösung.
     win_w, win_h = window.get_size()
     if win_w == 0 or win_h == 0:
         return pygame.mouse.get_pos()
@@ -248,9 +248,9 @@ def get_canvas_mouse_pos():
 
 # UI TextBoxes & Buttons vorbereiten
 title_box = TextBox(
-    "Starblast",
+    "Eagle 1 64Bit",
     title_font,
-    bg_color="blue",
+    bg_color="Black",
     padding=(40, 40),
     border_radius=8,
     centerx=GAME_WIDTH/2,
