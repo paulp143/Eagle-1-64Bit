@@ -37,6 +37,7 @@ SHIELD_UI_WIDTH=12
 SHIELD_UI_HEIGHT=8
 SHIELD_REGENERATION_TIME=2000
 
+BORDER_TICK_DAMAGE=0.1
 
 LIGHT_ENEMY_WIDTH=50
 LIGHT_ENEMY_HEIGHT=46
@@ -410,6 +411,7 @@ class Player (pygame.Rect):
         self.acceleration=PLAYER_ACCELERATION
         self.velocity_y=float(PLAYER_MOVEMENT_SPEED_Y)
         self.velocity_x=float(PLAYER_MOVEMENT_SPEED_X)
+        self.boundaries=False
     def set_shoot(self):
         if self.reloading:
             return
@@ -472,7 +474,7 @@ class Light_Enemy (pygame.Rect):
     class Bullet(pygame.Rect):
         def __init__(self, x, y):
             pygame.Rect.__init__(self, x, y, BULLET_WIDTH, BULLET_HEIGHT)
-            self.image = bullet_image
+            self.image = bullet_image 
             self.used = False
             self.velocity_y = LIGHT_ENEMY_BULLET_VELOCITY_Y
             
@@ -509,12 +511,14 @@ def move():
     # Check if player is outside map boundaries and apply damage per tick
     if player.pos_x < 0 or player.pos_x + PLAYER_WIDTH > MAP_WIDTH or \
        player.pos_y < 0 or player.pos_y + PLAYER_HEIGHT > MAP_HEIGHT:
-        damage = 0.05
+        damage = BORDER_TICK_DAMAGE
+        player.boundaries=True 
         if player.shield > 0:
             player.shield = max(0.0, player.shield - damage)
         else:
             player.health = max(0.0, player.health - damage)
-
+    
+    player.boundaries=False
     player.x = int(player.pos_x)
     player.y = int(player.pos_y)
 
