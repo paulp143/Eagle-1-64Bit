@@ -176,7 +176,7 @@ class Large_explosion_a(pygame.sprite.Sprite):
 
 
 class TextBox:
-    """Wiederverwendbare Klasse für UI-Texte und klickbare Knöpfe mit Hover-Effekten."""
+    
     def __init__(
         self,
         text,
@@ -580,7 +580,7 @@ class Player(pygame.Rect):
             pygame.time.set_timer(RELOAD_END, self.reloading_time, 1)
 
     def set_shoot_rocket(self, target=None):
-        """Feuert eine zielsuchende Rakete ab."""
+        
         if self.rocket_reloading:
             return
 
