@@ -48,7 +48,8 @@ LIGHT_ENEMY_EXPLOSION_HEIGHT=46
 LIGHT_ENEMY_EXPLOSION_TIME=500
 LIGHT_ENEMY_BULLET_VELOCITY_Y=4
 LIGHT_ENEMY_BULLET_DAMAGE=1
-
+LIGHT_ENEMY_VELOCITY_X=2
+LIGHT_ENEMY_VELOCITY_Y=2
 
 FRAME_MULTIPLIKATOR=2
 FRAME_SPEED=0.4
@@ -497,6 +498,9 @@ class Light_Enemy (pygame.Rect):
         self.bullet_damage=LIGHT_ENEMY_BULLET_DAMAGE
         self.x=int(x)
         self.y=int(y)
+        self.velocity_x=float(LIGHT_ENEMY_VELOCITY_X)
+        self.velocity_y=float(LIGHT_ENEMY_VELOCITY_Y)
+        
     def set_shoot(self):
         bullet_x = self.x + (LIGHT_ENEMY_WIDTH // 2) - (BULLET_WIDTH // 2)
         bullet_y = self.y + LIGHT_ENEMY_HEIGHT
