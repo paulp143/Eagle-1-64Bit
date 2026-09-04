@@ -1,5 +1,5 @@
 import pygame 
-import os, sys, random, math
+import os, random, math
 
 
 GAME_WIDTH = 1280
@@ -71,6 +71,7 @@ LIGHT_ENEMY_BULLET_VELOCITY_Y = 4
 LIGHT_ENEMY_BULLET_DAMAGE = 1
 LIGHT_ENEMY_VELOCITY_X = 2
 LIGHT_ENEMY_VELOCITY_Y = 2
+LIGHT_ENEMY_DROP_CHANCES=40
 
 MINIMAP_SIZE = 160
 MINIMAP_SCALE = MINIMAP_SIZE / MAP_WIDTH
@@ -757,6 +758,11 @@ class Light_Enemy(pygame.Rect):
         bullet_y = self.y + LIGHT_ENEMY_HEIGHT
         self.bullets.append(Light_Enemy.Bullet(bullet_x, bullet_y))
 
+class Abilitys(pygame.Rect):
+    def __init__(self,x,y,ability_image):
+        self.x=x
+        self.y=y
+        self.image=ability_image
 
 def move():
     global light_enemy
@@ -1028,7 +1034,7 @@ def draw(mouse_pos=None):
 
         # Controls & Radar Mode Hint
         mode_str = "CONE [FAR]" if player.radar_mode == "CONE" else "360° OMNI [CLOSE]"
-        controls_hint = hud_small_font.render(f"[SPACE] Gun   [E/R-Click] Missile   [T] Radar: {mode_str}", True, (0, 0, 0))
+        controls_hint = hud_small_font.render(f"[SPACE] Gun   [E/R-Click] Missile   [Q] Radar: {mode_str}", True, (0, 0, 0))
         canvas.blit(controls_hint, (int(GAME_WIDTH / 2 - controls_hint.get_width() / 2), 46))
 
         # --- ROCKET HUD UI ---
@@ -1241,7 +1247,6 @@ if __name__ == "__main__":
                         if event.button == 3:
                             player.set_shoot_rocket(light_enemy)
 
-            # Tastatur-Steuerung für Menüs & Radar-Umschaltung
             if event.type == pygame.KEYDOWN:
                 if game_state == "main_menu":
                     if event.key in (pygame.K_LSHIFT, pygame.K_RSHIFT):
@@ -1255,8 +1260,7 @@ if __name__ == "__main__":
                 elif game_state == "":
                     if event.key == pygame.K_p:
                         game_state = "pause_menu"
-                    elif event.key == pygame.K_t:
-                        # Taster 'T': Radar-Lock-Modus umschalten (CONE <-> OMNI)
+                    elif event.key == pygame.K_q:
                         player.toggle_radar_mode()
                     elif player.health <= 0:
                         if event.key == pygame.K_r:
@@ -1304,12 +1308,10 @@ if __name__ == "__main__":
                 player.x = int(player.pos_x)
                 player.y = int(player.pos_y)
 
-                # Geschütz abfeuern (SPACE)
                 if keys[pygame.K_SPACE] and not player.reloading:
                     player.set_shoot()
 
-                # Zielsuchende Rakete abfeuern (E, F, Q oder L-CTRL)
-                if (keys[pygame.K_e] or keys[pygame.K_f] or keys[pygame.K_q] or keys[pygame.K_LCTRL]) and not player.rocket_reloading:
+                if (keys[pygame.K_e] or keys[pygame.K_f] or keys[pygame.K_LCTRL]) and not player.rocket_reloading:
                     player.set_shoot_rocket(light_enemy)
 
                 move()
