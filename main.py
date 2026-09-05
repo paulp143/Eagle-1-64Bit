@@ -1,5 +1,36 @@
 import pygame 
-import os, random, math
+import os, random, math, sys
+
+# Ensure script/workspace directory is in sys.path (needed for Jupyter, IDEs, and subdirectories)
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__)) if ("__file__" in locals() or "__file__" in globals()) else os.getcwd()
+if CURRENT_DIR not in sys.path:
+    sys.path.insert(0, CURRENT_DIR)
+sys.path.insert(0, r"C:\Users\paul\.gemini\antigravity\worktrees\Eagle-1-64Bit\implement_powerup_weapon_system")
+import powerup_system as pus
+from powerup_system import (
+    PowerUpManager,
+    POWERUP_DROP_BASE_CHANCE,
+    POWERUP_PITY_INCREMENT,
+    POWERUP_LIFETIME_SECONDS,
+    POWERUP_MAGNET_RADIUS,
+    RARITY_COMMON_WEIGHT,
+    RARITY_RARE_WEIGHT,
+    RARITY_EPIC_WEIGHT,
+    SCORE_MILESTONE_THRESHOLDS,
+    DURATION_RAPID_FIRE,
+    DURATION_SHIELD_BUBBLE,
+    DURATION_THRUSTER_BOOST,
+    DURATION_TIME_SLOW,
+    DURATION_FREEZE_BLAST,
+    DURATION_DAMAGE_BOOST,
+    DURATION_DRONE_COMPANION,
+    DURATION_HOMING_PODS,
+    HOMING_POD_DAMAGE,
+    SHIELD_BUBBLE_BONUS,
+    DAMAGE_BOOST_MULTIPLIER,
+    RAPID_FIRE_COOLDOWN_MS,
+    RAPID_FIRE_RELOAD_MS,
+)
 
 
 GAME_WIDTH = 1280
@@ -20,8 +51,8 @@ PLAYER_INVINCIBLE_TIME = 1000
 PLAYER_MAX_SHIELD = 20
 PLAYER_MIN_SPEED = 2.0
 PLAYER_MAX_SPEED = 7.0
-PLAYER_MOVEMENT_SPEED_Y = PLAYER_MAX_SPEED/2
-PLAYER_MOVEMENT_SPEED_X = PLAYER_MAX_SPEED/2
+PLAYER_MOVEMENT_SPEED_Y = PLAYER_MAX_SPEED / 2
+PLAYER_MOVEMENT_SPEED_X = PLAYER_MAX_SPEED / 2
 PLAYER_ACCELERATION = 0.15
 PLAYER_TURN_RATE = 3
 PLAYER_BULLET_DAMAGE = 1
@@ -33,7 +64,7 @@ BULLET_UI_WIDTH = BULLET_WIDTH / 2  # 4 px
 BULLET_UI_HEIGHT = BULLET_HEIGHT / 2
 BULLET_SHOOTING_TIMER = 100
 
-# Raketen-Parameter (debuffed)
+# Raketen-Parameter (Homing Rocket System)
 ROCKET_WIDTH = 12
 ROCKET_HEIGHT = 16
 ROCKET_VELOCITY = 7.0
@@ -46,10 +77,8 @@ ROCKET_MAX_RANGE = 1200
 # Radar & Lock-on Modi
 RADAR_CONE_ANGLE = 50          
 RADAR_CONE_RANGE = 1050
-RADAR_CONE_MIN_RANGE=300        
+RADAR_CONE_MIN_RANGE = 300        
 RADAR_OMNI_RANGE = 420
-         
-
 
 PLAYER_MAX_ROCKETS = 4
 PLAYER_ROCKET_RELOAD_TIME = 25000
@@ -71,7 +100,7 @@ LIGHT_ENEMY_BULLET_VELOCITY_Y = 4
 LIGHT_ENEMY_BULLET_DAMAGE = 1
 LIGHT_ENEMY_VELOCITY_X = 2
 LIGHT_ENEMY_VELOCITY_Y = 2
-LIGHT_ENEMY_DROP_CHANCES=40
+LIGHT_ENEMY_DROP_CHANCES = 40
 
 MINIMAP_SIZE = 160
 MINIMAP_SCALE = MINIMAP_SIZE / MAP_WIDTH
@@ -95,6 +124,7 @@ def get_base_dir():
     candidates.append(os.path.join(os.getcwd(), "Eagle-1-64Bit"))
     candidates.append(r"C:\Users\paul\OneDrive\Desktop\Python\Pygame\Eagle-1-64Bit")
     candidates.append(r"C:\Users\paul\OneDrive\Desktop\Python\Pygame")
+    candidates.append(r"C:\Users\paul\.gemini\antigravity\worktrees\Eagle-1-64Bit\implement_powerup_weapon_system")
     candidates.append(r"C:\Users\paul\.gemini\antigravity\worktrees\Eagle-1-64Bit\implement_homing_rocket_class")
 
     for c in candidates:
@@ -246,18 +276,14 @@ class TextBox:
 
     def draw(self, surface, mouse_pos=None):
         hovered = self.is_hovered(mouse_pos)
-        
-        # Hintergrund (mit Hover-Effekt)
         current_bg = self.hover_bg_color if (hovered and self.hover_bg_color) else self.bg_color
         if current_bg and self.bg_rect:
             pygame.draw.rect(surface, current_bg, self.bg_rect, border_radius=self.border_radius)
 
-        # Rahmen (mit Hover-Effekt)
         current_border = self.hover_border_color if (hovered and self.hover_border_color) else self.border_color
         if current_border and self.bg_rect:
             pygame.draw.rect(surface, current_border, self.bg_rect, width=self.border_width, border_radius=self.border_radius)
 
-        # Text
         surface.blit(self.text_surface, self.text_rect)
 
 
@@ -289,6 +315,8 @@ frame_width = large_explosion_a_spritesheet.sheet.get_width() / 23
 frame_height = large_explosion_a_spritesheet.sheet.get_height()
 game_state = "main_menu"
 pygame.display.set_caption("Eagle 1 64Bit")
+
+powerup_manager = PowerUpManager()
 
 def get_canvas_mouse_pos():
     """Skaliert die Mauskoordinaten des Fensters auf die interne Canvas-Auflösung."""
@@ -446,7 +474,7 @@ class Player(pygame.Rect):
             self.pos_y = float(y)
             self.angle = float(angle)
             self.speed = float(ROCKET_VELOCITY)
-            self.turn_rate = float(ROCKET_TURN_RATE)  # 2.0°/Frame = realistische weite Kurven
+            self.turn_rate = float(ROCKET_TURN_RATE)  # 2.0°/Frame
             self.damage = ROCKET_DAMAGE
             self.max_range = float(ROCKET_MAX_RANGE)
             self.spawn_time = pygame.time.get_ticks()
@@ -481,7 +509,6 @@ class Player(pygame.Rect):
 
             valid_candidates = []
             for t in candidates:
-                # Prüfe mit Spieler-Lock-Zone falls verfügbar
                 if player is not None and not player.is_enemy_in_lock_zone(t):
                     continue
 
@@ -491,7 +518,6 @@ class Player(pygame.Rect):
                 diff_y = ty - cy
                 dist = math.hypot(diff_x, diff_y)
 
-                # Suchkopf-Winkelbegrenzung der Rakete
                 desired_angle = math.degrees(math.atan2(-diff_x, -diff_y)) % 360
                 angle_diff = abs((desired_angle - self.angle + 180) % 360 - 180)
                 if angle_diff <= 75:
@@ -505,12 +531,10 @@ class Player(pygame.Rect):
 
         def update_position(self, targets=None, player=None):
             """Aktualisiert Flugzeit, Distanz, sanfte Drehung und Position."""
-            # 1. Maximale Flugzeit prüfen (2.5 Sekunden)
             if pygame.time.get_ticks() - self.spawn_time >= self.max_flight_time:
                 self.used = True
                 return
 
-            # 2. Maximale Distanz prüfen
             self.distance_traveled += self.speed
             if self.distance_traveled >= self.max_range:
                 self.used = True
@@ -520,7 +544,6 @@ class Player(pygame.Rect):
                 if not self.target or getattr(self.target, 'exploding', False) or getattr(self.target, 'health', 0) <= 0:
                     self.lock_on(targets, player=player)
 
-            # 3. Sanftes Drehen bis zum maximalen Wendewinkel (2.0°/Frame)
             if self.target and not getattr(self.target, 'exploding', False) and getattr(self.target, 'health', 0) > 0:
                 tx = self.target.x + getattr(self.target, 'width', LIGHT_ENEMY_WIDTH) / 2
                 ty = self.target.y + getattr(self.target, 'height', LIGHT_ENEMY_HEIGHT) / 2
@@ -533,7 +556,6 @@ class Player(pygame.Rect):
                 desired_angle = math.degrees(math.atan2(-diff_x, -diff_y)) % 360
                 angle_diff = (desired_angle - self.angle + 180) % 360 - 180
 
-                # Langsames, weites Drehen ohne sofortiges Einlenken
                 if abs(angle_diff) <= self.turn_rate:
                     self.angle = desired_angle
                 else:
@@ -584,8 +606,10 @@ class Player(pygame.Rect):
         self.kamikaze_attack_damage = PLAYER_ATTACK_DAMAGE_KAMIKAZE
         self.invincible = False
         self.invincible_time = PLAYER_INVINCIBLE_TIME
+        self.max_shield = PLAYER_MAX_SHIELD
         self.shield = PLAYER_MAX_SHIELD
         self.highscore = load_highscore()
+        self.base_max_speed = PLAYER_MAX_SPEED
         self.min_speed = PLAYER_MIN_SPEED
         self.max_speed = PLAYER_MAX_SPEED
         self.acceleration = PLAYER_ACCELERATION
@@ -614,12 +638,10 @@ class Player(pygame.Rect):
         dist = math.hypot(diff_x, diff_y)
 
         if self.radar_mode == "OMNI":
-            # OMNI: Nur Nahbereich (RADAR_OMNI_RANGE = 420), dafür rundum 360°
             return dist <= RADAR_OMNI_RANGE
 
         elif self.radar_mode == "CONE":
-            # CONE: Hohe Reichweite (RADAR_CONE_RANGE = 1050), dafür nur schmaler Kegel geradeaus (±25°)
-            if dist <= RADAR_CONE_RANGE and dist>=RADAR_CONE_MIN_RANGE:
+            if dist <= RADAR_CONE_RANGE and dist >= RADAR_CONE_MIN_RANGE:
                 desired_angle = math.degrees(math.atan2(-diff_x, -diff_y)) % 360
                 angle_diff = abs((desired_angle - self.angle + 180) % 360 - 180)
                 return angle_diff <= (RADAR_CONE_ANGLE / 2)
@@ -655,11 +677,13 @@ class Player(pygame.Rect):
                 by = cy + rot_ry - BULLET_HEIGHT / 2
                 self.bullets.append(Player.Bullet(bx, by, self.angle))
 
-            pygame.time.set_timer(SHOOTING_END, BULLET_SHOOTING_TIMER, 1)
+            cooldown = RAPID_FIRE_COOLDOWN_MS if powerup_manager.is_active("rapid_fire") else BULLET_SHOOTING_TIMER
+            pygame.time.set_timer(SHOOTING_END, cooldown, 1)
 
         elif self.used_bullets >= self.max_bullets:
             self.reloading = True
-            pygame.time.set_timer(RELOAD_END, self.reloading_time, 1)
+            reload_delay = RAPID_FIRE_RELOAD_MS if powerup_manager.is_active("rapid_fire") else self.reloading_time
+            pygame.time.set_timer(RELOAD_END, reload_delay, 1)
 
     def set_shoot_rocket(self, target=None):
         """Feuert eine zielsuchende Rakete ab."""
@@ -670,7 +694,6 @@ class Player(pygame.Rect):
             self.rocket_shooting = True
             self.used_rockets += 1
 
-            # Rakete abwechselnd von linkem und rechtem Flügel abfeuern
             wing_offset_x = 18 if (self.used_rockets % 2 == 1) else -18
             wing_offset_y = 10
 
@@ -684,7 +707,6 @@ class Player(pygame.Rect):
             rx = cx + rot_x - ROCKET_WIDTH / 2
             ry = cy + rot_y - ROCKET_HEIGHT / 2
 
-            # Ziel nur zuweisen, wenn es sich im aktiven Lock-Bereich befindet
             target_to_lock = target if (target and self.is_enemy_in_lock_zone(target)) else None
             new_rocket = Player.Rocket(rx, ry, self.angle, target=target_to_lock)
             self.rockets.append(new_rocket)
@@ -758,11 +780,6 @@ class Light_Enemy(pygame.Rect):
         bullet_y = self.y + LIGHT_ENEMY_HEIGHT
         self.bullets.append(Light_Enemy.Bullet(bullet_x, bullet_y))
 
-class Abilitys(pygame.Rect):
-    def __init__(self,x,y,ability_image):
-        self.x=x
-        self.y=y
-        self.image=ability_image
 
 def move():
     global light_enemy
@@ -770,7 +787,7 @@ def move():
     if player.health <= 0:
         return
 
-    # Check if player is outside map boundaries and apply damage per tick
+    # Boundary damage
     if player.pos_x < 0 or player.pos_x + PLAYER_WIDTH > MAP_WIDTH or \
        player.pos_y < 0 or player.pos_y + PLAYER_HEIGHT > MAP_HEIGHT:
         damage = BORDER_TICK_DAMAGE
@@ -784,18 +801,26 @@ def move():
     player.x = int(player.pos_x)
     player.y = int(player.pos_y)
 
-    # Bullet Update & Kollision
+    # Check score milestones for guaranteed drops
+    powerup_manager.check_milestones(player.score, player.pos_x, player.pos_y)
+
+    # Update power-up subsystem (buff timers, drops, drone, micro-missiles, popups)
+    powerup_manager.update(1.0 / 60.0, player, light_enemy)
+
+    bullet_dmg = PLAYER_BULLET_DAMAGE * (DAMAGE_BOOST_MULTIPLIER if powerup_manager.is_active("damage_boost") else 1)
+
+    # Bullet Update & Collision
     for bullet in player.bullets:
         bullet.update_position()
         if bullet.colliderect(light_enemy) and not light_enemy.exploding:
             bullet.used = True
-            light_enemy.health -= PLAYER_BULLET_DAMAGE
+            light_enemy.health -= bullet_dmg
+            powerup_manager.on_bullet_hit_enemy(light_enemy)
 
-    # Rocket Update & Kollision
+    # Rocket Update & Collision
     for rocket in player.rockets:
         rocket.update_position(light_enemy, player=player)
         if rocket.used:
-            # Detonation bei Zeit- oder Reichweitenablauf
             range_explosion = Large_explosion_a(
                 rocket.x + ROCKET_WIDTH // 2,
                 rocket.y + ROCKET_HEIGHT // 2,
@@ -806,7 +831,6 @@ def move():
         elif rocket.colliderect(light_enemy) and not light_enemy.exploding:
             rocket.used = True
             light_enemy.health -= rocket.damage
-            # Treffer-Explosionseffekt
             hit_explosion = Large_explosion_a(
                 rocket.x + ROCKET_WIDTH // 2,
                 rocket.y + ROCKET_HEIGHT // 2,
@@ -815,10 +839,12 @@ def move():
             )
             explosion_group.add(hit_explosion)
 
+    # Player Kamikaze Collision
     if player.colliderect(light_enemy):
         light_enemy.health -= player.kamikaze_attack_damage
         player.take_damage(light_enemy.explosion_damage)
         
+    # Enemy Defeated
     if light_enemy.health <= 0 and not light_enemy.exploding:
         light_enemy.exploding = True
         explosion = Large_explosion_a(
@@ -828,6 +854,9 @@ def move():
         )
         explosion_group.add(explosion)
         player.score += 5
+
+        # Roll power-up drop on kill
+        powerup_manager.roll_drop(light_enemy.x + LIGHT_ENEMY_WIDTH // 2, light_enemy.y + LIGHT_ENEMY_HEIGHT // 2)
 
         pygame.time.set_timer(
             LIGHT_ENEMY_EXPLOSION,
@@ -843,10 +872,13 @@ def move():
     player.rockets = [rocket for rocket in player.rockets if not rocket.used \
                     and 0 <= rocket.x <= MAP_WIDTH and 0 <= rocket.y <= MAP_HEIGHT]
 
-    light_enemy.y += light_enemy.velocity_y
+    # Enemy movement affected by Time Slow and Frost/Freeze
+    effective_vy = powerup_manager.modify_enemy_speed(light_enemy.velocity_y)
+    light_enemy.y += effective_vy
     
     for bullet in light_enemy.bullets:
-        bullet.y += bullet.velocity_y
+        effective_b_vy = powerup_manager.modify_enemy_bullet_speed(bullet.velocity_y)
+        bullet.y += effective_b_vy
         if bullet.colliderect(player):
             bullet.used = True
             player.take_damage(light_enemy.bullet_damage)
@@ -886,6 +918,7 @@ def respawn():
     light_enemy.bullets.clear()
     player.shield = PLAYER_MAX_SHIELD
     explosion_group.empty()
+    powerup_manager.reset(player)
 
 
 def main_menu(mouse_pos=None):
@@ -948,6 +981,12 @@ def draw(mouse_pos=None):
             b_screen_y = bullet.y - camera_y
             bullet_rect = bullet.image.get_rect(center=(b_screen_x + BULLET_WIDTH // 2, b_screen_y + BULLET_HEIGHT // 2))
             canvas.blit(bullet.image, bullet_rect.topleft)
+            # Subtle visual aura when Damage Multiplier is active
+            if powerup_manager.is_active("damage_boost"):
+                pygame.draw.circle(canvas, (255, 140, 0), (int(b_screen_x + BULLET_WIDTH // 2), int(b_screen_y + BULLET_HEIGHT // 2)), 6, 1)
+
+        # Draw power-up world drops, escort drone, and swarm micro-missiles
+        powerup_manager.draw_world_entities(canvas, camera_x, camera_y, player)
 
         # Draw player rockets with camera offset
         for rocket in player.rockets:
@@ -968,7 +1007,17 @@ def draw(mouse_pos=None):
             enemy_screen_y = light_enemy.y - camera_y
             canvas.blit(light_enemy.image, (enemy_screen_x, enemy_screen_y))
 
-            # --- TARGET LOCK-ON HUD RETICLE (NUR WENN IM AKTIVEN LOCK-BEREICH) ---
+            # Frost / Freeze visual overlay
+            if powerup_manager.is_enemy_frozen():
+                ice_surf = pygame.Surface((LIGHT_ENEMY_WIDTH, LIGHT_ENEMY_HEIGHT), pygame.SRCALPHA)
+                ice_surf.fill((100, 210, 255, 130))
+                pygame.draw.rect(ice_surf, (220, 245, 255), (0, 0, LIGHT_ENEMY_WIDTH, LIGHT_ENEMY_HEIGHT), 2)
+                canvas.blit(ice_surf, (enemy_screen_x, enemy_screen_y))
+            elif powerup_manager.is_enemy_frosted():
+                frost_rect = pygame.Rect(enemy_screen_x, enemy_screen_y, LIGHT_ENEMY_WIDTH, LIGHT_ENEMY_HEIGHT)
+                pygame.draw.rect(canvas, (120, 220, 255), frost_rect, 2)
+
+            # Target Lock-on HUD Reticle (nur wenn im aktiven Lock-Bereich)
             if player.is_enemy_in_lock_zone(light_enemy):
                 if -80 <= enemy_screen_x <= GAME_WIDTH + 80 and -80 <= enemy_screen_y <= GAME_HEIGHT + 80:
                     ret_pad = 6
@@ -979,16 +1028,12 @@ def draw(mouse_pos=None):
                     ret_h = LIGHT_ENEMY_HEIGHT + ret_pad * 2
 
                     ret_color = (255, 60, 60)
-                    # Top-Left
                     pygame.draw.line(canvas, ret_color, (ret_x, ret_y), (ret_x + ret_len, ret_y), 2)
                     pygame.draw.line(canvas, ret_color, (ret_x, ret_y), (ret_x, ret_y + ret_len), 2)
-                    # Top-Right
                     pygame.draw.line(canvas, ret_color, (ret_x + ret_w, ret_y), (ret_x + ret_w - ret_len, ret_y), 2)
                     pygame.draw.line(canvas, ret_color, (ret_x + ret_w, ret_y), (ret_x + ret_w, ret_y + ret_len), 2)
-                    # Bottom-Left
                     pygame.draw.line(canvas, ret_color, (ret_x, ret_y + ret_h), (ret_x + ret_len, ret_y + ret_h), 2)
                     pygame.draw.line(canvas, ret_color, (ret_x, ret_y + ret_h), (ret_x, ret_y + ret_h - ret_len), 2)
-                    # Bottom-Right
                     pygame.draw.line(canvas, ret_color, (ret_x + ret_w, ret_y + ret_h), (ret_x + ret_w - ret_len, ret_y + ret_h), 2)
                     pygame.draw.line(canvas, ret_color, (ret_x + ret_w, ret_y + ret_h), (ret_x + ret_w, ret_y + ret_h - ret_len), 2)
 
@@ -1024,17 +1069,18 @@ def draw(mouse_pos=None):
         for i in range(remaining_icons):
             canvas.blit(bullet_ui_image, (GAME_WIDTH - 32, 32 + i * BULLET_UI_HEIGHT))
 
-        # Shield Bar
-        current_shield_width = max(0, (player.shield / PLAYER_MAX_SHIELD) * 238)
+        # Shield Bar (Gold if overcharged with Shield Bubble)
+        current_shield_width = max(0, min(238, (player.shield / PLAYER_MAX_SHIELD) * 238))
         shield_ui_width = SHIELD_UI_WIDTH * PLAYER_MAX_SHIELD
         shield_x = GAME_WIDTH / 2 - shield_ui_width / 2
         shield_y = 32
+        shield_color = "#f39c12" if player.shield > PLAYER_MAX_SHIELD else "#09c8f1"
         pygame.draw.rect(canvas, "black", (shield_x, shield_y, shield_ui_width, SHIELD_UI_HEIGHT))
-        pygame.draw.rect(canvas, "#09c8f1", (shield_x + 1, shield_y + 1, current_shield_width, 6))
+        pygame.draw.rect(canvas, shield_color, (shield_x + 1, shield_y + 1, current_shield_width, 6))
 
         # Controls & Radar Mode Hint
         mode_str = "CONE [FAR]" if player.radar_mode == "CONE" else "360° OMNI [CLOSE]"
-        controls_hint = hud_small_font.render(f"[SPACE] Gun   [E/R-Click] Missile   [Q] Radar: {mode_str}", True, (0, 0, 0))
+        controls_hint = hud_small_font.render(f"[SPACE] Gun   [E/R-Click] Missile   [Q] Radar: {mode_str}", True, (255, 255, 255))
         canvas.blit(controls_hint, (int(GAME_WIDTH / 2 - controls_hint.get_width() / 2), 46))
 
         # --- ROCKET HUD UI ---
@@ -1043,7 +1089,6 @@ def draw(mouse_pos=None):
         rocket_box_w = 145
         rocket_box_h = 56
 
-        # Background Box
         pygame.draw.rect(canvas, (18, 24, 36), (rocket_ui_x, rocket_ui_y, rocket_box_w, rocket_box_h), border_radius=6)
         pygame.draw.rect(canvas, (60, 90, 130), (rocket_ui_x, rocket_ui_y, rocket_box_w, rocket_box_h), 1, border_radius=6)
 
@@ -1055,7 +1100,6 @@ def draw(mouse_pos=None):
             reload_surf = hud_small_font.render("RELOADING...", True, (255, 160, 50))
             canvas.blit(reload_surf, (rocket_ui_x + 8, rocket_ui_y + 5))
             
-            # Progress bar
             bar_w = rocket_box_w - 16
             pygame.draw.rect(canvas, (40, 45, 60), (rocket_ui_x + 8, rocket_ui_y + 22, bar_w, 10), border_radius=3)
             pygame.draw.rect(canvas, (255, 140, 0), (rocket_ui_x + 8, rocket_ui_y + 22, int(bar_w * progress), 10), border_radius=3)
@@ -1063,7 +1107,6 @@ def draw(mouse_pos=None):
             label_surf = hud_small_font.render(f"ROCKETS: {rem_rockets}/{player.max_rockets}", True, (200, 225, 255))
             canvas.blit(label_surf, (rocket_ui_x + 8, rocket_ui_y + 5))
             
-            # Missile Icons
             pip_w = 9
             pip_h = 12
             spacing = 13
@@ -1076,7 +1119,6 @@ def draw(mouse_pos=None):
                 else:
                     pygame.draw.rect(canvas, (50, 60, 80), (pip_x, pip_y, pip_w, pip_h), 1, border_radius=2)
 
-        # Radar mode status label in HUD
         mode_col = (0, 220, 200) if player.radar_mode == "CONE" else (255, 170, 40)
         mode_label = hud_small_font.render(f"RADAR: {player.radar_mode}", True, mode_col)
         canvas.blit(mode_label, (rocket_ui_x + 8, rocket_ui_y + 38))
@@ -1103,7 +1145,6 @@ def draw(mouse_pos=None):
         
         minimap_surface = pygame.Surface((mm_size, mm_size), pygame.SRCALPHA)
 
-        # Render tiled background image on minimap bounded to map
         start_col = 0
         end_col = int(math.ceil(MAP_WIDTH / bg_w))
         start_row = 0
@@ -1115,27 +1156,23 @@ def draw(mouse_pos=None):
                 if bx < mm_size and by < mm_size:
                     minimap_surface.blit(minimap_bg_image, (bx, by))
 
-        # Dark overlay
         dim_overlay = pygame.Surface((mm_size, mm_size), pygame.SRCALPHA)
         dim_overlay.fill((0, 0, 0, 90))
         minimap_surface.blit(dim_overlay, (0, 0))
 
-        # 1. Screen Viewport rectangle on minimap (Kamera-Bereich um den Spieler)
+        # Viewport rectangle on minimap
         view_x = camera_x * MINIMAP_SCALE
         view_y = camera_y * MINIMAP_SCALE
         view_w = GAME_WIDTH * MINIMAP_SCALE
         view_h = GAME_HEIGHT * MINIMAP_SCALE
         pygame.draw.rect(minimap_surface, (0, 200, 255, 220), (view_x, view_y, view_w, view_h), 1)
 
-
-
-        # Player dot at exact position on minimap
+        # Player dot
         player_mm_x = (player.pos_x + PLAYER_WIDTH / 2) * MINIMAP_SCALE
         player_mm_y = (player.pos_y + PLAYER_HEIGHT / 2) * MINIMAP_SCALE
 
-        # 3. Visualisierung des aktiven Lock-on Bereichs auf der Minimap
+        # Radar Lock-on Visualisierung auf Minimap
         if player.radar_mode == "CONE":
-            # CONE Modus: Kegel geradeaus nach vorne (Fernbereich)
             cone_len_mm = RADAR_CONE_RANGE * MINIMAP_SCALE
             half_cone = math.radians(RADAR_CONE_ANGLE / 2)
             p_rad = math.radians(player.angle)
@@ -1153,14 +1190,16 @@ def draw(mouse_pos=None):
             pygame.draw.line(minimap_surface, (0, 240, 220, 130), (p1_x, p1_y), (p2_x, p2_y), 1)
 
         elif player.radar_mode == "OMNI":
-            # OMNI Modus: Rundum-Bereich (360°), aber strikt nur im Nahbereich
             omni_r_mm = int(RADAR_OMNI_RANGE * MINIMAP_SCALE)
             pygame.draw.circle(minimap_surface, (255, 140, 40, 190), (int(player_mm_x), int(player_mm_y)), omni_r_mm, 1)
+
+        # Power-ups as glowing dots on minimap
+        powerup_manager.draw_minimap_blips(minimap_surface, MINIMAP_SCALE)
 
         # Player dot (Grün)
         pygame.draw.circle(minimap_surface, (0, 255, 100), (int(player_mm_x), int(player_mm_y)), 4)
 
-        # Enemies as RED dots on minimap
+        # Enemy dot (Rot)
         if not light_enemy.exploding:
             enemy_mm_x = (light_enemy.x + LIGHT_ENEMY_WIDTH / 2) * MINIMAP_SCALE
             enemy_mm_y = (light_enemy.y + LIGHT_ENEMY_HEIGHT / 2) * MINIMAP_SCALE
@@ -1171,6 +1210,9 @@ def draw(mouse_pos=None):
         
         canvas.blit(minimap_surface, (mm_x, mm_y))
 
+        # --- POWER-UP HUD OVERLAY ---
+        powerup_manager.draw_hud(canvas, GAME_WIDTH, GAME_HEIGHT)
+
 
 player = Player()
 light_enemy = Light_Enemy()
@@ -1179,7 +1221,8 @@ player.rockets = []
 explosion_group = pygame.sprite.Group()
 
 
-if __name__ == "__main__":
+def run_game():
+    global game_state, light_enemy
     running = True
     while running:
         canvas_mouse_pos = get_canvas_mouse_pos()
@@ -1198,7 +1241,7 @@ if __name__ == "__main__":
                 if game_state == "":
                     player.add_score()
             if event.type == LIGHT_ENEMY_SHOOT and not light_enemy.exploding:
-                if game_state == "":
+                if game_state == "" and not powerup_manager.is_enemy_frozen():
                     light_enemy.set_shoot()
             if event.type == RELOAD_END:
                 player.used_bullets = 0
@@ -1213,7 +1256,11 @@ if __name__ == "__main__":
             if event.type == INVINCIBLE_END:
                 player.invincible = False
             if event.type == SHIELD_REGENERATION:
-                if player.shield < PLAYER_MAX_SHIELD:
+                if powerup_manager.is_active("shield_bubble"):
+                    max_s = PLAYER_MAX_SHIELD + SHIELD_BUBBLE_BONUS
+                    if player.shield < max_s:
+                        player.shield = min(max_s, player.shield + 2)
+                elif player.shield < PLAYER_MAX_SHIELD:
                     if PLAYER_MAX_SHIELD - player.shield > 1:
                         player.shield += 1
                     else:
@@ -1326,3 +1373,7 @@ if __name__ == "__main__":
         clock.tick(60)
 
     pygame.quit()
+
+
+if __name__ == "__main__":
+    run_game()
