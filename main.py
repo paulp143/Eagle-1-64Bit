@@ -52,9 +52,22 @@ def get_project_root():
     # 5. Known system worktrees & development paths
     candidates.extend([
         r"C:\Users\paul\OneDrive\Desktop\Python\Pygame\Eagle-1-64Bit",
+        r"C:\Users\paul\.gemini\antigravity\worktrees\Eagle-1-64Bit\fix_help_menu_import_error",
+        r"C:\Users\paul\.gemini\antigravity\worktrees\Eagle-1-64Bit\quantum_dust_darts_16h21",
         r"C:\Users\paul\.gemini\antigravity\worktrees\Eagle-1-64Bit\fix_module_import_path",
         r"C:\Users\paul\.gemini\antigravity\worktrees\Eagle-1-64Bit\implement_powerup_weapon_system",
     ])
+
+    # Dynamic scan of Antigravity worktrees if available
+    worktrees_dir = r"C:\Users\paul\.gemini\antigravity\worktrees\Eagle-1-64Bit"
+    if os.path.isdir(worktrees_dir):
+        try:
+            for item in os.listdir(worktrees_dir):
+                full_p = os.path.join(worktrees_dir, item)
+                if os.path.isdir(full_p):
+                    candidates.append(full_p)
+        except Exception:
+            pass
 
     # Normalize candidates: convert file paths to directories, check existence
     clean_candidates = []
@@ -68,17 +81,29 @@ def get_project_root():
             seen.add(norm)
             clean_candidates.append(norm)
 
-    # Priority 1: Contains both powerup_system.py and images directory
+    # Priority 1: Contains help_menu.py, powerup_system.py, and images directory
+    for c in clean_candidates:
+        if (os.path.exists(os.path.join(c, "help_menu.py")) and 
+            os.path.exists(os.path.join(c, "powerup_system.py")) and 
+            os.path.exists(os.path.join(c, "images"))):
+            return c
+
+    # Priority 2: Contains both powerup_system.py and images directory
     for c in clean_candidates:
         if os.path.exists(os.path.join(c, "powerup_system.py")) and os.path.exists(os.path.join(c, "images")):
             return c
 
-    # Priority 2: Contains powerup_system.py
+    # Priority 3: Contains help_menu.py
+    for c in clean_candidates:
+        if os.path.exists(os.path.join(c, "help_menu.py")):
+            return c
+
+    # Priority 4: Contains powerup_system.py
     for c in clean_candidates:
         if os.path.exists(os.path.join(c, "powerup_system.py")):
             return c
 
-    # Priority 3: Contains images directory
+    # Priority 5: Contains images directory
     for c in clean_candidates:
         if os.path.exists(os.path.join(c, "images")):
             return c
@@ -88,6 +113,19 @@ def get_project_root():
 PROJECT_ROOT = get_project_root()
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
+
+# Ensure all candidate paths containing help_menu or powerup_system are in sys.path
+for c in [
+    PROJECT_ROOT,
+    os.getcwd(),
+    #r"C:\Users\paul\OneDrive\Desktop\Python\Pygame\Eagle-1-64Bit",
+    #r"C:\Users\paul\.gemini\antigravity\worktrees\Eagle-1-64Bit\fix_help_menu_import_error",
+    #r"C:\Users\paul\.gemini\antigravity\worktrees\Eagle-1-64Bit\quantum_dust_darts_16h21",
+]:
+    if os.path.isdir(c) and c not in sys.path:
+        if os.path.exists(os.path.join(c, "help_menu.py")) or os.path.exists(os.path.join(c, "powerup_system.py")):
+            sys.path.insert(0, c)
+
 CURRENT_DIR = PROJECT_ROOT
 
 import powerup_system as pus
@@ -115,7 +153,18 @@ from powerup_system import (
     RAPID_FIRE_COOLDOWN_MS,
     RAPID_FIRE_RELOAD_MS,
 )
-from help_menu import HelpMenu
+try:
+    from help_menu import HelpMenu
+except ModuleNotFoundError:
+    # Additional fallback: scan sys.path and known worktrees
+    found_menu = False
+    for p in list(sys.path):
+        if os.path.exists(os.path.join(p, "help_menu.py")):
+            from help_menu import HelpMenu
+            found_menu = True
+            break
+    if not found_menu:
+        raise
 
 
 GAME_WIDTH = 1280
@@ -1514,6 +1563,7 @@ def run_game():
 
                 if (keys[pygame.K_e] or keys[pygame.K_f] or keys[pygame.K_LCTRL]) and not player.rocket_reloading:
                     player.set_shoot_rocket(light_enemy)
+
                 move()
                 draw(canvas_mouse_pos)
             else:
