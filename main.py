@@ -50,11 +50,11 @@ def get_project_root():
             candidates.append(os.path.join(p_dir, "paulp143", "Eagle-1-64Bit"))
 
     # 5. Known system worktrees & development paths
-    #candidates.extend([
-    #    r"C:\Users\paul\OneDrive\Desktop\Python\Pygame\Eagle-1-64Bit",
-    #    r"C:\Users\paul\.gemini\antigravity\worktrees\Eagle-1-64Bit\fix_module_import_path",
-    #    r"C:\Users\paul\.gemini\antigravity\worktrees\Eagle-1-64Bit\implement_powerup_weapon_system",
-    #])
+    candidates.extend([
+        r"C:\Users\paul\OneDrive\Desktop\Python\Pygame\Eagle-1-64Bit",
+        r"C:\Users\paul\.gemini\antigravity\worktrees\Eagle-1-64Bit\fix_module_import_path",
+        r"C:\Users\paul\.gemini\antigravity\worktrees\Eagle-1-64Bit\implement_powerup_weapon_system",
+    ])
 
     # Normalize candidates: convert file paths to directories, check existence
     clean_candidates = []
@@ -115,6 +115,7 @@ from powerup_system import (
     RAPID_FIRE_COOLDOWN_MS,
     RAPID_FIRE_RELOAD_MS,
 )
+from help_menu import HelpMenu
 
 
 GAME_WIDTH = 1280
@@ -386,6 +387,8 @@ game_state = "main_menu"
 pygame.display.set_caption("Eagle 1 64Bit")
 
 powerup_manager = PowerUpManager()
+help_menu = HelpMenu(GAME_WIDTH, GAME_HEIGHT)
+previous_game_state = "main_menu"
 
 def get_canvas_mouse_pos():
     """Skaliert die Mauskoordinaten des Fensters auf die interne Canvas-Auflösung."""
@@ -417,7 +420,20 @@ menu_play_box = TextBox(
     padding=(30, 16),
     border_radius=8,
     centerx=GAME_WIDTH/2,
-    bottom=GAME_HEIGHT/2+50
+    bottom=GAME_HEIGHT/2+35
+)
+
+menu_help_box = TextBox(
+    "Help & Weapons Guide: Press H",
+    font,
+    bg_color=(20, 25, 35),
+    hover_bg_color=(20, 70, 110),
+    border_color=(80, 100, 140),
+    hover_border_color=(0, 220, 255),
+    padding=(26, 14),
+    border_radius=8,
+    centerx=GAME_WIDTH/2,
+    bottom=GAME_HEIGHT/2+90
 )
 
 menu_reset_box = TextBox(
@@ -430,7 +446,7 @@ menu_reset_box = TextBox(
     padding=(24, 12),
     border_radius=8,
     centerx=GAME_WIDTH/2,
-    bottom=GAME_HEIGHT/2+110
+    bottom=GAME_HEIGHT/2+145
 )
 
 pause_title_box = TextBox(
@@ -453,7 +469,20 @@ pause_continue_box = TextBox(
     padding=(30, 16),
     border_radius=8,
     centerx=GAME_WIDTH/2,
-    bottom=GAME_HEIGHT*0.5
+    bottom=GAME_HEIGHT*0.48
+)
+
+pause_help_box = TextBox(
+    "Help & Weapons Guide: Press H",
+    font,
+    bg_color=(20, 25, 35),
+    hover_bg_color=(20, 70, 110),
+    border_color=(80, 100, 140),
+    hover_border_color=(0, 220, 255),
+    padding=(28, 14),
+    border_radius=8,
+    centerx=GAME_WIDTH/2,
+    bottom=GAME_HEIGHT*0.48+60
 )
 
 pause_menu_box = TextBox(
@@ -466,7 +495,7 @@ pause_menu_box = TextBox(
     padding=(30, 16),
     border_radius=8,
     centerx=GAME_WIDTH/2,
-    bottom=GAME_HEIGHT*0.5+65
+    bottom=GAME_HEIGHT*0.48+120
 )
 
 gameover_respawn_box = TextBox(
@@ -479,7 +508,20 @@ gameover_respawn_box = TextBox(
     padding=(30, 16),
     border_radius=8,
     centerx=GAME_WIDTH/2,
-    bottom=GAME_HEIGHT/2
+    bottom=GAME_HEIGHT/2 - 25
+)
+
+gameover_help_box = TextBox(
+    "Press H for Help & Weapons Guide",
+    font,
+    bg_color=(20, 25, 35),
+    hover_bg_color=(20, 70, 110),
+    border_color=(80, 100, 140),
+    hover_border_color=(0, 220, 255),
+    padding=(26, 14),
+    border_radius=8,
+    centerx=GAME_WIDTH/2,
+    bottom=GAME_HEIGHT/2 + 35
 )
 
 gameover_lobby_box = TextBox(
@@ -492,7 +534,7 @@ gameover_lobby_box = TextBox(
     padding=(30, 16),
     border_radius=8,
     centerx=GAME_WIDTH/2,
-    bottom=GAME_HEIGHT/2+60
+    bottom=GAME_HEIGHT/2 + 95
 )
 
 score_box = TextBox("Score: 0", font, centerx=GAME_WIDTH//2, bottom=GAME_HEIGHT-10)
@@ -996,6 +1038,7 @@ def main_menu(mouse_pos=None):
 
     title_box.draw(canvas, mouse_pos)
     menu_play_box.draw(canvas, mouse_pos)
+    menu_help_box.draw(canvas, mouse_pos)
     menu_reset_box.draw(canvas, mouse_pos)
 
 
@@ -1005,6 +1048,7 @@ def pause_menu(mouse_pos=None):
 
     pause_title_box.draw(canvas, mouse_pos)
     pause_continue_box.draw(canvas, mouse_pos)
+    pause_help_box.draw(canvas, mouse_pos)
     pause_menu_box.draw(canvas, mouse_pos)
 
 
@@ -1034,6 +1078,7 @@ def draw(mouse_pos=None):
 
     if player.health <= 0:
         gameover_respawn_box.draw(canvas, mouse_pos)
+        gameover_help_box.draw(canvas, mouse_pos)
         gameover_lobby_box.draw(canvas, mouse_pos)
         
     else:
@@ -1337,10 +1382,18 @@ def run_game():
 
             # Maus-Klick Interaktion für Knöpfe & Raketen-Abschuss
             if event.type == pygame.MOUSEBUTTONDOWN:
-                if game_state == "main_menu":
+                if game_state == "help_menu":
+                    action = help_menu.handle_event(event, canvas_mouse_pos)
+                    if action == "close":
+                        game_state = previous_game_state
+
+                elif game_state == "main_menu":
                     if menu_play_box.is_clicked(event, canvas_mouse_pos):
                         respawn()
                         game_state = ""
+                    elif menu_help_box.is_clicked(event, canvas_mouse_pos):
+                        previous_game_state = "main_menu"
+                        game_state = "help_menu"
                     elif menu_reset_box.is_clicked(event, canvas_mouse_pos):
                         player.highscore = 0
                         add_highscore(player.highscore)
@@ -1349,6 +1402,9 @@ def run_game():
                 elif game_state == "pause_menu":
                     if pause_continue_box.is_clicked(event, canvas_mouse_pos):
                         game_state = ""
+                    elif pause_help_box.is_clicked(event, canvas_mouse_pos):
+                        previous_game_state = "pause_menu"
+                        game_state = "help_menu"
                     elif pause_menu_box.is_clicked(event, canvas_mouse_pos):
                         game_state = "main_menu"
 
@@ -1356,6 +1412,9 @@ def run_game():
                     if player.health <= 0:
                         if gameover_respawn_box.is_clicked(event, canvas_mouse_pos):
                             respawn()
+                        elif gameover_help_box.is_clicked(event, canvas_mouse_pos):
+                            previous_game_state = ""
+                            game_state = "help_menu"
                         elif gameover_lobby_box.is_clicked(event, canvas_mouse_pos):
                             game_state = "main_menu"
                     else:
@@ -1364,25 +1423,42 @@ def run_game():
                             player.set_shoot_rocket(light_enemy)
 
             if event.type == pygame.KEYDOWN:
-                if game_state == "main_menu":
+                if game_state == "help_menu":
+                    action = help_menu.handle_event(event, canvas_mouse_pos)
+                    if action == "close":
+                        game_state = previous_game_state
+
+                elif game_state == "main_menu":
                     if event.key in (pygame.K_LSHIFT, pygame.K_RSHIFT):
                         respawn()
                         game_state = ""
+                    elif event.key == pygame.K_h:
+                        previous_game_state = "main_menu"
+                        game_state = "help_menu"
+
                 elif game_state == "pause_menu":
                     if event.key == pygame.K_p:
                         game_state = ""
+                    elif event.key == pygame.K_h:
+                        previous_game_state = "pause_menu"
+                        game_state = "help_menu"
                     elif event.key == pygame.K_ESCAPE:
                         game_state = "main_menu"
+
                 elif game_state == "":
-                    if event.key == pygame.K_p:
-                        game_state = "pause_menu"
-                    elif event.key == pygame.K_q:
-                        player.toggle_radar_mode()
-                    elif player.health <= 0:
+                    if player.health <= 0:
                         if event.key == pygame.K_r:
                             respawn()
+                        elif event.key == pygame.K_h:
+                            previous_game_state = ""
+                            game_state = "help_menu"
                         elif event.key == pygame.K_SPACE:
                             game_state = "main_menu"
+                    else:
+                        if event.key == pygame.K_p:
+                            game_state = "pause_menu"
+                        elif event.key == pygame.K_q:
+                            player.toggle_radar_mode()
 
         if not running:
             break
@@ -1398,6 +1474,15 @@ def run_game():
 
         elif game_state == "pause_menu":
             pause_menu(canvas_mouse_pos)
+
+        elif game_state == "help_menu":
+            if previous_game_state == "main_menu":
+                main_menu(None)
+            elif previous_game_state == "pause_menu":
+                pause_menu(None)
+            else:
+                draw(None)
+            help_menu.draw(canvas, canvas_mouse_pos)
 
         elif game_state == "":
             if player.health > 0:
