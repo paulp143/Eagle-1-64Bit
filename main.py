@@ -1514,7 +1514,6 @@ def run_game():
 
                 if (keys[pygame.K_e] or keys[pygame.K_f] or keys[pygame.K_LCTRL]) and not player.rocket_reloading:
                     player.set_shoot_rocket(light_enemy)
-
                 move()
                 draw(canvas_mouse_pos)
             else:
