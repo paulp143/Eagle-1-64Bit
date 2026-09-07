@@ -1,11 +1,95 @@
 import pygame 
 import os, random, math, sys
 
-# Ensure script/workspace directory is in sys.path (needed for Jupyter, IDEs, and subdirectories)
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__)) if ("__file__" in locals() or "__file__" in globals()) else os.getcwd()
-if CURRENT_DIR not in sys.path:
-    sys.path.insert(0, CURRENT_DIR)
-sys.path.insert(0, r"C:\Users\paul\.gemini\antigravity\worktrees\Eagle-1-64Bit\implement_powerup_weapon_system")
+# =====================================================================
+# ROBUST PROJECT ROOT & SYS.PATH RESOLUTION
+# Resolves root directory across CLI, Jupyter Notebooks, IDEs, and subdirs
+# =====================================================================
+def get_project_root():
+    """Locates the project root directory containing powerup_system.py and game assets."""
+    candidates = []
+
+    # 1. Directory of current file if available (__file__ is not defined in Jupyter cells)
+    if "__file__" in locals() or "__file__" in globals():
+        try:
+            candidates.append(os.path.dirname(os.path.abspath(__file__)))
+        except Exception:
+            pass
+
+    # 2. Current working directory and its parents (up to 4 levels up)
+    cwd = os.getcwd()
+    candidates.append(cwd)
+    curr = cwd
+    for _ in range(4):
+        parent = os.path.dirname(curr)
+        if parent and parent != curr:
+            candidates.append(parent)
+            curr = parent
+        else:
+            break
+
+    # 3. Common relative project subdirectories
+    search_dirs = list(candidates)
+    subpaths = [
+        "Eagle-1-64Bit",
+        os.path.join("paulp143", "Eagle-1-64Bit"),
+        os.path.join("Python", "Pygame", "Eagle-1-64Bit"),
+        os.path.join("Desktop", "Python", "Pygame", "Eagle-1-64Bit"),
+        os.path.join("OneDrive", "Desktop", "Python", "Pygame", "Eagle-1-64Bit"),
+    ]
+    for base in search_dirs:
+        for sp in subpaths:
+            candidates.append(os.path.join(base, sp))
+
+    # 4. Directories currently in sys.path
+    for p in list(sys.path):
+        if p:
+            p_dir = os.path.dirname(p) if os.path.isfile(p) else p
+            candidates.append(p_dir)
+            candidates.append(os.path.join(p_dir, "Eagle-1-64Bit"))
+            candidates.append(os.path.join(p_dir, "paulp143", "Eagle-1-64Bit"))
+
+    # 5. Known system worktrees & development paths
+    #candidates.extend([
+    #    r"C:\Users\paul\OneDrive\Desktop\Python\Pygame\Eagle-1-64Bit",
+    #    r"C:\Users\paul\.gemini\antigravity\worktrees\Eagle-1-64Bit\fix_module_import_path",
+    #    r"C:\Users\paul\.gemini\antigravity\worktrees\Eagle-1-64Bit\implement_powerup_weapon_system",
+    #])
+
+    # Normalize candidates: convert file paths to directories, check existence
+    clean_candidates = []
+    seen = set()
+    for c in candidates:
+        if not c:
+            continue
+        c_dir = os.path.dirname(c) if os.path.isfile(c) else c
+        norm = os.path.abspath(c_dir)
+        if norm not in seen and os.path.isdir(norm):
+            seen.add(norm)
+            clean_candidates.append(norm)
+
+    # Priority 1: Contains both powerup_system.py and images directory
+    for c in clean_candidates:
+        if os.path.exists(os.path.join(c, "powerup_system.py")) and os.path.exists(os.path.join(c, "images")):
+            return c
+
+    # Priority 2: Contains powerup_system.py
+    for c in clean_candidates:
+        if os.path.exists(os.path.join(c, "powerup_system.py")):
+            return c
+
+    # Priority 3: Contains images directory
+    for c in clean_candidates:
+        if os.path.exists(os.path.join(c, "images")):
+            return c
+
+    return cwd
+
+PROJECT_ROOT = get_project_root()
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+CURRENT_DIR = PROJECT_ROOT
+
 import powerup_system as pus
 from powerup_system import (
     PowerUpManager,
@@ -115,22 +199,7 @@ HEALTH_HEIGHT = 4
 
 
 def get_base_dir():
-    candidates = []
-    try:
-        candidates.append(os.path.dirname(os.path.abspath(__file__)))
-    except Exception:
-        pass
-    candidates.append(os.getcwd())
-    candidates.append(os.path.join(os.getcwd(), "Eagle-1-64Bit"))
-    candidates.append(r"C:\Users\paul\OneDrive\Desktop\Python\Pygame\Eagle-1-64Bit")
-    candidates.append(r"C:\Users\paul\OneDrive\Desktop\Python\Pygame")
-    candidates.append(r"C:\Users\paul\.gemini\antigravity\worktrees\Eagle-1-64Bit\implement_powerup_weapon_system")
-    candidates.append(r"C:\Users\paul\.gemini\antigravity\worktrees\Eagle-1-64Bit\implement_homing_rocket_class")
-
-    for c in candidates:
-        if c and os.path.exists(os.path.join(c, "images")):
-            return c
-    return os.getcwd()
+    return PROJECT_ROOT
 
 BASE_DIR = get_base_dir()
 HIGHSCORE_FILE = os.path.join(BASE_DIR, "data", "highscore.txt")
