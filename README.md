@@ -408,8 +408,7 @@ The codebase is organized into two primary Python modules:
 
 | Asset Filename | Format | Description |
 | :--- | :--- | :--- |
-| `data/highscore.txt` | Plain Text | Contains a single integer representing the all-time highscore. Read at startup and written upon highscore defeat or exit. |
-| `data.csv` | CSV Text | Contains header `name,hightscore` and default row `Paul,0`. Not actively loaded by `main.py`. |
+| `data/highscore.txt` | Plain Text | Contains a single integer representing the all-time highscore. Read at startup and written upon highscore defeat 
 
 ---
 
