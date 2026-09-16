@@ -47,27 +47,9 @@ def get_project_root():
             p_dir = os.path.dirname(p) if os.path.isfile(p) else p
             candidates.append(p_dir)
             candidates.append(os.path.join(p_dir, "Eagle-1-64Bit"))
-            candidates.append(os.path.join(p_dir, "paulp143", "Eagle-1-64Bit"))
-
-    # 5. Known system worktrees & development paths
-    candidates.extend([
-        r"C:\Users\paul\OneDrive\Desktop\Python\Pygame\Eagle-1-64Bit",
-        r"C:\Users\paul\.gemini\antigravity\worktrees\Eagle-1-64Bit\fix_help_menu_import_error",
-        r"C:\Users\paul\.gemini\antigravity\worktrees\Eagle-1-64Bit\quantum_dust_darts_16h21",
-        r"C:\Users\paul\.gemini\antigravity\worktrees\Eagle-1-64Bit\fix_module_import_path",
-        r"C:\Users\paul\.gemini\antigravity\worktrees\Eagle-1-64Bit\implement_powerup_weapon_system",
-    ])
-
-    # Dynamic scan of Antigravity worktrees if available
-    worktrees_dir = r"C:\Users\paul\.gemini\antigravity\worktrees\Eagle-1-64Bit"
-    if os.path.isdir(worktrees_dir):
-        try:
-            for item in os.listdir(worktrees_dir):
-                full_p = os.path.join(worktrees_dir, item)
-                if os.path.isdir(full_p):
-                    candidates.append(full_p)
-        except Exception:
-            pass
+    # 4. Primary known project directories
+    candidates.append(r"C:\Users\paul\OneDrive\Desktop\Python\Pygame\Eagle-1-64Bit")
+    candidates.append(r"C:\Users\paul\.gemini\antigravity\worktrees\Eagle-1-64Bit\improve_enemy_combat_ai")
 
     # Normalize candidates: convert file paths to directories, check existence
     clean_candidates = []
@@ -118,9 +100,8 @@ if PROJECT_ROOT not in sys.path:
 for c in [
     PROJECT_ROOT,
     os.getcwd(),
-    #r"C:\Users\paul\OneDrive\Desktop\Python\Pygame\Eagle-1-64Bit",
-    #r"C:\Users\paul\.gemini\antigravity\worktrees\Eagle-1-64Bit\fix_help_menu_import_error",
-    #r"C:\Users\paul\.gemini\antigravity\worktrees\Eagle-1-64Bit\quantum_dust_darts_16h21",
+    r"C:\Users\paul\OneDrive\Desktop\Python\Pygame\Eagle-1-64Bit",
+    r"C:\Users\paul\.gemini\antigravity\worktrees\Eagle-1-64Bit\improve_enemy_combat_ai",
 ]:
     if os.path.isdir(c) and c not in sys.path:
         if os.path.exists(os.path.join(c, "help_menu.py")) or os.path.exists(os.path.join(c, "powerup_system.py")):
@@ -128,7 +109,7 @@ for c in [
 
 CURRENT_DIR = PROJECT_ROOT
 
-import powerup_system as pus
+import powerup_system as pus  # noqa: F401
 from powerup_system import (
     PowerUpManager,
     POWERUP_DROP_BASE_CHANCE,
@@ -153,19 +134,35 @@ from powerup_system import (
     RAPID_FIRE_COOLDOWN_MS,
     RAPID_FIRE_RELOAD_MS,
 )
+import importlib
 try:
+    if "help_menu" in sys.modules:
+        import help_menu
+        importlib.reload(help_menu)
     from help_menu import HelpMenu
-except ModuleNotFoundError:
-    # Additional fallback: scan sys.path and known worktrees
+except Exception:
+    # Additional fallback: scan sys.path and known paths
     found_menu = False
     for p in list(sys.path):
         if os.path.exists(os.path.join(p, "help_menu.py")):
+            if p not in sys.path:
+                sys.path.insert(0, p)
+            if "help_menu" in sys.modules:
+                import help_menu
+                importlib.reload(help_menu)
             from help_menu import HelpMenu
             found_menu = True
             break
     if not found_menu:
-        raise
+        from help_menu import HelpMenu
 
+from ground_support import (
+    GroundSupportManager,
+    StratagemSelectMenu,
+    SLOW_MO_TIME_SCALE,
+    PLAYER_STEERING_SLOW_MO_FACTOR,
+    WEAPON_SLOT_MAIN_GUN
+)
 
 GAME_WIDTH = 1280
 GAME_HEIGHT = 720
@@ -230,11 +227,26 @@ LIGHT_ENEMY_EXPLOSION_DAMAGE = 5
 LIGHT_ENEMY_EXPLOSION_WIDTH = 50
 LIGHT_ENEMY_EXPLOSION_HEIGHT = 46
 LIGHT_ENEMY_EXPLOSION_TIME = 500
-LIGHT_ENEMY_BULLET_VELOCITY_Y = 4
+LIGHT_ENEMY_BULLET_VELOCITY_Y = 5
+LIGHT_ENEMY_BULLET_SPEED = 5.0
 LIGHT_ENEMY_BULLET_DAMAGE = 1
+LIGHT_ENEMY_SPEED = 2.5
+LIGHT_ENEMY_TURN_RATE = 2.0
+LIGHT_ENEMY_ALIGNMENT_THRESHOLD = 15.0
 LIGHT_ENEMY_VELOCITY_X = 2
 LIGHT_ENEMY_VELOCITY_Y = 2
 LIGHT_ENEMY_DROP_CHANCES = 40
+
+MAX_WAVE_LEVEL = 10
+MAX_ENEMIES_PER_WAVE = 8
+ENEMY_AGRO_RADIUS = 1000.0
+ENEMY_DEAGRO_RADIUS = 1500.0
+ENEMY_PATROL_SPEED = 2.0
+ENEMY_AGRO_SPEED = 3.2
+ENEMY_SEPARATION_RADIUS = 70.0
+ENEMY_FORMATION_SPACING = 90.0
+WAVE_INTERMISSION_TIME = 3000
+ADRENALINE_HEALTH_THRESHOLD = 2
 
 MINIMAP_SIZE = 160
 MINIMAP_SCALE = MINIMAP_SIZE / MAP_WIDTH
@@ -436,8 +448,302 @@ game_state = "main_menu"
 pygame.display.set_caption("Eagle 1 64Bit")
 
 powerup_manager = PowerUpManager()
+ground_support_manager = GroundSupportManager()
 help_menu = HelpMenu(GAME_WIDTH, GAME_HEIGHT)
 previous_game_state = "main_menu"
+
+# =====================================================================
+# MISSION SELECTION SYSTEM & FOCUSED OPERATION CONFIGURATIONS
+# =====================================================================
+
+class MissionType:
+    AIR_SUPERIORITY = "air_superiority"
+    BASE_DEFENSE = "base_defense"
+    STRIDER_RAID = "strider_raid"
+    OUTPOST_DEMOLITION = "outpost_demolition"
+    ENDLESS_WAR = "endless_war"
+
+MISSION_CONFIGS = {
+    MissionType.AIR_SUPERIORITY: {
+        "id": MissionType.AIR_SUPERIORITY,
+        "name": "AIR SUPERIORITY",
+        "category": "AERIAL OPERATIONS",
+        "desc": "Hold the airspace against 5 waves of Automaton fighter squadrons. Ground hostiles disabled.",
+        "difficulty": "MEDIUM",
+        "has_ground": False,
+        "has_fabricators": False,
+        "has_strider": False,
+        "has_bombers": False,
+        "has_base": False,
+        "max_waves": 5,
+        "icon_color": (0, 220, 255)
+    },
+    MissionType.BASE_DEFENSE: {
+        "id": MissionType.BASE_DEFENSE,
+        "name": "ORBITAL BASE DEFENSE",
+        "category": "AERIAL OPERATIONS",
+        "desc": "Protect the orbital defense station against waves of heavy Automaton Bombers.",
+        "difficulty": "HARD",
+        "has_ground": False,
+        "has_fabricators": False,
+        "has_strider": False,
+        "has_bombers": True,
+        "has_base": True,
+        "max_waves": 3,
+        "icon_color": (255, 140, 0)
+    },
+    MissionType.STRIDER_RAID: {
+        "id": MissionType.STRIDER_RAID,
+        "name": "FACTORY STRIDER RAID",
+        "category": "GROUND OPERATIONS",
+        "desc": "Support Helldivers to destroy a colossal 6-legged Factory Strider walking fortress.",
+        "difficulty": "EXTREME",
+        "has_ground": True,
+        "has_fabricators": False,
+        "has_strider": True,
+        "has_bombers": False,
+        "has_base": False,
+        "max_waves": 1,
+        "icon_color": (255, 60, 60)
+    },
+    MissionType.OUTPOST_DEMOLITION: {
+        "id": MissionType.OUTPOST_DEMOLITION,
+        "name": "OUTPOST DEMOLITION",
+        "category": "GROUND OPERATIONS",
+        "desc": "Demolish 3 Automaton Fabricator foundries and evacuate via Pelican-1.",
+        "difficulty": "HARD",
+        "has_ground": True,
+        "has_fabricators": True,
+        "has_strider": False,
+        "has_bombers": False,
+        "has_base": False,
+        "max_waves": 2,
+        "target_fabs": 3,
+        "icon_color": (255, 215, 0)
+    },
+    MissionType.ENDLESS_WAR: {
+        "id": MissionType.ENDLESS_WAR,
+        "name": "ENDLESS WAR",
+        "category": "TOTAL COMBAT",
+        "desc": "Combined full-scale operation featuring waves, Helldivers, fabricators, and air strikes.",
+        "difficulty": "CHALLENGING",
+        "has_ground": True,
+        "has_fabricators": True,
+        "has_strider": False,
+        "has_bombers": False,
+        "has_base": False,
+        "max_waves": 999,
+        "icon_color": (180, 100, 255)
+    }
+}
+
+active_mission_config = MISSION_CONFIGS[MissionType.ENDLESS_WAR]
+
+
+class BomberEnemy(pygame.Rect):
+    """Heavy Automaton aerial bomber targeting friendly orbital bases or structures."""
+    def __init__(self, x=None, y=None):
+        rx = x if x is not None else random.randint(300, MAP_WIDTH - 300)
+        ry = y if y is not None else -80.0
+        pygame.Rect.__init__(self, int(rx), int(ry), 64, 52)
+        self.pos_x = float(rx)
+        self.pos_y = float(ry)
+        self.speed = 1.8
+        self.max_health = 160.0
+        self.health = 160.0
+        self.exploding = False
+        self.score_value = 150
+        self.angle = 180.0
+        self.bullet_damage = 15.0
+
+    def update(self, target_pos=(1500, 1500), speed_factor=1.0):
+        if self.exploding:
+            return
+        tx, ty = target_pos
+        dx = tx - (self.pos_x + 32)
+        dy = ty - (self.pos_y + 26)
+        dist = max(1.0, math.hypot(dx, dy))
+
+        desired_angle = math.degrees(math.atan2(-dx, -dy)) % 360
+        self.angle = desired_angle
+
+        self.pos_x += (dx / dist) * self.speed * speed_factor
+        self.pos_y += (dy / dist) * self.speed * speed_factor
+        self.x = int(self.pos_x)
+        self.y = int(self.pos_y)
+
+    def draw(self, surface, camera_x, camera_y):
+        if self.exploding:
+            return
+        sx = self.pos_x - camera_x
+        sy = self.pos_y - camera_y
+        if -100 <= sx <= GAME_WIDTH + 100 and -100 <= sy <= GAME_HEIGHT + 100:
+            surf = pygame.Surface((64, 52), pygame.SRCALPHA)
+            pygame.draw.polygon(surf, (35, 40, 55), [(32, 0), (64, 40), (48, 52), (16, 52), (0, 40)])
+            pygame.draw.polygon(surf, (255, 60, 40), [(32, 0), (64, 40), (48, 52), (16, 52), (0, 40)], 2)
+            pulse = int(180 + 75 * math.sin(pygame.time.get_ticks() * 0.01))
+            pygame.draw.circle(surf, (255, pulse // 3, 20), (32, 28), 6)
+            rot_surf = pygame.transform.rotate(surf, self.angle)
+            rect = rot_surf.get_rect(center=(sx + 32, sy + 26))
+            surface.blit(rot_surf, rect.topleft)
+            # Health Bar
+            bar_w = 48
+            bx = sx + 8
+            by = sy - 8
+            pygame.draw.rect(surface, (15, 20, 30), (bx, by, bar_w, 4))
+            hp_w = max(0, int((self.health / self.max_health) * bar_w))
+            pygame.draw.rect(surface, (255, 60, 60), (bx, by, hp_w, 4))
+
+
+class OrbitalBase(pygame.Rect):
+    """Stationary friendly orbital command base structure."""
+    def __init__(self, x=1500, y=1500):
+        pygame.Rect.__init__(self, int(x - 60), int(y - 60), 120, 120)
+        self.pos_x = float(x - 60)
+        self.pos_y = float(y - 60)
+        self.max_health = 300.0
+        self.health = 300.0
+        self.max_shield = 100.0
+        self.shield = 100.0
+
+    @property
+    def is_alive(self):
+        return self.health > 0
+
+    def take_damage(self, amount):
+        if self.shield > 0:
+            if self.shield >= amount:
+                self.shield -= amount
+                return
+            else:
+                amount -= self.shield
+                self.shield = 0.0
+        self.health = max(0.0, self.health - amount)
+
+    def draw(self, surface, camera_x, camera_y, font):
+        sx = self.pos_x - camera_x
+        sy = self.pos_y - camera_y
+        if -200 <= sx <= GAME_WIDTH + 200 and -200 <= sy <= GAME_HEIGHT + 200:
+            cx, cy = sx + 60, sy + 60
+            if self.shield > 0:
+                pygame.draw.circle(surface, (0, 220, 255), (int(cx), int(cy)), 75, 2)
+            pygame.draw.circle(surface, (28, 35, 50), (int(cx), int(cy)), 55)
+            pygame.draw.circle(surface, (0, 220, 255), (int(cx), int(cy)), 55, 3)
+            pygame.draw.circle(surface, (60, 80, 110), (int(cx), int(cy)), 30)
+            angle = pygame.time.get_ticks() * 0.05
+            rad = math.radians(angle)
+            rx = cx + math.cos(rad) * 45
+            ry = cy + math.sin(rad) * 45
+            pygame.draw.line(surface, (0, 255, 180), (cx, cy), (rx, ry), 2)
+            bar_w = 100
+            bx = cx - 50
+            by = sy - 18
+            pygame.draw.rect(surface, (15, 20, 30), (bx, by, bar_w, 6))
+            hp_w = max(0, int((self.health / self.max_health) * bar_w))
+            pygame.draw.rect(surface, (46, 204, 113), (bx, by, hp_w, 6))
+            if self.shield > 0:
+                sh_w = max(0, int((self.shield / self.max_shield) * bar_w))
+                pygame.draw.rect(surface, (0, 220, 255), (bx, by - 4, sh_w, 3))
+
+
+class MissionSelectMenu:
+    """Tactical Operational Mission Selection Interface."""
+    def __init__(self):
+        self.card_rects = {}
+
+    def handle_event(self, event, mouse_pos=None):
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_1:
+                return MISSION_CONFIGS[MissionType.AIR_SUPERIORITY]
+            elif event.key == pygame.K_2:
+                return MISSION_CONFIGS[MissionType.BASE_DEFENSE]
+            elif event.key == pygame.K_3:
+                return MISSION_CONFIGS[MissionType.STRIDER_RAID]
+            elif event.key == pygame.K_4:
+                return MISSION_CONFIGS[MissionType.OUTPOST_DEMOLITION]
+            elif event.key == pygame.K_5:
+                return MISSION_CONFIGS[MissionType.ENDLESS_WAR]
+            elif event.key == pygame.K_ESCAPE:
+                return "back_to_menu"
+
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and mouse_pos:
+            for m_id, rect in self.card_rects.items():
+                if rect.collidepoint(mouse_pos):
+                    return MISSION_CONFIGS[m_id]
+
+        return None
+
+    def draw(self, surface, mouse_pos=None):
+        bg_surf = pygame.Surface((GAME_WIDTH, GAME_HEIGHT), pygame.SRCALPHA)
+        bg_surf.fill((10, 14, 22, 245))
+        surface.blit(bg_surf, (0, 0))
+
+        title_font_lg = pygame.font.SysFont("arial", 28, bold=True)
+        sub_font = pygame.font.SysFont("arial", 13)
+        title_txt = title_font_lg.render("TACTICAL OPERATION SELECTOR", True, (0, 220, 255))
+        surface.blit(title_txt, (GAME_WIDTH // 2 - title_txt.get_width() // 2, 25))
+
+        sub_txt = sub_font.render("SELECT A FOCUSED OPERATION TO DEPLOY (HOTKEYS 1-5 OR CLICK CARD)", True, (160, 185, 210))
+        surface.blit(sub_txt, (GAME_WIDTH // 2 - sub_txt.get_width() // 2, 58))
+
+        card_w = 360
+        card_h = 160
+        card_positions = [
+            (240, 95, MissionType.AIR_SUPERIORITY),
+            (680, 95, MissionType.BASE_DEFENSE),
+            (240, 275, MissionType.STRIDER_RAID),
+            (680, 275, MissionType.OUTPOST_DEMOLITION),
+            (460, 455, MissionType.ENDLESS_WAR),
+        ]
+
+        self.card_rects.clear()
+
+        for idx, (cx, cy, m_id) in enumerate(card_positions):
+            config = MISSION_CONFIGS[m_id]
+            rect = pygame.Rect(cx, cy, card_w, card_h)
+            self.card_rects[m_id] = rect
+
+            is_hover = mouse_pos and rect.collidepoint(mouse_pos)
+            bg_col = (25, 34, 48) if not is_hover else (38, 52, 75)
+            border_col = config["icon_color"] if is_hover else (70, 95, 130)
+
+            pygame.draw.rect(surface, bg_col, rect, border_radius=8)
+            pygame.draw.rect(surface, border_col, rect, 2 if not is_hover else 3, border_radius=8)
+
+            key_txt = hud_small_font.render(f"[{idx+1}]", True, (255, 215, 0))
+            surface.blit(key_txt, (cx + 12, cy + 10))
+
+            cat_txt = hud_small_font.render(config["category"], True, config["icon_color"])
+            surface.blit(cat_txt, (cx + 42, cy + 10))
+
+            name_txt = font.render(config["name"], True, (255, 255, 255))
+            surface.blit(name_txt, (cx + 12, cy + 28))
+
+            diff_col = (46, 204, 113) if config["difficulty"] == "MEDIUM" else (241, 196, 15) if config["difficulty"] == "HARD" else (231, 76, 60)
+            diff_txt = hud_small_font.render(f"DIFFICULTY: {config['difficulty']}", True, diff_col)
+            surface.blit(diff_txt, (cx + card_w - diff_txt.get_width() - 12, cy + 10))
+
+            words = config["desc"].split(" ")
+            line1 = " ".join(words[:len(words)//2 + 1])
+            line2 = " ".join(words[len(words)//2 + 1:])
+            l1_surf = hud_small_font.render(line1, True, (190, 210, 230))
+            l2_surf = hud_small_font.render(line2, True, (190, 210, 230))
+            surface.blit(l1_surf, (cx + 12, cy + 65))
+            surface.blit(l2_surf, (cx + 12, cy + 82))
+
+            btn_col = (0, 220, 255) if is_hover else (120, 150, 180)
+            btn_txt = hud_small_font.render("CLICK TO DEPLOY MISSION ▶", True, btn_col)
+            surface.blit(btn_txt, (cx + card_w // 2 - btn_txt.get_width() // 2, cy + card_h - 22))
+
+        esc_txt = sub_font.render("PRESS ESC TO RETURN TO MAIN MENU", True, (140, 160, 180))
+        surface.blit(esc_txt, (GAME_WIDTH // 2 - esc_txt.get_width() // 2, GAME_HEIGHT - 30))
+
+
+mission_select_menu = MissionSelectMenu()
+stratagem_select_menu = StratagemSelectMenu()
+pending_mission_config = None
+bomber_enemies = []
+orbital_base = None
 
 def get_canvas_mouse_pos():
     """Skaliert die Mauskoordinaten des Fensters auf die interne Canvas-Auflösung."""
@@ -838,11 +1144,15 @@ class Player(pygame.Rect):
                 self.bullets.append(Player.Bullet(bx, by, self.angle))
 
             cooldown = RAPID_FIRE_COOLDOWN_MS if powerup_manager.is_active("rapid_fire") else BULLET_SHOOTING_TIMER
+            if self.health <= ADRENALINE_HEALTH_THRESHOLD:
+                cooldown = max(50, int(cooldown * 0.75))
             pygame.time.set_timer(SHOOTING_END, cooldown, 1)
 
         elif self.used_bullets >= self.max_bullets:
             self.reloading = True
             reload_delay = RAPID_FIRE_RELOAD_MS if powerup_manager.is_active("rapid_fire") else self.reloading_time
+            if self.health <= ADRENALINE_HEALTH_THRESHOLD:
+                reload_delay = max(1000, int(reload_delay * 0.75))
             pygame.time.set_timer(RELOAD_END, reload_delay, 1)
 
     def set_shoot_rocket(self, target=None):
@@ -867,7 +1177,16 @@ class Player(pygame.Rect):
             rx = cx + rot_x - ROCKET_WIDTH / 2
             ry = cy + rot_y - ROCKET_HEIGHT / 2
 
-            target_to_lock = target if (target and self.is_enemy_in_lock_zone(target)) else None
+            if isinstance(target, (list, tuple)):
+                locked = [t for t in target if self.is_enemy_in_lock_zone(t)]
+                if locked:
+                    locked.sort(key=lambda t: math.hypot(t.x - self.pos_x, t.y - self.pos_y))
+                    target_to_lock = locked[0]
+                else:
+                    target_to_lock = None
+            else:
+                target_to_lock = target if (target and self.is_enemy_in_lock_zone(target)) else None
+
             new_rocket = Player.Rocket(rx, ry, self.angle, target=target_to_lock)
             self.rockets.append(new_rocket)
 
@@ -906,43 +1225,326 @@ class Player(pygame.Rect):
         )
 
 
+class HealthDrop(pygame.Rect):
+    def __init__(self, x, y):
+        pygame.Rect.__init__(self, int(x - 12), int(y - 12), 24, 24)
+        self.image = pygame.transform.scale(health_image, (24, 24))
+        self.pos_x = float(x - 12)
+        self.pos_y = float(y - 12)
+        self.used = False
+        self.spawn_time = pygame.time.get_ticks()
+        self.lifetime = 15000
+
+
 class Light_Enemy(pygame.Rect):
     class Bullet(pygame.Rect):
-        def __init__(self, x, y):
-            pygame.Rect.__init__(self, x, y, BULLET_WIDTH, BULLET_HEIGHT)
-            self.image = bullet_image 
+        def __init__(self, x, y, angle=0.0, speed=LIGHT_ENEMY_BULLET_SPEED):
+            pygame.Rect.__init__(self, int(x), int(y), BULLET_WIDTH, BULLET_HEIGHT)
+            self.pos_x = float(x)
+            self.pos_y = float(y)
+            self.angle = angle
+            self.speed = speed
+            self.image = pygame.transform.rotate(enemy_bullet_image, angle)
             self.used = False
-            self.velocity_y = LIGHT_ENEMY_BULLET_VELOCITY_Y
+            rad = math.radians(angle)
+            self.dx = math.sin(rad) * self.speed
+            self.dy = math.cos(rad) * self.speed
+            self.velocity_y = self.dy
 
-    def __init__(self, x=None, y=None):
+        def update_position(self, speed_factor=1.0):
+            self.pos_x += self.dx * speed_factor
+            self.pos_y += self.dy * speed_factor
+            self.x = int(self.pos_x)
+            self.y = int(self.pos_y)
+
+    def __init__(self, x=None, y=None, squadron_id=0, orbit_direction=1, orbit_radius=950.0, formation_offset=(0.0, 0.0)):
         if x is None or y is None:
             if x is None:
                 x = random.randrange(100, MAP_WIDTH - LIGHT_ENEMY_WIDTH - 100, LIGHT_ENEMY_WIDTH * 2)
             if y is None:
                 y = random.randrange(100, 400)
         pygame.Rect.__init__(self, int(x), int(y), LIGHT_ENEMY_WIDTH, LIGHT_ENEMY_HEIGHT)
+        self.pos_x = float(x)
+        self.pos_y = float(y)
+        self.x = int(x)
+        self.y = int(y)
+        self.original_image = light_enemy_image
         self.image = light_enemy_image
+        self.angle = 0.0
+        self.turn_rate = LIGHT_ENEMY_TURN_RATE
+        self.speed = ENEMY_PATROL_SPEED
         self.health = LIGHT_ENEMY_HEALTH
-        self.velocity_y = 2
         self.used = False
         self.bullets = []
         self.shooting = False
         self.explosion_damage = LIGHT_ENEMY_EXPLOSION_DAMAGE
         self.exploding = False
         self.bullet_damage = LIGHT_ENEMY_BULLET_DAMAGE
-        self.x = int(x)
-        self.y = int(y)
         self.velocity_x = float(LIGHT_ENEMY_VELOCITY_X)
         self.velocity_y = float(LIGHT_ENEMY_VELOCITY_Y)
-        
-    def set_shoot(self):
-        bullet_x = self.x + (LIGHT_ENEMY_WIDTH // 2) - (BULLET_WIDTH // 2)
-        bullet_y = self.y + LIGHT_ENEMY_HEIGHT
-        self.bullets.append(Light_Enemy.Bullet(bullet_x, bullet_y))
+
+        # Squadron & AI State
+        self.squadron_id = squadron_id
+        self.state = "PATROL"  # "PATROL" or "AGRO"
+        self.orbit_direction = orbit_direction
+        self.orbit_radius = orbit_radius
+        self.formation_offset = formation_offset
+        self.orbit_angle = math.degrees(math.atan2(self.pos_x - MAP_WIDTH / 2, self.pos_y - MAP_HEIGHT / 2))
+
+    def trigger_agro(self, enemies=None):
+        self.state = "AGRO"
+        if enemies:
+            for other in enemies:
+                if getattr(other, 'squadron_id', None) == self.squadron_id and not getattr(other, 'exploding', False):
+                    other.state = "AGRO"
+
+    def update(self, target_player=None, enemies=None, speed_factor=1.0):
+        if self.exploding:
+            return
+
+        target = target_player if target_player is not None else player
+        if target is not None and target.health > 0:
+            cx = self.pos_x + LIGHT_ENEMY_WIDTH / 2
+            cy = self.pos_y + LIGHT_ENEMY_HEIGHT / 2
+            pcx = target.pos_x + PLAYER_WIDTH / 2
+            pcy = target.pos_y + PLAYER_HEIGHT / 2
+            dist_to_player = math.hypot(pcx - cx, pcy - cy)
+
+            # Check Agro Radius
+            if self.state == "PATROL":
+                if dist_to_player <= ENEMY_AGRO_RADIUS:
+                    self.trigger_agro(enemies)
+            elif self.state == "AGRO":
+                if dist_to_player > ENEMY_DEAGRO_RADIUS:
+                    self.state = "PATROL"
+
+            # Determine target angle & speed by state
+            if self.state == "AGRO":
+                self.speed = ENEMY_AGRO_SPEED
+                dx = pcx - cx
+                dy = pcy - cy
+                target_angle = math.degrees(math.atan2(dx, dy))
+            else:
+                self.speed = ENEMY_PATROL_SPEED
+                angular_speed = (self.speed / max(100.0, self.orbit_radius)) * (180.0 / math.pi) * self.orbit_direction * speed_factor
+                self.orbit_angle = (self.orbit_angle + angular_speed) % 360
+                orbit_rad = math.radians(self.orbit_angle)
+
+                map_cx = MAP_WIDTH / 2
+                map_cy = MAP_HEIGHT / 2
+                waypoint_x = map_cx + math.sin(orbit_rad) * self.orbit_radius + self.formation_offset[0]
+                waypoint_y = map_cy + math.cos(orbit_rad) * self.orbit_radius + self.formation_offset[1]
+
+                dx = waypoint_x - cx
+                dy = waypoint_y - cy
+                target_angle = math.degrees(math.atan2(dx, dy))
+
+            # Rotate enemy sprite so it turns to face heading
+            angle_diff = (target_angle - self.angle + 180) % 360 - 180
+            effective_turn_rate = self.turn_rate * speed_factor
+            if abs(angle_diff) <= effective_turn_rate:
+                self.angle = target_angle
+            elif angle_diff > 0:
+                self.angle += effective_turn_rate
+            else:
+                self.angle -= effective_turn_rate
+            self.angle = (self.angle + 180) % 360 - 180
+
+        self.image = pygame.transform.rotate(self.original_image, self.angle)
+
+        # Move enemy forward along its facing direction
+        effective_speed = self.speed * speed_factor
+        rad = math.radians(self.angle)
+        self.pos_x += math.sin(rad) * effective_speed
+        self.pos_y += math.cos(rad) * effective_speed
+
+        # Flocking separation from other enemies
+        if enemies:
+            for other in enemies:
+                if other is not self and not getattr(other, 'exploding', False):
+                    diff_x = self.pos_x - other.pos_x
+                    diff_y = self.pos_y - other.pos_y
+                    sep_dist = math.hypot(diff_x, diff_y)
+                    if 0.001 < sep_dist < ENEMY_SEPARATION_RADIUS:
+                        push = ((ENEMY_SEPARATION_RADIUS - sep_dist) / ENEMY_SEPARATION_RADIUS) * 1.5 * speed_factor
+                        self.pos_x += (diff_x / sep_dist) * push
+                        self.pos_y += (diff_y / sep_dist) * push
+
+        # Soft containment inside map
+        margin = 120
+        if self.pos_x < margin:
+            self.pos_x += 2.0
+        elif self.pos_x > MAP_WIDTH - margin - LIGHT_ENEMY_WIDTH:
+            self.pos_x -= 2.0
+        if self.pos_y < margin:
+            self.pos_y += 2.0
+        elif self.pos_y > MAP_HEIGHT - margin - LIGHT_ENEMY_HEIGHT:
+            self.pos_y -= 2.0
+
+        self.x = int(self.pos_x)
+        self.y = int(self.pos_y)
+
+    def set_shoot(self, target_player=None):
+        if self.exploding or self.state != "AGRO":
+            return
+
+        target = target_player if target_player is not None else player
+        if target is None or target.health <= 0:
+            return
+
+        # Vector from enemy to player
+        dx = (target.pos_x + PLAYER_WIDTH / 2) - (self.pos_x + LIGHT_ENEMY_WIDTH / 2)
+        dy = (target.pos_y + PLAYER_HEIGHT / 2) - (self.pos_y + LIGHT_ENEMY_HEIGHT / 2)
+        target_angle = math.degrees(math.atan2(dx, dy))
+
+        # Check angle difference between enemy's facing angle and line of sight to player
+        angle_diff = (target_angle - self.angle + 180) % 360 - 180
+        if abs(angle_diff) <= LIGHT_ENEMY_ALIGNMENT_THRESHOLD:
+            # Spawn bullet at enemy's nose facing the aiming angle
+            rad = math.radians(self.angle)
+            cx = self.pos_x + LIGHT_ENEMY_WIDTH / 2
+            cy = self.pos_y + LIGHT_ENEMY_HEIGHT / 2
+            nose_dist = LIGHT_ENEMY_HEIGHT / 2
+            bullet_cx = cx + math.sin(rad) * nose_dist
+            bullet_cy = cy + math.cos(rad) * nose_dist
+            bullet_x = bullet_cx - BULLET_WIDTH / 2
+            bullet_y = bullet_cy - BULLET_HEIGHT / 2
+            self.bullets.append(Light_Enemy.Bullet(bullet_x, bullet_y, self.angle))
+
+
+class WaveManager:
+    def __init__(self):
+        self.wave = 1
+        self.enemies = []
+        self.state = "ACTIVE"  # "ACTIVE", "INTERMISSION"
+        self.intermission_timer = 0
+        self.wave_announcement = "WAVE 1"
+        self.announcement_timer = 180
+        self.spawn_wave(1)
+
+    def spawn_wave(self, wave_num):
+        max_w = active_mission_config.get("max_waves", MAX_WAVE_LEVEL)
+        self.wave = min(wave_num, max_w)
+        self.enemies.clear()
+        self.state = "ACTIVE"
+        self.wave_announcement = f"WAVE {self.wave}"
+        self.announcement_timer = 150
+
+        if active_mission_config.get("has_bombers"):
+            # Base defense mission: spawn heavy Automaton Bombers
+            bomber_enemies.clear()
+            for b_idx in range(min(4, self.wave + 1)):
+                bx = random.randint(400, MAP_WIDTH - 400)
+                by = random.randint(100, 400)
+                bomber_enemies.append(BomberEnemy(bx, by))
+            return
+
+        if active_mission_config.get("id") == MissionType.STRIDER_RAID:
+            # Factory Strider Raid: focused ground boss fight
+            return
+
+        if self.wave == 1:
+            squad_configs = [3]
+        elif self.wave == 2:
+            squad_configs = [4]
+        elif self.wave == 3:
+            squad_configs = [3, 3]
+        else:
+            squad_configs = [4, 4]
+
+        total_enemies = 0
+        for s_idx, squad_size in enumerate(squad_configs):
+            if total_enemies + squad_size > MAX_ENEMIES_PER_WAVE:
+                squad_size = MAX_ENEMIES_PER_WAVE - total_enemies
+            if squad_size <= 0:
+                break
+
+            angle_offset = s_idx * math.pi + (self.wave * 0.6)
+            base_dist = 1000.0
+            center_x = MAP_WIDTH / 2 + math.sin(angle_offset) * base_dist
+            center_y = MAP_HEIGHT / 2 + math.cos(angle_offset) * base_dist
+            center_x = max(200, min(MAP_WIDTH - 200, center_x))
+            center_y = max(200, min(MAP_HEIGHT - 200, center_y))
+
+            orbit_dir = 1 if s_idx % 2 == 0 else -1
+            orbit_radius = 850.0 + s_idx * 150.0
+
+            for m_idx in range(squad_size):
+                row = (m_idx + 1) // 2
+                col_side = -1 if (m_idx % 2 == 1) else 1
+                if m_idx == 0:
+                    form_x, form_y = 0.0, 0.0
+                else:
+                    form_x = col_side * row * 55.0
+                    form_y = -row * 50.0
+
+                ex = center_x + form_x
+                ey = center_y + form_y
+                enemy = Light_Enemy(
+                    x=ex, y=ey,
+                    squadron_id=s_idx,
+                    orbit_direction=orbit_dir,
+                    orbit_radius=orbit_radius,
+                    formation_offset=(form_x, form_y)
+                )
+                self.enemies.append(enemy)
+                total_enemies += 1
+
+    def get_closest_enemy(self, player):
+        living = [e for e in self.enemies if not getattr(e, 'exploding', False) and getattr(e, 'health', 0) > 0]
+        if not living:
+            return None
+        pcx = player.pos_x + PLAYER_WIDTH / 2
+        pcy = player.pos_y + PLAYER_HEIGHT / 2
+        living.sort(key=lambda e: math.hypot((e.x + LIGHT_ENEMY_WIDTH / 2) - pcx, (e.y + LIGHT_ENEMY_HEIGHT / 2) - pcy))
+        return living[0]
+
+    def update(self, player):
+        if self.announcement_timer > 0:
+            self.announcement_timer -= 1
+
+        if active_mission_config.get("has_bombers"):
+            living_bombers = [b for b in bomber_enemies if not b.exploding]
+            if self.state == "ACTIVE" and len(living_bombers) == 0:
+                self.state = "INTERMISSION"
+                self.intermission_timer = pygame.time.get_ticks() + WAVE_INTERMISSION_TIME
+                self.wave_announcement = f"BOMBER WAVE {self.wave} REPELLED!"
+                self.announcement_timer = 180
+                wave_bonus = self.wave * 300
+                player.score += wave_bonus
+                ground_support_manager.on_wave_cleared(self.wave, player)
+            elif self.state == "INTERMISSION":
+                if pygame.time.get_ticks() >= self.intermission_timer:
+                    next_wave = self.wave + 1
+                    max_w = active_mission_config.get("max_waves", 3)
+                    if next_wave <= max_w:
+                        self.spawn_wave(next_wave)
+            return
+
+        if active_mission_config.get("id") == MissionType.STRIDER_RAID:
+            return
+
+        living_enemies = [e for e in self.enemies if not getattr(e, 'exploding', False)]
+
+        if self.state == "ACTIVE" and len(living_enemies) == 0:
+            self.state = "INTERMISSION"
+            self.intermission_timer = pygame.time.get_ticks() + WAVE_INTERMISSION_TIME
+            self.wave_announcement = f"WAVE {self.wave} CLEARED!"
+            self.announcement_timer = 180
+            wave_bonus = self.wave * 250
+            player.score += wave_bonus
+            ground_support_manager.on_wave_cleared(self.wave, player)
+
+        elif self.state == "INTERMISSION":
+            if pygame.time.get_ticks() >= self.intermission_timer:
+                next_wave = self.wave + 1
+                max_w = active_mission_config.get("max_waves", MAX_WAVE_LEVEL)
+                if next_wave <= max_w:
+                    self.spawn_wave(next_wave)
 
 
 def move():
-    global light_enemy
+    global light_enemy, wave_manager, health_drops
     global explosion_group
     if player.health <= 0:
         return
@@ -964,22 +1566,88 @@ def move():
     # Check score milestones for guaranteed drops
     powerup_manager.check_milestones(player.score, player.pos_x, player.pos_y)
 
+    # Primary enemy for single-target powerups (escort drone, lock-on)
+    primary_enemy = wave_manager.get_closest_enemy(player)
+    light_enemy = primary_enemy
+
     # Update power-up subsystem (buff timers, drops, drone, micro-missiles, popups)
-    powerup_manager.update(1.0 / 60.0, player, light_enemy)
+    powerup_manager.update(1.0 / 60.0, player, primary_enemy)
+
+    # Update ground support subsystem (Helldivers, airstrikes, supply drops, danger alerts)
+    ground_support_manager.update(1.0 / 60.0, player, wave_manager.enemies, explosion_group, large_explosion_a_spritesheet.frames)
+
+    # Update Bomber Enemies & Orbital Base Defense
+    if active_mission_config.get("has_bombers"):
+        target_pt = (orbital_base.pos_x + 60, orbital_base.pos_y + 60) if (orbital_base and orbital_base.is_alive) else (player.pos_x, player.pos_y)
+        for bomber in list(bomber_enemies):
+            if not bomber.exploding:
+                b_speed_mult = SLOW_MO_TIME_SCALE if ground_support_manager.is_slow_mo else 1.0
+                bomber.update(target_pt, speed_factor=b_speed_mult)
+                if orbital_base and orbital_base.is_alive and math.hypot((bomber.pos_x + 32) - target_pt[0], (bomber.pos_y + 26) - target_pt[1]) <= 65.0:
+                    orbital_base.take_damage(bomber.bullet_damage)
+                    bomber.exploding = True
+                    explosion_group.add(Large_explosion_a(bomber.pos_x + 32, bomber.pos_y + 26, large_explosion_a_spritesheet.frames))
+                    ground_support_manager.add_combat_popup("BASE UNDER ATTACK!", orbital_base.pos_x + 60, orbital_base.pos_y, (255, 60, 60))
+
+                if bomber.health <= 0 and not bomber.exploding:
+                    bomber.exploding = True
+                    player.score += bomber.score_value
+                    ground_support_manager.add_combat_popup(f"BOMBER DOWN! +{bomber.score_value}", bomber.pos_x, bomber.pos_y, (255, 200, 50))
+                    explosion_group.add(Large_explosion_a(bomber.pos_x + 32, bomber.pos_y + 26, large_explosion_a_spritesheet.frames))
+
+        bomber_enemies[:] = [b for b in bomber_enemies if not b.exploding and b.health > 0]
+
+        if orbital_base and orbital_base.health <= 0 and player.health > 0:
+            player.take_damage(100.0)
+            ground_support_manager.add_combat_popup("BASE DESTROYED! MISSION FAILED!", player.pos_x, player.pos_y, (255, 40, 40))
 
     bullet_dmg = PLAYER_BULLET_DAMAGE * (DAMAGE_BOOST_MULTIPLIER if powerup_manager.is_active("damage_boost") else 1)
 
-    # Bullet Update & Collision
+    # Bullet Update & Collision across aerial enemies, bombers, and hostile ground units/structures
     for bullet in player.bullets:
         bullet.update_position()
-        if bullet.colliderect(light_enemy) and not light_enemy.exploding:
-            bullet.used = True
-            light_enemy.health -= bullet_dmg
-            powerup_manager.on_bullet_hit_enemy(light_enemy)
+        for enemy in wave_manager.enemies:
+            if bullet.colliderect(enemy) and not enemy.exploding:
+                bullet.used = True
+                enemy.health -= bullet_dmg
+                powerup_manager.on_bullet_hit_enemy(enemy)
+                enemy.trigger_agro(wave_manager.enemies)
+                break
 
-    # Rocket Update & Collision
+        if not bullet.used:
+            for bomber in bomber_enemies:
+                if not bomber.exploding and bullet.colliderect(bomber):
+                    bullet.used = True
+                    bomber.health -= bullet_dmg
+                    break
+
+        # Check collision with ground enemy units if bullet is still active
+        if not bullet.used:
+            for ge in ground_support_manager.enemy_ground_units:
+                if ge.is_alive and bullet.colliderect(ge):
+                    bullet.used = True
+                    ge.take_damage(bullet_dmg)
+                    if not ge.is_alive:
+                        score_val = getattr(ge, 'score_value', 25)
+                        player.score += score_val
+                        ground_support_manager.add_combat_popup(f"+{score_val} PTS", ge.pos_x, ge.pos_y, (255, 215, 0))
+                    break
+
+        # Check collision with enemy fabricator buildings
+        if not bullet.used:
+            for fab in ground_support_manager.enemy_fabricators:
+                if fab.is_alive and bullet.colliderect(fab):
+                    bullet.used = True
+                    fab.take_damage(bullet_dmg)
+                    break
+
+    # Rocket Update & Collision across all targets (aerial enemies, bombers, ground units, fabricators, strider)
+    all_combat_targets = list(wave_manager.enemies) + list(bomber_enemies) + [g for g in ground_support_manager.enemy_ground_units if g.is_alive] + [f for f in ground_support_manager.enemy_fabricators if f.is_alive]
+    if ground_support_manager.factory_strider and ground_support_manager.factory_strider.is_alive:
+        all_combat_targets.append(ground_support_manager.factory_strider)
+
     for rocket in player.rockets:
-        rocket.update_position(light_enemy, player=player)
+        rocket.update_position(all_combat_targets, player=player)
         if rocket.used:
             range_explosion = Large_explosion_a(
                 rocket.x + ROCKET_WIDTH // 2,
@@ -988,43 +1656,102 @@ def move():
                 speed=0.6
             )
             explosion_group.add(range_explosion)
-        elif rocket.colliderect(light_enemy) and not light_enemy.exploding:
-            rocket.used = True
-            light_enemy.health -= rocket.damage
-            hit_explosion = Large_explosion_a(
-                rocket.x + ROCKET_WIDTH // 2,
-                rocket.y + ROCKET_HEIGHT // 2,
-                large_explosion_a_spritesheet.frames,
-                speed=0.6
-            )
-            explosion_group.add(hit_explosion)
+        else:
+            for enemy in wave_manager.enemies:
+                if rocket.colliderect(enemy) and not enemy.exploding:
+                    rocket.used = True
+                    enemy.health -= rocket.damage
+                    enemy.trigger_agro(wave_manager.enemies)
+                    hit_explosion = Large_explosion_a(
+                        rocket.x + ROCKET_WIDTH // 2,
+                        rocket.y + ROCKET_HEIGHT // 2,
+                        large_explosion_a_spritesheet.frames,
+                        speed=0.6
+                    )
+                    explosion_group.add(hit_explosion)
+                    break
+
+            if not rocket.used:
+                for bomber in bomber_enemies:
+                    if not bomber.exploding and rocket.colliderect(bomber):
+                        rocket.used = True
+                        bomber.health -= rocket.damage
+                        hit_explosion = Large_explosion_a(
+                            rocket.x + ROCKET_WIDTH // 2,
+                            rocket.y + ROCKET_HEIGHT // 2,
+                            large_explosion_a_spritesheet.frames,
+                            speed=0.6
+                        )
+                        explosion_group.add(hit_explosion)
+                        break
+
+            if not rocket.used:
+                for ge in ground_support_manager.enemy_ground_units:
+                    if ge.is_alive and rocket.colliderect(ge):
+                        rocket.used = True
+                        ge.take_damage(rocket.damage)
+                        if not ge.is_alive:
+                            score_val = getattr(ge, 'score_value', 25)
+                            player.score += score_val
+                            ground_support_manager.add_combat_popup(f"+{score_val} PTS", ge.pos_x, ge.pos_y, (255, 215, 0))
+                        hit_explosion = Large_explosion_a(
+                            rocket.x + ROCKET_WIDTH // 2,
+                            rocket.y + ROCKET_HEIGHT // 2,
+                            large_explosion_a_spritesheet.frames,
+                            speed=0.6
+                        )
+                        explosion_group.add(hit_explosion)
+                        break
+
+            if not rocket.used:
+                for fab in ground_support_manager.enemy_fabricators:
+                    if fab.is_alive and rocket.colliderect(fab):
+                        rocket.used = True
+                        fab.take_damage(rocket.damage)
+                        hit_explosion = Large_explosion_a(
+                            rocket.x + ROCKET_WIDTH // 2,
+                            rocket.y + ROCKET_HEIGHT // 2,
+                            large_explosion_a_spritesheet.frames,
+                            speed=0.6
+                        )
+                        explosion_group.add(hit_explosion)
+                        break
 
     # Player Kamikaze Collision
-    if player.colliderect(light_enemy):
-        light_enemy.health -= player.kamikaze_attack_damage
-        player.take_damage(light_enemy.explosion_damage)
+    for enemy in wave_manager.enemies:
+        if not enemy.exploding and player.colliderect(enemy):
+            enemy.health -= player.kamikaze_attack_damage
+            player.take_damage(enemy.explosion_damage)
+            enemy.trigger_agro(wave_manager.enemies)
         
-    # Enemy Defeated
-    if light_enemy.health <= 0 and not light_enemy.exploding:
-        light_enemy.exploding = True
-        explosion = Large_explosion_a(
-            light_enemy.x + LIGHT_ENEMY_WIDTH // 2, 
-            light_enemy.y + LIGHT_ENEMY_HEIGHT // 2, 
-            large_explosion_a_spritesheet.frames
-        )
-        explosion_group.add(explosion)
-        player.score += 5
+    # Enemy Defeated checks
+    for enemy in wave_manager.enemies:
+        if enemy.health <= 0 and not enemy.exploding:
+            enemy.exploding = True
+            explosion = Large_explosion_a(
+                enemy.x + LIGHT_ENEMY_WIDTH // 2, 
+                enemy.y + LIGHT_ENEMY_HEIGHT // 2, 
+                large_explosion_a_spritesheet.frames
+            )
+            explosion_group.add(explosion)
+            # Adrenaline score bonus on kills at low HP
+            kill_points = 5
+            if player.health <= ADRENALINE_HEALTH_THRESHOLD:
+                kill_points = int(kill_points * 1.5)
+            player.score += kill_points
 
-        # Roll power-up drop on kill
-        powerup_manager.roll_drop(light_enemy.x + LIGHT_ENEMY_WIDTH // 2, light_enemy.y + LIGHT_ENEMY_HEIGHT // 2)
+            # Roll power-up drop on kill
+            powerup_manager.roll_drop(enemy.x + LIGHT_ENEMY_WIDTH // 2, enemy.y + LIGHT_ENEMY_HEIGHT // 2)
 
-        pygame.time.set_timer(
-            LIGHT_ENEMY_EXPLOSION,
-            LIGHT_ENEMY_EXPLOSION_TIME,
-            1
-        )
+            # Close Air Support (CAS) bonus check
+            ground_support_manager.on_player_kill_enemy(enemy, player)
 
-        light_enemy.velocity_y = 0
+            # Anti-Retreat: Guaranteed health nanite drop if player is at low health
+            if player.health <= ADRENALINE_HEALTH_THRESHOLD:
+                health_drops.append(HealthDrop(enemy.x + LIGHT_ENEMY_WIDTH // 2, enemy.y + LIGHT_ENEMY_HEIGHT // 2))
+
+            enemy.speed = 0
+            enemy.velocity_y = 0
 
     player.bullets = [bullet for bullet in player.bullets if not bullet.used \
                     and 0 <= bullet.x <= MAP_WIDTH and 0 <= bullet.y <= MAP_HEIGHT]
@@ -1032,28 +1759,46 @@ def move():
     player.rockets = [rocket for rocket in player.rockets if not rocket.used \
                     and 0 <= rocket.x <= MAP_WIDTH and 0 <= rocket.y <= MAP_HEIGHT]
 
-    # Enemy movement affected by Time Slow and Frost/Freeze
-    effective_vy = powerup_manager.modify_enemy_speed(light_enemy.velocity_y)
-    light_enemy.y += effective_vy
-    
-    for bullet in light_enemy.bullets:
-        effective_b_vy = powerup_manager.modify_enemy_bullet_speed(bullet.velocity_y)
-        bullet.y += effective_b_vy
-        if bullet.colliderect(player):
-            bullet.used = True
-            player.take_damage(light_enemy.bullet_damage)
+    # Enemy and enemy bullet movement affected by Time Slow, Frost/Freeze, and Stratagem Aiming Slow-Mo
+    slow_mo_mult = SLOW_MO_TIME_SCALE if ground_support_manager.is_slow_mo else 1.0
+    speed_factor = powerup_manager.modify_enemy_speed(1.0) * slow_mo_mult
+    bullet_speed_factor = powerup_manager.modify_enemy_bullet_speed(1.0) * slow_mo_mult
 
-    light_enemy.bullets = [bullet for bullet in light_enemy.bullets if not bullet.used \
-                           and 0 <= bullet.y <= MAP_HEIGHT]
+    for enemy in wave_manager.enemies:
+        if not enemy.exploding:
+            enemy.update(player, wave_manager.enemies, speed_factor=speed_factor)
+        
+        for bullet in enemy.bullets:
+            bullet.update_position(speed_factor=bullet_speed_factor)
+            if bullet.colliderect(player):
+                bullet.used = True
+                player.take_damage(enemy.bullet_damage)
 
-    if light_enemy.y > MAP_HEIGHT:
-        old_bullets = light_enemy.bullets
-        light_enemy = Light_Enemy()
-        light_enemy.bullets = old_bullets
-        player.score -= 5
+        enemy.bullets = [bullet for bullet in enemy.bullets if not bullet.used \
+                         and 0 <= bullet.x <= MAP_WIDTH and 0 <= bullet.y <= MAP_HEIGHT]
+
+    # Health drops update and player pickup
+    now = pygame.time.get_ticks()
+    for drop in health_drops:
+        if not drop.used:
+            if player.colliderect(drop):
+                drop.used = True
+                if player.health < player.max_health:
+                    player.health = min(player.max_health, player.health + 1)
+            elif now - drop.spawn_time >= drop.lifetime:
+                drop.used = True
+
+    health_drops = [d for d in health_drops if not d.used]
+
+    # Update Wave progression
+    wave_manager.update(player)
 
 
-def respawn():
+def respawn(mission_config=None, selected_stratagems=None):
+    global active_mission_config, bomber_enemies, orbital_base
+    if mission_config is not None:
+        active_mission_config = mission_config
+
     player.pos_x = float(PLAYER_X)
     player.pos_y = float(PLAYER_Y)
     player.x = PLAYER_X
@@ -1071,14 +1816,23 @@ def respawn():
     player.rocket_shooting = False
     player.rocket_reloading = False
     player.radar_mode = "CONE"
-    
+
     player.score = 0
-    global light_enemy
-    light_enemy = Light_Enemy()
-    light_enemy.bullets.clear()
+    global wave_manager, health_drops, light_enemy, ground_support_manager
+    wave_manager = WaveManager()
+    health_drops.clear()
+    bomber_enemies.clear()
+
+    if active_mission_config.get("has_base"):
+        orbital_base = OrbitalBase(1500, 1500)
+    else:
+        orbital_base = None
+
+    light_enemy = wave_manager.enemies[0] if wave_manager.enemies else None
     player.shield = PLAYER_MAX_SHIELD
     explosion_group.empty()
     powerup_manager.reset(player)
+    ground_support_manager.reset(active_mission_config, selected_stratagems=selected_stratagems)
 
 
 def main_menu(mouse_pos=None):
@@ -1131,6 +1885,17 @@ def draw(mouse_pos=None):
         gameover_lobby_box.draw(canvas, mouse_pos)
         
     else:
+        # Draw ground support world entities (Helldivers, obstacles, beacon, airstrikes, supply pods)
+        ground_support_manager.draw_world_entities(canvas, camera_x, camera_y, hud_small_font)
+
+        # Draw Orbital Base if present
+        if orbital_base and orbital_base.is_alive:
+            orbital_base.draw(canvas, camera_x, camera_y, font)
+
+        # Draw Bomber Enemies
+        for bomber in bomber_enemies:
+            bomber.draw(canvas, camera_x, camera_y)
+
         # Player rendered relative to camera
         screen_player_x = player.x - camera_x
         screen_player_y = player.y - camera_y
@@ -1158,51 +1923,65 @@ def draw(mouse_pos=None):
             rocket_rect = rocket.image.get_rect(center=(r_screen_x + ROCKET_WIDTH // 2, r_screen_y + ROCKET_HEIGHT // 2))
             canvas.blit(rocket.image, rocket_rect.topleft)
 
-        # Draw enemy bullets with camera offset
-        for bullet in light_enemy.bullets:
-            b_screen_x = bullet.x - camera_x
-            b_screen_y = bullet.y - camera_y
-            canvas.blit(enemy_bullet_image, (b_screen_x, b_screen_y))
+        # Draw health drops
+        for drop in health_drops:
+            if not drop.used:
+                hx = drop.x - camera_x
+                hy = drop.y - camera_y
+                canvas.blit(drop.image, (hx, hy))
+                pulse_r = int(14 + 3 * math.sin(pygame.time.get_ticks() * 0.008))
+                pygame.draw.circle(canvas, (50, 255, 100), (hx + 12, hy + 12), pulse_r, 1)
 
-        # Draw light enemy with camera offset & Lock-on Reticle
-        if not light_enemy.exploding:
-            enemy_screen_x = light_enemy.x - camera_x
-            enemy_screen_y = light_enemy.y - camera_y
-            canvas.blit(light_enemy.image, (enemy_screen_x, enemy_screen_y))
+        # Draw enemy bullets with camera offset across all wave enemies
+        for enemy in wave_manager.enemies:
+            for bullet in enemy.bullets:
+                b_screen_x = bullet.x - camera_x
+                b_screen_y = bullet.y - camera_y
+                bullet_rect = bullet.image.get_rect(center=(b_screen_x + BULLET_WIDTH // 2, b_screen_y + BULLET_HEIGHT // 2))
+                canvas.blit(bullet.image, bullet_rect.topleft)
 
-            # Frost / Freeze visual overlay
-            if powerup_manager.is_enemy_frozen():
-                ice_surf = pygame.Surface((LIGHT_ENEMY_WIDTH, LIGHT_ENEMY_HEIGHT), pygame.SRCALPHA)
-                ice_surf.fill((100, 210, 255, 130))
-                pygame.draw.rect(ice_surf, (220, 245, 255), (0, 0, LIGHT_ENEMY_WIDTH, LIGHT_ENEMY_HEIGHT), 2)
-                canvas.blit(ice_surf, (enemy_screen_x, enemy_screen_y))
-            elif powerup_manager.is_enemy_frosted():
-                frost_rect = pygame.Rect(enemy_screen_x, enemy_screen_y, LIGHT_ENEMY_WIDTH, LIGHT_ENEMY_HEIGHT)
-                pygame.draw.rect(canvas, (120, 220, 255), frost_rect, 2)
+        # Draw all wave enemies with camera offset & Lock-on Reticles
+        primary_enemy = wave_manager.get_closest_enemy(player)
+        for enemy in wave_manager.enemies:
+            if not enemy.exploding:
+                enemy_screen_x = enemy.x - camera_x
+                enemy_screen_y = enemy.y - camera_y
+                enemy_rect = enemy.image.get_rect(center=(enemy_screen_x + LIGHT_ENEMY_WIDTH // 2, enemy_screen_y + LIGHT_ENEMY_HEIGHT // 2))
+                canvas.blit(enemy.image, enemy_rect.topleft)
 
-            # Target Lock-on HUD Reticle (nur wenn im aktiven Lock-Bereich)
-            if player.is_enemy_in_lock_zone(light_enemy):
-                if -80 <= enemy_screen_x <= GAME_WIDTH + 80 and -80 <= enemy_screen_y <= GAME_HEIGHT + 80:
-                    ret_pad = 6
-                    ret_len = 8
-                    ret_x = enemy_screen_x - ret_pad
-                    ret_y = enemy_screen_y - ret_pad
-                    ret_w = LIGHT_ENEMY_WIDTH + ret_pad * 2
-                    ret_h = LIGHT_ENEMY_HEIGHT + ret_pad * 2
+                # Frost / Freeze visual overlay
+                if powerup_manager.is_enemy_frozen() and enemy == primary_enemy:
+                    ice_surf = pygame.Surface((LIGHT_ENEMY_WIDTH, LIGHT_ENEMY_HEIGHT), pygame.SRCALPHA)
+                    ice_surf.fill((100, 210, 255, 130))
+                    pygame.draw.rect(ice_surf, (220, 245, 255), (0, 0, LIGHT_ENEMY_WIDTH, LIGHT_ENEMY_HEIGHT), 2)
+                    canvas.blit(ice_surf, (enemy_screen_x, enemy_screen_y))
+                elif powerup_manager.is_enemy_frosted() and enemy == primary_enemy:
+                    frost_rect = pygame.Rect(enemy_screen_x, enemy_screen_y, LIGHT_ENEMY_WIDTH, LIGHT_ENEMY_HEIGHT)
+                    pygame.draw.rect(canvas, (120, 220, 255), frost_rect, 2)
 
-                    ret_color = (255, 60, 60)
-                    pygame.draw.line(canvas, ret_color, (ret_x, ret_y), (ret_x + ret_len, ret_y), 2)
-                    pygame.draw.line(canvas, ret_color, (ret_x, ret_y), (ret_x, ret_y + ret_len), 2)
-                    pygame.draw.line(canvas, ret_color, (ret_x + ret_w, ret_y), (ret_x + ret_w - ret_len, ret_y), 2)
-                    pygame.draw.line(canvas, ret_color, (ret_x + ret_w, ret_y), (ret_x + ret_w, ret_y + ret_len), 2)
-                    pygame.draw.line(canvas, ret_color, (ret_x, ret_y + ret_h), (ret_x + ret_len, ret_y + ret_h), 2)
-                    pygame.draw.line(canvas, ret_color, (ret_x, ret_y + ret_h), (ret_x, ret_y + ret_h - ret_len), 2)
-                    pygame.draw.line(canvas, ret_color, (ret_x + ret_w, ret_y + ret_h), (ret_x + ret_w - ret_len, ret_y + ret_h), 2)
-                    pygame.draw.line(canvas, ret_color, (ret_x + ret_w, ret_y + ret_h), (ret_x + ret_w, ret_y + ret_h - ret_len), 2)
+                # Target Lock-on HUD Reticle
+                if player.is_enemy_in_lock_zone(enemy):
+                    if -80 <= enemy_screen_x <= GAME_WIDTH + 80 and -80 <= enemy_screen_y <= GAME_HEIGHT + 80:
+                        ret_pad = 6
+                        ret_len = 8
+                        ret_x = enemy_screen_x - ret_pad
+                        ret_y = enemy_screen_y - ret_pad
+                        ret_w = LIGHT_ENEMY_WIDTH + ret_pad * 2
+                        ret_h = LIGHT_ENEMY_HEIGHT + ret_pad * 2
 
-                    mode_tag = "CONE LOCK" if player.radar_mode == "CONE" else "OMNI LOCK"
-                    lock_text = hud_small_font.render(mode_tag, True, (255, 80, 80))
-                    canvas.blit(lock_text, (ret_x + ret_w // 2 - lock_text.get_width() // 2, ret_y - 14))
+                        ret_color = (255, 60, 60)
+                        pygame.draw.line(canvas, ret_color, (ret_x, ret_y), (ret_x + ret_len, ret_y), 2)
+                        pygame.draw.line(canvas, ret_color, (ret_x, ret_y), (ret_x, ret_y + ret_len), 2)
+                        pygame.draw.line(canvas, ret_color, (ret_x + ret_w, ret_y), (ret_x + ret_w - ret_len, ret_y), 2)
+                        pygame.draw.line(canvas, ret_color, (ret_x + ret_w, ret_y), (ret_x + ret_w, ret_y + ret_len), 2)
+                        pygame.draw.line(canvas, ret_color, (ret_x, ret_y + ret_h), (ret_x + ret_len, ret_y + ret_h), 2)
+                        pygame.draw.line(canvas, ret_color, (ret_x, ret_y + ret_h), (ret_x, ret_y + ret_h - ret_len), 2)
+                        pygame.draw.line(canvas, ret_color, (ret_x + ret_w, ret_y + ret_h), (ret_x + ret_w - ret_len, ret_y + ret_h), 2)
+                        pygame.draw.line(canvas, ret_color, (ret_x + ret_w, ret_y + ret_h), (ret_x + ret_w, ret_y + ret_h - ret_len), 2)
+
+                        mode_tag = "CONE LOCK" if player.radar_mode == "CONE" else "OMNI LOCK"
+                        lock_text = hud_small_font.render(mode_tag, True, (255, 80, 80))
+                        canvas.blit(lock_text, (ret_x + ret_w // 2 - lock_text.get_width() // 2, ret_y - 14))
 
         # Draw explosions with camera offset
         explosion_group.update()
@@ -1211,12 +1990,52 @@ def draw(mouse_pos=None):
             exp_screen_y = explosion.rect.y - camera_y
             canvas.blit(explosion.image, (exp_screen_x, exp_screen_y))
 
+        # Draw dynamic gun pip & predictive air strike impact reticle
+        if player.health > 0:
+            ground_support_manager.draw_reticle(canvas, camera_x, camera_y, player)
+
         # UI elements (Screen space, fixed overlay)
         score_box.set_text(f"Score: {player.score}")
         score_box.draw(canvas)
 
         highscore_box.set_text(f"highscore: {player.highscore}")
         highscore_box.draw(canvas)
+
+        # Wave Counter HUD Box
+        living_count = len([e for e in wave_manager.enemies if not getattr(e, 'exploding', False)])
+        wave_box_w = 175
+        wave_box_h = 42
+        wave_box_x = 65
+        wave_box_y = 28
+        pygame.draw.rect(canvas, (18, 24, 36), (wave_box_x, wave_box_y, wave_box_w, wave_box_h), border_radius=6)
+        pygame.draw.rect(canvas, (60, 90, 130), (wave_box_x, wave_box_y, wave_box_w, wave_box_h), 1, border_radius=6)
+
+        wave_label = font.render(f"WAVE {wave_manager.wave}/{MAX_WAVE_LEVEL}", True, (255, 215, 0))
+        canvas.blit(wave_label, (wave_box_x + 8, wave_box_y + 3))
+
+        hostiles_label = hud_small_font.render(f"HOSTILES: {living_count}", True, (255, 100, 100) if living_count > 0 else (100, 255, 100))
+        canvas.blit(hostiles_label, (wave_box_x + 8, wave_box_y + 24))
+
+        # Adrenaline Overdrive HUD indicator (displayed when player is at critical HP)
+        if 0 < player.health <= ADRENALINE_HEALTH_THRESHOLD:
+            adren_pulse = int(180 + 75 * math.sin(pygame.time.get_ticks() * 0.01))
+            adren_surf = hud_small_font.render("! ADRENALINE OVERDRIVE !", True, (255, adren_pulse, 50))
+            adren_bg = pygame.Rect(wave_box_x, wave_box_y + wave_box_h + 6, wave_box_w, 20)
+            pygame.draw.rect(canvas, (60, 15, 15), adren_bg, border_radius=4)
+            pygame.draw.rect(canvas, (255, 80, 50), adren_bg, 1, border_radius=4)
+            canvas.blit(adren_surf, (wave_box_x + wave_box_w // 2 - adren_surf.get_width() // 2, wave_box_y + wave_box_h + 9))
+
+        # Wave announcement banner (centered in upper third of canvas)
+        if wave_manager.announcement_timer > 0:
+            banner_surf = title_font.render(wave_manager.wave_announcement, True, (255, 230, 80))
+            banner_bg = banner_surf.get_rect(center=(GAME_WIDTH // 2, GAME_HEIGHT // 3))
+            pad_x, pad_y = 30, 15
+            bg_rect = banner_bg.inflate(pad_x * 2, pad_y * 2)
+            banner_surface = pygame.Surface((bg_rect.width, bg_rect.height), pygame.SRCALPHA)
+            banner_surface.fill((10, 15, 25, 210))
+            pygame.draw.rect(banner_surface, (255, 200, 50), (0, 0, bg_rect.width, bg_rect.height), 2, border_radius=10)
+            canvas.blit(banner_surface, bg_rect.topleft)
+            canvas.blit(banner_surf, banner_bg.topleft)
 
         # Health Bar
         pygame.draw.rect(canvas, "black", (32, 32, HEALTH_WIDTH, HEALTH_HEIGHT * player.max_health))
@@ -1243,7 +2062,7 @@ def draw(mouse_pos=None):
 
         # Controls & Radar Mode Hint
         mode_str = "CONE [FAR]" if player.radar_mode == "CONE" else "360° OMNI [CLOSE]"
-        controls_hint = hud_small_font.render(f"[SPACE] Gun   [E/R-Click] Missile   [Q] Radar: {mode_str}", True, (255, 255, 255))
+        controls_hint = hud_small_font.render(f"[SPACE] Gun   [E/R-Click] Missile   [Q] Radar: {mode_str}   [C] Strike   [X] Supply   [V] Arsenal", True, (255, 255, 255))
         canvas.blit(controls_hint, (int(GAME_WIDTH / 2 - controls_hint.get_width() / 2), 46))
 
         # --- ROCKET HUD UI ---
@@ -1359,14 +2178,19 @@ def draw(mouse_pos=None):
         # Power-ups as glowing dots on minimap
         powerup_manager.draw_minimap_blips(minimap_surface, MINIMAP_SCALE)
 
+        # Helldiver squad and beacon blips on minimap
+        ground_support_manager.draw_minimap(minimap_surface, MINIMAP_SCALE)
+
         # Player dot (Grün)
         pygame.draw.circle(minimap_surface, (0, 255, 100), (int(player_mm_x), int(player_mm_y)), 4)
 
-        # Enemy dot (Rot)
-        if not light_enemy.exploding:
-            enemy_mm_x = (light_enemy.x + LIGHT_ENEMY_WIDTH / 2) * MINIMAP_SCALE
-            enemy_mm_y = (light_enemy.y + LIGHT_ENEMY_HEIGHT / 2) * MINIMAP_SCALE
-            pygame.draw.circle(minimap_surface, (255, 30, 30), (int(enemy_mm_x), int(enemy_mm_y)), 4)
+        # Enemy dots (Red for Agro, Orange for Patrol) across all wave enemies
+        for enemy in wave_manager.enemies:
+            if not getattr(enemy, 'exploding', False) and getattr(enemy, 'health', 0) > 0:
+                enemy_mm_x = (enemy.x + LIGHT_ENEMY_WIDTH / 2) * MINIMAP_SCALE
+                enemy_mm_y = (enemy.y + LIGHT_ENEMY_HEIGHT / 2) * MINIMAP_SCALE
+                dot_color = (255, 40, 40) if enemy.state == "AGRO" else (255, 170, 0)
+                pygame.draw.circle(minimap_surface, dot_color, (int(enemy_mm_x), int(enemy_mm_y)), 3)
 
         # Minimap frame border
         pygame.draw.rect(minimap_surface, (100, 120, 160), (0, 0, mm_size, mm_size), 2)
@@ -1376,16 +2200,52 @@ def draw(mouse_pos=None):
         # --- POWER-UP HUD OVERLAY ---
         powerup_manager.draw_hud(canvas, GAME_WIDTH, GAME_HEIGHT)
 
+        # --- GROUND SUPPORT HUD OVERLAY & WEAPON ARSENAL ---
+        ground_support_manager.draw_hud(canvas, GAME_WIDTH, GAME_HEIGHT, font, title_font, speed_font, hud_small_font, player, mouse_pos)
+
+        # --- MISSION OBJECTIVE HUD BANNER ---
+        obj_text = f"OBJECTIVE: {active_mission_config['name']}"
+        if active_mission_config["id"] == MissionType.BASE_DEFENSE and orbital_base:
+            hp_pct = max(0, int((orbital_base.health / orbital_base.max_health) * 100))
+            obj_text = f"OBJECTIVE: DEFEND BASE [HULL: {hp_pct}% | SHIELD: {int(orbital_base.shield)}]"
+        elif active_mission_config["id"] == MissionType.STRIDER_RAID:
+            if ground_support_manager.factory_strider and ground_support_manager.factory_strider.is_alive:
+                hp = int(ground_support_manager.factory_strider.health)
+                obj_text = f"OBJECTIVE: DESTROY FACTORY STRIDER [HP: {hp}/500]"
+            else:
+                obj_text = "OBJECTIVE: FACTORY STRIDER DESTROYED!"
+        elif active_mission_config["id"] == MissionType.OUTPOST_DEMOLITION:
+            rem = len(ground_support_manager.enemy_fabricators)
+            obj_text = f"OBJECTIVE: DEMOLISH FABRICATORS [{rem} REMAINING]"
+        elif active_mission_config["id"] == MissionType.AIR_SUPERIORITY:
+            obj_text = f"OBJECTIVE: AIR SUPERIORITY [WAVE {wave_manager.wave}/5]"
+
+        obj_surf = hud_small_font.render(obj_text, True, active_mission_config.get("icon_color", (255, 220, 80)))
+        obj_bg = pygame.Rect(GAME_WIDTH // 2 - obj_surf.get_width() // 2 - 12, 8, obj_surf.get_width() + 24, 22)
+        pygame.draw.rect(canvas, (14, 20, 32), obj_bg, border_radius=6)
+        pygame.draw.rect(canvas, active_mission_config.get("icon_color", (0, 220, 255)), obj_bg, 1, border_radius=6)
+        canvas.blit(obj_surf, (GAME_WIDTH // 2 - obj_surf.get_width() // 2, 12))
+
+        # --- SLOW-MOTION VIGNETTE OVERLAY ---
+        if ground_support_manager.is_slow_mo:
+            vignette_surf = pygame.Surface((GAME_WIDTH, GAME_HEIGHT), pygame.SRCALPHA)
+            pygame.draw.rect(vignette_surf, (0, 200, 255, 35), (0, 0, GAME_WIDTH, GAME_HEIGHT), 8)
+            pygame.draw.rect(vignette_surf, (0, 150, 220, 20), (8, 8, GAME_WIDTH - 16, GAME_HEIGHT - 16), 8)
+            canvas.blit(vignette_surf, (0, 0))
+
 
 player = Player()
-light_enemy = Light_Enemy()
+wave_manager = WaveManager()
+health_drops = []
+ground_support_manager = GroundSupportManager()
+light_enemy = wave_manager.enemies[0] if wave_manager.enemies else Light_Enemy()
 player.bullets = []
 player.rockets = []
 explosion_group = pygame.sprite.Group()
 
 
 def run_game():
-    global game_state, light_enemy
+    global game_state, light_enemy, wave_manager, health_drops, ground_support_manager, pending_mission_config
     running = True
     while running:
         canvas_mouse_pos = get_canvas_mouse_pos()
@@ -1403,9 +2263,11 @@ def run_game():
             if event.type == ADD_SCORE:
                 if game_state == "":
                     player.add_score()
-            if event.type == LIGHT_ENEMY_SHOOT and not light_enemy.exploding:
+            if event.type == LIGHT_ENEMY_SHOOT:
                 if game_state == "" and not powerup_manager.is_enemy_frozen():
-                    light_enemy.set_shoot()
+                    for enemy in wave_manager.enemies:
+                        if not enemy.exploding and enemy.health > 0:
+                            enemy.set_shoot(player)
             if event.type == RELOAD_END:
                 player.used_bullets = 0
                 player.reloading = False
@@ -1413,9 +2275,7 @@ def run_game():
                 player.used_rockets = 0
                 player.rocket_reloading = False
             if event.type == LIGHT_ENEMY_EXPLOSION:
-                old_bullets = light_enemy.bullets
-                light_enemy = Light_Enemy()
-                light_enemy.bullets = old_bullets
+                pass
             if event.type == INVINCIBLE_END:
                 player.invincible = False
             if event.type == SHIELD_REGENERATION:
@@ -1429,6 +2289,14 @@ def run_game():
                     else:
                         player.shield = PLAYER_MAX_SHIELD
 
+            # Mouse Wheel Weapon Cycling
+            if event.type == pygame.MOUSEWHEEL:
+                if game_state == "" and player.health > 0:
+                    if event.y > 0:
+                        ground_support_manager.cycle_weapon(-1)
+                    elif event.y < 0:
+                        ground_support_manager.cycle_weapon(1)
+
             # Maus-Klick Interaktion für Knöpfe & Raketen-Abschuss
             if event.type == pygame.MOUSEBUTTONDOWN:
                 if game_state == "help_menu":
@@ -1438,8 +2306,7 @@ def run_game():
 
                 elif game_state == "main_menu":
                     if menu_play_box.is_clicked(event, canvas_mouse_pos):
-                        respawn()
-                        game_state = ""
+                        game_state = "mission_select"
                     elif menu_help_box.is_clicked(event, canvas_mouse_pos):
                         previous_game_state = "main_menu"
                         game_state = "help_menu"
@@ -1447,6 +2314,22 @@ def run_game():
                         player.highscore = 0
                         add_highscore(player.highscore)
                         highscore_box.set_text("highscore: 0")
+
+                elif game_state == "mission_select":
+                    action = mission_select_menu.handle_event(event, canvas_mouse_pos)
+                    if action == "back_to_menu":
+                        game_state = "main_menu"
+                    elif isinstance(action, dict):
+                        pending_mission_config = action
+                        game_state = "stratagem_select"
+
+                elif game_state == "stratagem_select":
+                    action = stratagem_select_menu.handle_event(event, canvas_mouse_pos)
+                    if action == "back_to_missions":
+                        game_state = "mission_select"
+                    elif isinstance(action, list):
+                        respawn(pending_mission_config, selected_stratagems=action)
+                        game_state = ""
 
                 elif game_state == "pause_menu":
                     if pause_continue_box.is_clicked(event, canvas_mouse_pos):
@@ -1467,9 +2350,25 @@ def run_game():
                         elif gameover_lobby_box.is_clicked(event, canvas_mouse_pos):
                             game_state = "main_menu"
                     else:
-                        # Rechtsklick feuert Raketen im Spiel
-                        if event.button == 3:
-                            player.set_shoot_rocket(light_enemy)
+                        if event.button == 4:
+                            ground_support_manager.cycle_weapon(-1)
+                        elif event.button == 5:
+                            ground_support_manager.cycle_weapon(1)
+                        elif ground_support_manager.weapon_menu.is_open:
+                            ground_support_manager.weapon_menu.handle_event(event, canvas_mouse_pos)
+                        elif event.button == 1:
+                            if ground_support_manager.equipped_slot > 0:
+                                ground_support_manager.start_aiming()
+                        elif event.button == 3:
+                            ground_support_manager.stop_aiming()
+                            targets = list(wave_manager.enemies) + [g for g in ground_support_manager.enemy_ground_units if g.is_alive] + [f for f in ground_support_manager.enemy_fabricators if f.is_alive]
+                            player.set_shoot_rocket(targets)
+
+            # Button release to deploy equipped Stratagem
+            if event.type == pygame.MOUSEBUTTONUP:
+                if game_state == "" and player.health > 0:
+                    if event.button == 1 and ground_support_manager.equipped_slot > 0:
+                        ground_support_manager.release_equipped_stratagem(player)
 
             if event.type == pygame.KEYDOWN:
                 if game_state == "help_menu":
@@ -1479,11 +2378,26 @@ def run_game():
 
                 elif game_state == "main_menu":
                     if event.key in (pygame.K_LSHIFT, pygame.K_RSHIFT):
-                        respawn()
-                        game_state = ""
+                        game_state = "mission_select"
                     elif event.key == pygame.K_h:
                         previous_game_state = "main_menu"
                         game_state = "help_menu"
+
+                elif game_state == "mission_select":
+                    action = mission_select_menu.handle_event(event, canvas_mouse_pos)
+                    if action == "back_to_menu":
+                        game_state = "main_menu"
+                    elif isinstance(action, dict):
+                        pending_mission_config = action
+                        game_state = "stratagem_select"
+
+                elif game_state == "stratagem_select":
+                    action = stratagem_select_menu.handle_event(event, canvas_mouse_pos)
+                    if action == "back_to_missions":
+                        game_state = "mission_select"
+                    elif isinstance(action, list):
+                        respawn(pending_mission_config, selected_stratagems=action)
+                        game_state = ""
 
                 elif game_state == "pause_menu":
                     if event.key == pygame.K_p:
@@ -1508,6 +2422,36 @@ def run_game():
                             game_state = "pause_menu"
                         elif event.key == pygame.K_q:
                             player.toggle_radar_mode()
+                        elif event.key in (pygame.K_v, pygame.K_TAB):
+                            ground_support_manager.weapon_menu.toggle()
+                        elif event.key == pygame.K_ESCAPE:
+                            if ground_support_manager.aiming_active:
+                                ground_support_manager.stop_aiming()
+                            elif ground_support_manager.weapon_menu.is_open:
+                                ground_support_manager.weapon_menu.is_open = False
+                        elif event.key == pygame.K_SPACE:
+                            if ground_support_manager.equipped_slot > 0:
+                                ground_support_manager.start_aiming()
+                        elif event.key == pygame.K_c:
+                            ground_support_manager.trigger_air_strike(player)
+                        elif event.key == pygame.K_x:
+                            ground_support_manager.trigger_supply_drop(player)
+                        elif event.key in (pygame.K_1, pygame.K_0):
+                            ground_support_manager.select_weapon_slot(0)
+                        elif event.key == pygame.K_2:
+                            ground_support_manager.select_weapon_slot(1)
+                        elif event.key == pygame.K_3:
+                            ground_support_manager.select_weapon_slot(2)
+                        elif event.key == pygame.K_4:
+                            ground_support_manager.select_weapon_slot(3)
+                        elif event.key == pygame.K_5:
+                            ground_support_manager.select_weapon_slot(4)
+
+            # Spacebar release to deploy equipped Stratagem
+            if event.type == pygame.KEYUP:
+                if game_state == "" and player.health > 0:
+                    if event.key == pygame.K_SPACE and ground_support_manager.equipped_slot > 0:
+                        ground_support_manager.release_equipped_stratagem(player)
 
         if not running:
             break
@@ -1520,6 +2464,14 @@ def run_game():
                 player.highscore = 0
                 add_highscore(player.highscore)
                 highscore_box.set_text("highscore: 0")
+
+        elif game_state == "mission_select":
+            main_menu(None)
+            mission_select_menu.draw(canvas, canvas_mouse_pos)
+
+        elif game_state == "stratagem_select":
+            main_menu(None)
+            stratagem_select_menu.draw(canvas, canvas_mouse_pos)
 
         elif game_state == "pause_menu":
             pause_menu(canvas_mouse_pos)
@@ -1535,10 +2487,11 @@ def run_game():
 
         elif game_state == "":
             if player.health > 0:
+                turn_rate = player.turn_rate * (0.75 if ground_support_manager.is_slow_mo else 1.0)
                 if keys[pygame.K_a] or keys[pygame.K_LEFT]:
-                    player.angle += player.turn_rate
+                    player.angle += turn_rate
                 if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
-                    player.angle -= player.turn_rate
+                    player.angle -= turn_rate
 
                 rad = math.radians(player.angle)
                 dx = -math.sin(rad)
@@ -1551,18 +2504,22 @@ def run_game():
                     player.velocity_x = max(player.min_speed, player.velocity_x - player.acceleration)
                     player.velocity_y = max(player.min_speed, player.velocity_y - player.acceleration)
 
-                player.pos_x += dx * player.velocity_x
-                player.pos_y += dy * player.velocity_y
+                steering_factor = PLAYER_STEERING_SLOW_MO_FACTOR if ground_support_manager.is_slow_mo else 1.0
+                player.pos_x += dx * player.velocity_x * steering_factor
+                player.pos_y += dy * player.velocity_y * steering_factor
 
                 player.angle %= 360
                 player.x = int(player.pos_x)
                 player.y = int(player.pos_y)
 
-                if keys[pygame.K_SPACE] and not player.reloading:
-                    player.set_shoot()
+                if ground_support_manager.equipped_slot == 0:
+                    is_firing = keys[pygame.K_SPACE] or (pygame.mouse.get_pressed()[0] and not ground_support_manager.weapon_menu.is_open)
+                    if is_firing and not player.reloading:
+                        player.set_shoot()
 
                 if (keys[pygame.K_e] or keys[pygame.K_f] or keys[pygame.K_LCTRL]) and not player.rocket_reloading:
-                    player.set_shoot_rocket(light_enemy)
+                    targets = list(wave_manager.enemies) + [g for g in ground_support_manager.enemy_ground_units if g.is_alive] + [f for f in ground_support_manager.enemy_fabricators if f.is_alive]
+                    player.set_shoot_rocket(targets)
 
                 move()
                 draw(canvas_mouse_pos)
