@@ -2,7 +2,7 @@
 
 A 2D top-down space combat arcade game built in Python using Pygame. The game features an expansive 3000×3000 scrolling arena, inertia-driven flight mechanics, quad-cannon combat, homing rockets, radar lock-on modes, a power-up system, friendly Helldiver ground squads, hostile Automaton ground forces, destructible fabricators, a stratagem air strike arsenal, a dynamic predictive aiming reticle, and a fully interactive 6-tab in-game help menu.
 
----
+
 
 ## Table of Contents
 
@@ -36,7 +36,7 @@ A 2D top-down space combat arcade game built in Python using Pygame. The game fe
 - [Troubleshooting](#troubleshooting)
 - [License & Credits](#license--credits)
 
----
+
 
 ## Overview
 
@@ -44,7 +44,6 @@ A 2D top-down space combat arcade game built in Python using Pygame. The game fe
 
 A custom 2D camera tracks the player ship across the map, clamping to world borders and rendering seamless starfield background tiles. Combat combines primary quad-cannon salvos with secondary steerable homing rockets, 8 stratagem air strikes, and close air support missions for friendly ground troops fighting against hostile Automaton forces.
 
----
 
 ## Key Features
 
@@ -83,7 +82,7 @@ A custom 2D camera tracks the player ship across the map, clamping to world bord
 - **In-Game Help Menu (6 Tabs):** Multi-tab help overlay providing weapons, abilities, radar, controls, wave combat, and Helldiver support guidance.
 - **Automated Headless Test Suite:** 53 automated tests covering mission configs, base defense, Factory Strider boss, ground combat, fabricators, and stratagems.
 
----
+
 
 ## Ground Support & Helldivers Subsystem
 
@@ -164,7 +163,7 @@ The ground support subsystem (`ground_support.py`) brings a living planetary bat
 - **Casualty Penalty (-250 PTS):** Deducted upon the loss of an allied Helldiver.
 - **Pelican-1 Extraction (+2,500 PTS):** Awarded on successful evacuation of the ground squad.
 
----
+
 
 ## Predictive Aiming Reticle System
 
@@ -184,7 +183,7 @@ The dynamic aiming reticle (`AimingReticle` in `ground_support.py`) provides rea
 3. **Target Lock Indicator:**
    - The reticle ring shifts to bright crimson with pulsing lock crosshairs whenever the predicted impact area is centered over enemy ground units, fabricators, or Helldiver CAS beacons.
 
----
+
 
 ## Air Strike Weapon Arsenal
 
@@ -203,7 +202,6 @@ Access the comprehensive stratagem arsenal by pressing **`V`** or **`TAB`** to o
 | **`7`** | **EMS Stun Strike** | 24.0s | 280px EMP wave | Electromagnetic pulse disabling and freezing enemy flight systems and engines for 4.5s. |
 | **`8`** | **Smoke Screen** | 22.0s | 280px Radar cloud | Thick radar-absorbing smoke screen breaking enemy agro and concealing ground forces. |
 
----
 
 ## Power-Up System
 
@@ -231,7 +229,7 @@ The game incorporates a dedicated power-up subsystem (`powerup_system.py`) provi
 - **Magnetic Draw:** When the player flies within range, the drop is attracted toward the ship.
 - **Score Milestones:** Major score milestones summon guaranteed supply airdrops.
 
----
+
 
 ## Homing Rockets & Radar System
 
@@ -248,7 +246,7 @@ The game incorporates a dedicated power-up subsystem (`powerup_system.py`) provi
 - **`OMNI` Mode (Close-Quarter Defense):** Full 360-degree perimeter scan (0px to 420px) for dogfighting and ground strafing.
 - **Target Lock Indicator:** Bounding lock boxes highlight tracked hostiles on HUD and minimap.
 
----
+
 
 ## Help Menu (6 Tabs)
 
@@ -263,7 +261,7 @@ Access the interactive in-game tactical manual at any time by pressing **`H`**. 
 | **5** | **Wave Combat & Survival** | Wave enemy types, escort drones, milestone airdrops, and scoring multipliers. |
 | **6** | **Helldivers & Strikes** | Ground squad roles, Automaton hostiles, fabricators, CAS call-in missions, and Pelican-1 extraction. |
 
----
+
 
 ## Gameplay Description
 
@@ -309,7 +307,7 @@ Access the interactive in-game tactical manual at any time by pressing **`H`**. 
  [ Respawn & Play ]
 ```
 
----
+
 
 ## Controls
 
@@ -338,7 +336,7 @@ Access the interactive in-game tactical manual at any time by pressing **`H`**. 
 | **Return to Main Menu** | `Spacebar` | Click `MAIN MENU` | Game Over (`Health <= 0`) |
 | **Quit Game** | Window Close Button (`QUIT`) | — | All States |
 
----
+
 
 ## Automated Testing Suite
 
@@ -362,7 +360,7 @@ python -m unittest test_help_menu.py test_ground_support.py test_gameplay_integr
 - **`test_gameplay_integration.py` (11 tests):**
   - Tests headless game loop frame stepping, air strikes detonating on enemies, supply pod landings, menu key switching, CAS enemy kill bonuses, `respawn()` state resets, cannon/rocket collisions on ground units and fabricators, CAS mission completion, and reticle drawing.
 
----
+
 
 ## Requirements & Dependencies
 
@@ -370,7 +368,7 @@ python -m unittest test_help_menu.py test_ground_support.py test_gameplay_integr
 - **Pygame:** `pygame` or `pygame-ce`
 - **Standard Library:** `os`, `sys`, `random`, `math`, `unittest`
 
----
+
 
 ## Installation Instructions
 
@@ -385,7 +383,7 @@ python -m unittest test_help_menu.py test_ground_support.py test_gameplay_integr
    pip install pygame
    ```
 
----
+
 
 ## Development Setup
 
@@ -421,7 +419,7 @@ Execute `main.py` directly:
 python main.py
 ```
 
----
+
 
 ## Usage Examples
 
@@ -443,7 +441,7 @@ python main.py
 2. Press and hold `Left Shift` + `Right Shift` + `R`.
 3. The stored highscore in `data/highscore.txt` will reset to `0`.
 
----
+
 
 ## Project Architecture Overview
 
@@ -486,7 +484,7 @@ help_menu.py
 └── Keyboard & Mouse Navigation Handlers
 ```
 
----
+
 
 ## Folder Structure Overview
 
@@ -520,7 +518,6 @@ help_menu.py
 └── test_help_menu.py
 ```
 
----
 
 ## Asset Organization
 
@@ -541,11 +538,21 @@ help_menu.py
 | `bullet_ui.png` | 4×6 px | UI icon representing available ammunition in the HUD counter. |
 | `a10.png` | Variable | Unused aircraft sprite asset present in image directory. |
 
----
+
 
 ## Configuration Explanation
 
 ### General Gameplay & Combat Constants (`main.py`)
+
+#### Main Menu & Hangar
+![Eagle-1-64Bit Main Menu](images/Documentation%20images/main_menu.png)
+
+*The main menu / hangar interface featuring game start (`SHIFT`), help & weapons guide (`H`), and highscore management.*
+
+#### In-Game Combat & Tactical HUD
+![Eagle-1-64Bit Gameplay](images/Documentation%20images/game.png)
+
+*Active combat view showing wave progression, squad defense status, top-mounted radar cone, speed gauge, tactical minimap, and the bottom-right weapon arsenal selector.*
 
 | Constant | Value | Description |
 | :--- | :--- | :--- |
@@ -587,7 +594,7 @@ help_menu.py
 | `SCORE_EXTRACTION_BONUS` | `2500` | Score bonus for successfully evacuating squad on Pelican-1. |
 | `SCORE_CASUALTY_PENALTY` | `250` | Score penalty when an allied Helldiver is killed. |
 
----
+
 
 ## Troubleshooting
 
@@ -607,7 +614,7 @@ help_menu.py
 - **Cause:** Missing write permissions in the `data/` directory.
 - **Solution:** Verify the user account has write permissions to `data/highscore.txt`.
 
----
+
 
 ## License & Credits
 
