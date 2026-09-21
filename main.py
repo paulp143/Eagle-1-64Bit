@@ -166,6 +166,7 @@ from ground_support import (
 
 GAME_WIDTH = 1280
 GAME_HEIGHT = 720
+CLOCK_TICK=60
 
 MAP_WIDTH = 3000
 MAP_HEIGHT = 3000
@@ -2530,7 +2531,7 @@ def run_game():
         window.blit(scaled_surface, (0, 0))
 
         pygame.display.update()
-        clock.tick(60)
+        clock.tick(CLOCK_TICK)
 
     pygame.quit()
 
