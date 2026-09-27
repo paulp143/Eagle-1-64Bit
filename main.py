@@ -163,10 +163,13 @@ from ground_support import (
     PLAYER_STEERING_SLOW_MO_FACTOR,
     WEAPON_SLOT_MAIN_GUN
 )
+from audio_manager import get_audio_manager
+from settings_menu import SettingsMenu
+
+audio_manager = get_audio_manager()
 
 GAME_WIDTH = 1280
 GAME_HEIGHT = 720
-CLOCK_TICK=60
 
 MAP_WIDTH = 3000
 MAP_HEIGHT = 3000
@@ -403,11 +406,18 @@ class TextBox:
 
     def is_clicked(self, event, mouse_pos):
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            return self.is_hovered(mouse_pos)
+            clicked = self.is_hovered(mouse_pos)
+            if clicked:
+                audio_manager.play_sfx("ui_click")
+            return clicked
         return False
 
     def draw(self, surface, mouse_pos=None):
         hovered = self.is_hovered(mouse_pos)
+        if hovered and not getattr(self, "was_hovered", False):
+            audio_manager.play_sfx("ui_hover")
+        self.was_hovered = hovered
+
         current_bg = self.hover_bg_color if (hovered and self.hover_bg_color) else self.bg_color
         if current_bg and self.bg_rect:
             pygame.draw.rect(surface, current_bg, self.bg_rect, border_radius=self.border_radius)
@@ -435,6 +445,11 @@ large_explosion_a_spritesheet = Spritesheet(os.path.join("images", "LargeExplosi
 
 
 pygame.init()
+try:
+    if pygame.mixer.get_init():
+        pygame.mixer.set_num_channels(16)
+except Exception:
+    pass
 font = pygame.font.SysFont("arial", 24, bold=True)
 title_font = pygame.font.SysFont("arial", 48, bold=True)
 speed_font = pygame.font.SysFont("arial", 18, bold=True)
@@ -451,6 +466,7 @@ pygame.display.set_caption("Eagle 1 64Bit")
 powerup_manager = PowerUpManager()
 ground_support_manager = GroundSupportManager()
 help_menu = HelpMenu(GAME_WIDTH, GAME_HEIGHT)
+settings_menu = SettingsMenu(GAME_WIDTH, GAME_HEIGHT)
 previous_game_state = "main_menu"
 
 # =====================================================================
@@ -792,6 +808,19 @@ menu_help_box = TextBox(
     bottom=GAME_HEIGHT/2+90
 )
 
+menu_settings_box = TextBox(
+    "Settings & Audio: Press O",
+    font,
+    bg_color=(20, 25, 35),
+    hover_bg_color=(20, 70, 110),
+    border_color=(80, 100, 140),
+    hover_border_color=(0, 220, 255),
+    padding=(26, 14),
+    border_radius=8,
+    centerx=GAME_WIDTH/2,
+    bottom=GAME_HEIGHT/2+145
+)
+
 menu_reset_box = TextBox(
     "Hold L-SHIFT + R-SHIFT + R to reset Highscore",
     font,
@@ -802,7 +831,7 @@ menu_reset_box = TextBox(
     padding=(24, 12),
     border_radius=8,
     centerx=GAME_WIDTH/2,
-    bottom=GAME_HEIGHT/2+145
+    bottom=GAME_HEIGHT/2+200
 )
 
 pause_title_box = TextBox(
@@ -841,6 +870,19 @@ pause_help_box = TextBox(
     bottom=GAME_HEIGHT*0.48+60
 )
 
+pause_settings_box = TextBox(
+    "Settings & Audio: Press O",
+    font,
+    bg_color=(20, 25, 35),
+    hover_bg_color=(20, 70, 110),
+    border_color=(80, 100, 140),
+    hover_border_color=(0, 220, 255),
+    padding=(28, 14),
+    border_radius=8,
+    centerx=GAME_WIDTH/2,
+    bottom=GAME_HEIGHT*0.48+120
+)
+
 pause_menu_box = TextBox(
     "To return to main menu press ESC",
     font,
@@ -851,7 +893,7 @@ pause_menu_box = TextBox(
     padding=(30, 16),
     border_radius=8,
     centerx=GAME_WIDTH/2,
-    bottom=GAME_HEIGHT*0.48+120
+    bottom=GAME_HEIGHT*0.48+180
 )
 
 gameover_respawn_box = TextBox(
@@ -1090,6 +1132,7 @@ class Player(pygame.Rect):
             self.radar_mode = "OMNI"
         else:
             self.radar_mode = "CONE"
+        audio_manager.play_sfx("rocket_lock")
 
     def is_enemy_in_lock_zone(self, enemy):
         """Prüft, ob sich der Gegner im aktiven Radar-Lock-Bereich befindet."""
@@ -1124,6 +1167,11 @@ class Player(pygame.Rect):
             self.shooting = True
             self.used_bullets += 4
             
+            if powerup_manager.is_active("rapid_fire"):
+                audio_manager.play_sfx("laser_rapid")
+            else:
+                audio_manager.play_sfx("laser_player")
+
             bullet_offsets = [
                 (0, 27),
                 (6, 22),
@@ -1164,6 +1212,7 @@ class Player(pygame.Rect):
         if not self.rocket_shooting and self.used_rockets < self.max_rockets:
             self.rocket_shooting = True
             self.used_rockets += 1
+            audio_manager.play_sfx("rocket_launch")
 
             wing_offset_x = 18 if (self.used_rockets % 2 == 1) else -18
             wing_offset_y = 10
@@ -1210,6 +1259,8 @@ class Player(pygame.Rect):
         if self.invincible:
             return
         
+        audio_manager.play_sfx("player_damage")
+
         if self.shield < damage:
             self.health += self.shield - damage
             self.shield = 0
@@ -1411,6 +1462,7 @@ class Light_Enemy(pygame.Rect):
             bullet_x = bullet_cx - BULLET_WIDTH / 2
             bullet_y = bullet_cy - BULLET_HEIGHT / 2
             self.bullets.append(Light_Enemy.Bullet(bullet_x, bullet_y, self.angle))
+            audio_manager.play_sfx("laser_enemy")
 
 
 class WaveManager:
@@ -1589,12 +1641,15 @@ def move():
                     bomber.exploding = True
                     explosion_group.add(Large_explosion_a(bomber.pos_x + 32, bomber.pos_y + 26, large_explosion_a_spritesheet.frames))
                     ground_support_manager.add_combat_popup("BASE UNDER ATTACK!", orbital_base.pos_x + 60, orbital_base.pos_y, (255, 60, 60))
+                    audio_manager.play_sfx("explosion")
 
                 if bomber.health <= 0 and not bomber.exploding:
                     bomber.exploding = True
                     player.score += bomber.score_value
                     ground_support_manager.add_combat_popup(f"BOMBER DOWN! +{bomber.score_value}", bomber.pos_x, bomber.pos_y, (255, 200, 50))
                     explosion_group.add(Large_explosion_a(bomber.pos_x + 32, bomber.pos_y + 26, large_explosion_a_spritesheet.frames))
+                    audio_manager.play_sfx("explosion")
+                    audio_manager.play_sfx("enemy_defeat")
 
         bomber_enemies[:] = [b for b in bomber_enemies if not b.exploding and b.health > 0]
 
@@ -1613,6 +1668,7 @@ def move():
                 enemy.health -= bullet_dmg
                 powerup_manager.on_bullet_hit_enemy(enemy)
                 enemy.trigger_agro(wave_manager.enemies)
+                audio_manager.play_sfx("hit")
                 break
 
         if not bullet.used:
@@ -1620,6 +1676,7 @@ def move():
                 if not bomber.exploding and bullet.colliderect(bomber):
                     bullet.used = True
                     bomber.health -= bullet_dmg
+                    audio_manager.play_sfx("hit")
                     break
 
         # Check collision with ground enemy units if bullet is still active
@@ -1628,10 +1685,12 @@ def move():
                 if ge.is_alive and bullet.colliderect(ge):
                     bullet.used = True
                     ge.take_damage(bullet_dmg)
+                    audio_manager.play_sfx("hit")
                     if not ge.is_alive:
                         score_val = getattr(ge, 'score_value', 25)
                         player.score += score_val
                         ground_support_manager.add_combat_popup(f"+{score_val} PTS", ge.pos_x, ge.pos_y, (255, 215, 0))
+                        audio_manager.play_sfx("enemy_defeat")
                     break
 
         # Check collision with enemy fabricator buildings
@@ -1640,6 +1699,7 @@ def move():
                 if fab.is_alive and bullet.colliderect(fab):
                     bullet.used = True
                     fab.take_damage(bullet_dmg)
+                    audio_manager.play_sfx("hit")
                     break
 
     # Rocket Update & Collision across all targets (aerial enemies, bombers, ground units, fabricators, strider)
@@ -1657,6 +1717,7 @@ def move():
                 speed=0.6
             )
             explosion_group.add(range_explosion)
+            audio_manager.play_sfx("explosion_small")
         else:
             for enemy in wave_manager.enemies:
                 if rocket.colliderect(enemy) and not enemy.exploding:
@@ -1670,6 +1731,7 @@ def move():
                         speed=0.6
                     )
                     explosion_group.add(hit_explosion)
+                    audio_manager.play_sfx("explosion")
                     break
 
             if not rocket.used:
@@ -1684,6 +1746,7 @@ def move():
                             speed=0.6
                         )
                         explosion_group.add(hit_explosion)
+                        audio_manager.play_sfx("explosion")
                         break
 
             if not rocket.used:
@@ -1695,6 +1758,7 @@ def move():
                             score_val = getattr(ge, 'score_value', 25)
                             player.score += score_val
                             ground_support_manager.add_combat_popup(f"+{score_val} PTS", ge.pos_x, ge.pos_y, (255, 215, 0))
+                            audio_manager.play_sfx("enemy_defeat")
                         hit_explosion = Large_explosion_a(
                             rocket.x + ROCKET_WIDTH // 2,
                             rocket.y + ROCKET_HEIGHT // 2,
@@ -1702,6 +1766,7 @@ def move():
                             speed=0.6
                         )
                         explosion_group.add(hit_explosion)
+                        audio_manager.play_sfx("explosion")
                         break
 
             if not rocket.used:
@@ -1716,6 +1781,7 @@ def move():
                             speed=0.6
                         )
                         explosion_group.add(hit_explosion)
+                        audio_manager.play_sfx("explosion")
                         break
 
     # Player Kamikaze Collision
@@ -1735,6 +1801,8 @@ def move():
                 large_explosion_a_spritesheet.frames
             )
             explosion_group.add(explosion)
+            audio_manager.play_sfx("explosion")
+            audio_manager.play_sfx("enemy_defeat")
             # Adrenaline score bonus on kills at low HP
             kill_points = 5
             if player.health <= ADRENALINE_HEALTH_THRESHOLD:
@@ -1774,6 +1842,7 @@ def move():
             if bullet.colliderect(player):
                 bullet.used = True
                 player.take_damage(enemy.bullet_damage)
+                audio_manager.play_sfx("hit")
 
         enemy.bullets = [bullet for bullet in enemy.bullets if not bullet.used \
                          and 0 <= bullet.x <= MAP_WIDTH and 0 <= bullet.y <= MAP_HEIGHT]
@@ -1784,6 +1853,7 @@ def move():
         if not drop.used:
             if player.colliderect(drop):
                 drop.used = True
+                audio_manager.play_sfx("health_pickup")
                 if player.health < player.max_health:
                     player.health = min(player.max_health, player.health + 1)
             elif now - drop.spawn_time >= drop.lifetime:
@@ -1834,6 +1904,7 @@ def respawn(mission_config=None, selected_stratagems=None):
     explosion_group.empty()
     powerup_manager.reset(player)
     ground_support_manager.reset(active_mission_config, selected_stratagems=selected_stratagems)
+    audio_manager.play_music("gameplay_normal")
 
 
 def main_menu(mouse_pos=None):
@@ -1843,6 +1914,7 @@ def main_menu(mouse_pos=None):
     title_box.draw(canvas, mouse_pos)
     menu_play_box.draw(canvas, mouse_pos)
     menu_help_box.draw(canvas, mouse_pos)
+    menu_settings_box.draw(canvas, mouse_pos)
     menu_reset_box.draw(canvas, mouse_pos)
 
 
@@ -1853,6 +1925,7 @@ def pause_menu(mouse_pos=None):
     pause_title_box.draw(canvas, mouse_pos)
     pause_continue_box.draw(canvas, mouse_pos)
     pause_help_box.draw(canvas, mouse_pos)
+    pause_settings_box.draw(canvas, mouse_pos)
     pause_menu_box.draw(canvas, mouse_pos)
 
 
@@ -2284,11 +2357,13 @@ def run_game():
                     max_s = PLAYER_MAX_SHIELD + SHIELD_BUBBLE_BONUS
                     if player.shield < max_s:
                         player.shield = min(max_s, player.shield + 2)
+                        audio_manager.play_sfx("shield_regen", volume_scale=0.6)
                 elif player.shield < PLAYER_MAX_SHIELD:
                     if PLAYER_MAX_SHIELD - player.shield > 1:
                         player.shield += 1
                     else:
                         player.shield = PLAYER_MAX_SHIELD
+                    audio_manager.play_sfx("shield_regen", volume_scale=0.6)
 
             # Mouse Wheel Weapon Cycling
             if event.type == pygame.MOUSEWHEEL:
@@ -2298,9 +2373,18 @@ def run_game():
                     elif event.y < 0:
                         ground_support_manager.cycle_weapon(1)
 
+            if event.type == pygame.MOUSEMOTION:
+                if game_state == "settings_menu":
+                    settings_menu.handle_event(event, canvas_mouse_pos)
+
             # Maus-Klick Interaktion für Knöpfe & Raketen-Abschuss
             if event.type == pygame.MOUSEBUTTONDOWN:
-                if game_state == "help_menu":
+                if game_state == "settings_menu":
+                    action = settings_menu.handle_event(event, canvas_mouse_pos)
+                    if action == "close":
+                        game_state = previous_game_state
+
+                elif game_state == "help_menu":
                     action = help_menu.handle_event(event, canvas_mouse_pos)
                     if action == "close":
                         game_state = previous_game_state
@@ -2311,6 +2395,10 @@ def run_game():
                     elif menu_help_box.is_clicked(event, canvas_mouse_pos):
                         previous_game_state = "main_menu"
                         game_state = "help_menu"
+                    elif menu_settings_box.is_clicked(event, canvas_mouse_pos):
+                        previous_game_state = "main_menu"
+                        settings_menu.sync_from_manager()
+                        game_state = "settings_menu"
                     elif menu_reset_box.is_clicked(event, canvas_mouse_pos):
                         player.highscore = 0
                         add_highscore(player.highscore)
@@ -2338,6 +2426,10 @@ def run_game():
                     elif pause_help_box.is_clicked(event, canvas_mouse_pos):
                         previous_game_state = "pause_menu"
                         game_state = "help_menu"
+                    elif pause_settings_box.is_clicked(event, canvas_mouse_pos):
+                        previous_game_state = "pause_menu"
+                        settings_menu.sync_from_manager()
+                        game_state = "settings_menu"
                     elif pause_menu_box.is_clicked(event, canvas_mouse_pos):
                         game_state = "main_menu"
 
@@ -2367,12 +2459,19 @@ def run_game():
 
             # Button release to deploy equipped Stratagem
             if event.type == pygame.MOUSEBUTTONUP:
-                if game_state == "" and player.health > 0:
+                if game_state == "settings_menu":
+                    settings_menu.handle_event(event, canvas_mouse_pos)
+                elif game_state == "" and player.health > 0:
                     if event.button == 1 and ground_support_manager.equipped_slot > 0:
                         ground_support_manager.release_equipped_stratagem(player)
 
             if event.type == pygame.KEYDOWN:
-                if game_state == "help_menu":
+                if game_state == "settings_menu":
+                    action = settings_menu.handle_event(event, canvas_mouse_pos)
+                    if action == "close":
+                        game_state = previous_game_state
+
+                elif game_state == "help_menu":
                     action = help_menu.handle_event(event, canvas_mouse_pos)
                     if action == "close":
                         game_state = previous_game_state
@@ -2383,6 +2482,10 @@ def run_game():
                     elif event.key == pygame.K_h:
                         previous_game_state = "main_menu"
                         game_state = "help_menu"
+                    elif event.key == pygame.K_o:
+                        previous_game_state = "main_menu"
+                        settings_menu.sync_from_manager()
+                        game_state = "settings_menu"
 
                 elif game_state == "mission_select":
                     action = mission_select_menu.handle_event(event, canvas_mouse_pos)
@@ -2406,6 +2509,10 @@ def run_game():
                     elif event.key == pygame.K_h:
                         previous_game_state = "pause_menu"
                         game_state = "help_menu"
+                    elif event.key == pygame.K_o:
+                        previous_game_state = "pause_menu"
+                        settings_menu.sync_from_manager()
+                        game_state = "settings_menu"
                     elif event.key == pygame.K_ESCAPE:
                         game_state = "main_menu"
 
@@ -2416,11 +2523,23 @@ def run_game():
                         elif event.key == pygame.K_h:
                             previous_game_state = ""
                             game_state = "help_menu"
+                        elif event.key == pygame.K_o:
+                            previous_game_state = ""
+                            settings_menu.sync_from_manager()
+                            game_state = "settings_menu"
                         elif event.key == pygame.K_SPACE:
                             game_state = "main_menu"
                     else:
                         if event.key == pygame.K_p:
                             game_state = "pause_menu"
+                        elif event.key == pygame.K_o:
+                            previous_game_state = ""
+                            settings_menu.sync_from_manager()
+                            game_state = "settings_menu"
+                        elif event.key == pygame.K_m:
+                            is_muted = audio_manager.toggle_mute()
+                            status_str = "MUTED" if is_muted else "UNMUTED"
+                            ground_support_manager.add_combat_popup(f"AUDIO {status_str}", player.pos_x, player.pos_y, (255, 80, 80) if is_muted else (80, 255, 120))
                         elif event.key == pygame.K_q:
                             player.toggle_radar_mode()
                         elif event.key in (pygame.K_v, pygame.K_TAB):
@@ -2477,6 +2596,15 @@ def run_game():
         elif game_state == "pause_menu":
             pause_menu(canvas_mouse_pos)
 
+        elif game_state == "settings_menu":
+            if previous_game_state == "main_menu":
+                main_menu(None)
+            elif previous_game_state == "pause_menu":
+                pause_menu(None)
+            else:
+                draw(None)
+            settings_menu.draw(canvas, canvas_mouse_pos)
+
         elif game_state == "help_menu":
             if previous_game_state == "main_menu":
                 main_menu(None)
@@ -2527,11 +2655,36 @@ def run_game():
             else:
                 draw(canvas_mouse_pos)
 
+        # Background Music & Engine Audio Loop Updates
+        if game_state in ("main_menu", "mission_select", "stratagem_select"):
+            audio_manager.play_music("menu_theme")
+            audio_manager.stop_engine_sound()
+        elif game_state in ("pause_menu", "settings_menu", "help_menu"):
+            audio_manager.stop_engine_sound()
+        elif game_state == "":
+            if player.health <= 0:
+                audio_manager.play_music("gameover_theme", loop=False)
+                audio_manager.stop_engine_sound()
+            else:
+                # Modulate engine sound with speed
+                speed_ratio = (player.velocity_x - player.min_speed) / max(0.1, player.max_speed - player.min_speed)
+                audio_manager.update_engine_sound(speed_ratio, is_active=True)
+
+                # Dynamic Music Intensity
+                agro_enemies = [e for e in wave_manager.enemies if e.state == "AGRO"]
+                is_high_threat = (
+                    len(agro_enemies) >= 3 or
+                    len(bomber_enemies) > 0 or
+                    (ground_support_manager.factory_strider and ground_support_manager.factory_strider.is_alive) or
+                    player.health <= 2
+                )
+                audio_manager.update_dynamic_music("intense" if is_high_threat else "normal")
+
         scaled_surface = pygame.transform.scale(canvas, window.get_size())
         window.blit(scaled_surface, (0, 0))
 
         pygame.display.update()
-        clock.tick(CLOCK_TICK)
+        clock.tick(60)
 
     pygame.quit()
 

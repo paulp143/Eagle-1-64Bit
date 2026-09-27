@@ -11,6 +11,11 @@ Provides an interactive, multi-tab help menu detailing:
 import math
 import pygame
 
+try:
+    from audio_manager import get_audio_manager
+except Exception:
+    get_audio_manager = None
+
 # Color Palette (consistent with game UI & sci-fi theme)
 COLOR_BG_OVERLAY = (10, 14, 22, 240)
 COLOR_PANEL_BG = (18, 24, 38)
@@ -111,40 +116,62 @@ class HelpMenu:
             if mouse_pos is not None:
                 # Check Close button
                 if self.close_btn_rect.collidepoint(mouse_pos):
+                    if get_audio_manager:
+                        get_audio_manager().play_sfx("ui_click")
                     return "close"
 
                 # Check Tab buttons
                 for i, rect in enumerate(self.tab_rects):
                     if rect.collidepoint(mouse_pos):
                         self.active_tab = i
+                        if get_audio_manager:
+                            get_audio_manager().play_sfx("ui_click")
                         return "tab_changed"
 
         elif event.type == pygame.KEYDOWN:
             if event.key in (pygame.K_ESCAPE, pygame.K_h):
+                if get_audio_manager:
+                    get_audio_manager().play_sfx("ui_click")
                 return "close"
             elif event.key == pygame.K_1:
                 self.active_tab = self.TAB_WEAPONS
+                if get_audio_manager:
+                    get_audio_manager().play_sfx("ui_click")
                 return "tab_changed"
             elif event.key == pygame.K_2:
                 self.active_tab = self.TAB_ABILITIES
+                if get_audio_manager:
+                    get_audio_manager().play_sfx("ui_click")
                 return "tab_changed"
             elif event.key == pygame.K_3:
                 self.active_tab = self.TAB_RADAR
+                if get_audio_manager:
+                    get_audio_manager().play_sfx("ui_click")
                 return "tab_changed"
             elif event.key == pygame.K_4:
                 self.active_tab = self.TAB_CONTROLS
+                if get_audio_manager:
+                    get_audio_manager().play_sfx("ui_click")
                 return "tab_changed"
             elif event.key == pygame.K_5:
                 self.active_tab = self.TAB_WAVES
+                if get_audio_manager:
+                    get_audio_manager().play_sfx("ui_click")
                 return "tab_changed"
             elif event.key == pygame.K_6:
                 self.active_tab = self.TAB_HELLDIVERS
+                if get_audio_manager:
+                    get_audio_manager().play_sfx("ui_click")
                 return "tab_changed"
             elif event.key in (pygame.K_TAB, pygame.K_RIGHT):
                 self.next_tab()
+                if get_audio_manager:
+                    get_audio_manager().play_sfx("ui_click")
                 return "tab_changed"
             elif event.key == pygame.K_LEFT:
                 self.prev_tab()
+                if get_audio_manager:
+                    get_audio_manager().play_sfx("ui_click")
                 return "tab_changed"
 
         return None

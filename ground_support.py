@@ -26,6 +26,11 @@ import math
 import random
 import pygame
 
+try:
+    from audio_manager import get_audio_manager
+except Exception:
+    get_audio_manager = None
+
 # =====================================================================
 # CONFIGURATION CONSTANTS
 # =====================================================================
@@ -1889,6 +1894,8 @@ class GroundSupportManager:
         """Cycles equipped weapon slot (0: Main Gun, 1..4: Stratagems) via scroll wheel."""
         self.equipped_slot = (self.equipped_slot + direction) % 5
         self.aiming_active = False
+        if get_audio_manager:
+            get_audio_manager().play_sfx("ui_click")
         if self.equipped_slot > 0 and self.equipped_slot - 1 < len(self.active_loadout):
             self.weapon_menu.select(self.active_loadout[self.equipped_slot - 1])
 
@@ -1897,6 +1904,8 @@ class GroundSupportManager:
         if 0 <= slot_idx <= 4:
             self.equipped_slot = slot_idx
             self.aiming_active = False
+            if get_audio_manager:
+                get_audio_manager().play_sfx("ui_click")
             if self.equipped_slot > 0 and self.equipped_slot - 1 < len(self.active_loadout):
                 self.weapon_menu.select(self.active_loadout[self.equipped_slot - 1])
 
@@ -2025,6 +2034,8 @@ class GroundSupportManager:
             strike = ActiveAirStrike(self.weapon_menu.selected_type, tx, ty, player.angle)
             self.active_strikes.append(strike)
             self.add_combat_popup("STRATAGEM DEPLOYED", tx, ty, (255, 215, 0))
+            if get_audio_manager:
+                get_audio_manager().play_sfx("airstrike_siren")
             return True
         return False
 
@@ -2042,6 +2053,8 @@ class GroundSupportManager:
 
         self.supply_pods.append(SupplyDropPod(sx + random.uniform(-30, 30), sy + random.uniform(-30, 30)))
         self.add_combat_popup("SUPPLY POD CALLED", sx, sy, (0, 220, 255))
+        if get_audio_manager:
+            get_audio_manager().play_sfx("rocket_launch")
         return True
 
     def add_combat_popup(self, text, x, y, color=(255, 255, 255)):
