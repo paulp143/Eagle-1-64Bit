@@ -328,13 +328,26 @@ Access the interactive in-game tactical manual at any time by pressing **`H`**. 
 | **Toggle Radar Mode (`CONE` / `OMNI`)** | `Q` | — | Active Gameplay |
 | **Open Help Menu** | `H` | — | Main Menu / Pause Menu / Game Over |
 | **Help Menu Tabs (1-6)** | `1` - `6` | Click Tabs | Help Menu |
+| **Open Settings & Audio Menu** | `O` | Click `SETTINGS` | Main Menu / Pause Menu / Game Over / Gameplay |
+| **Settings Menu Tabs (1-3)** | `1` - `3` | Click Tabs | Settings Menu |
+| **Instant Mute / Unmute Audio** | `M` | — | All States |
 | **Pause Game** | `P` | — | Active Gameplay |
 | **Resume Game** | `P` | Click `CONTINUE` | Pause Menu |
 | **Return to Main Menu** | `Escape` (`ESC`) | Click `MAIN MENU` | Pause Menu |
-| **Close Help Menu / Weapon Menu** | `Escape` (`ESC`) | Click `X` / close button | Help Menu / Weapon Menu |
+| **Close Help / Settings / Weapon Menu** | `Escape` (`ESC`) | Click `X` / close button | In Menus |
 | **Respawn** | `R` | Click `RESPAWN` | Game Over (`Health <= 0`) |
 | **Return to Main Menu** | `Spacebar` | Click `MAIN MENU` | Game Over (`Health <= 0`) |
-| **Quit Game** | Window Close Button (`QUIT`) | — | All States |
+## Game Audio & Extensible Settings Architecture
+
+Eagle-1-64Bit features a centralized, 16-channel audio system (`audio_manager.py`) with procedural audio generation (`generate_audio_assets.py`), dynamic combat music adaptation, thruster engine sound modulation, anti-clipping voice limiting, and an extensible tabbed Settings Menu (`settings_menu.py`).
+
+### Key Audio Features
+- **Centralized 16-Channel Mixer**: Dedicated low-latency voices for primary cannons, rockets, enemy gunfire, hits, explosions, alarms, pickups, UI feedback, and continuous engine loop.
+- **Procedural High-Fidelity Synthesis**: 17 sound effects and 4 full music loops generated at 44.1kHz 16-bit stereo PCM with zero external download dependencies (supports dropping custom `.wav`/`.ogg` assets directly into `audio/`).
+- **Dynamic Combat Music**: Automatically scales musical intensity between normal synthwave combat loops and high-threat themes based on active agro enemies, bombers, Factory Striders, or low health.
+- **Flight Velocity-Modulated Engine Hum**: Continuous jet thruster frequency and volume scale smoothly with player acceleration and flight speed.
+- **Anti-Clipping & Voice Limiting**: Configurable minimum intervals prevent audio stacking during intense bullet storms.
+- **Extensible Settings Menu**: Modular, tabbed interface (`1. Audio Settings`, `2. Gameplay & HUD`, `3. Flight Controls`) with interactive volume sliders (Master, Music, SFX), Mute toggle switch, SFX test button, and persistence to `data/audio_settings.json`. Easily extended with new categories and options.
 
 
 

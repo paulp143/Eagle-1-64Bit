@@ -3,6 +3,11 @@ import math
 import random
 import os
 
+try:
+    from audio_manager import get_audio_manager
+except Exception:
+    get_audio_manager = None
+
 # =====================================================================
 # POWER-UP SYSTEM CONFIGURATION CONSTANTS
 # Easily accessible tuning parameters
@@ -508,6 +513,9 @@ class PowerUpManager:
 
         # Duration refresh rule (no infinite multiplying stacking)
         self.active_buffs[ability_id] = duration
+
+        if get_audio_manager:
+            get_audio_manager().play_sfx("powerup_pickup")
 
         # Immediate effects
         if ability_id == "shield_bubble":
