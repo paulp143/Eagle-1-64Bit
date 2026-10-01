@@ -1075,7 +1075,6 @@ class AimingReticle:
             if selected_strike_type == AirStrikeType.STRAFE:
                 # Directional strafing lane rectangle
                 corridor_len = 160
-                corridor_w = 28
                 dx = -math.sin(rad) * corridor_len
                 dy = -math.cos(rad) * corridor_len
                 pygame.draw.line(surface, ret_col, (six, siy), (six + dx, siy + dy), 2)
@@ -2187,7 +2186,7 @@ class GroundSupportManager:
                         laser.used = True
                         player.take_damage(laser.damage)
 
-        self.enemy_lasers = [l for l in self.enemy_lasers if not l.used and 0 <= l.x <= MAP_WIDTH and 0 <= l.y <= MAP_HEIGHT]
+        self.enemy_lasers = [laser for laser in self.enemy_lasers if not laser.used and 0 <= laser.x <= MAP_WIDTH and 0 <= laser.y <= MAP_HEIGHT]
 
         # Update Helldiver Bullets (damage aerial hostiles and ground enemies)
         for b in self.bullets:

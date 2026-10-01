@@ -1,7 +1,6 @@
 import pygame
 import math
 import random
-import os
 
 try:
     from eagle1.systems.audio_manager import get_audio_manager

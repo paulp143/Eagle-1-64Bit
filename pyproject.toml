@@ -29,6 +29,7 @@ dev = [
     "pytest>=8.0.0",
     "ruff>=0.5.0",
     "pyinstaller>=6.5.0",
+    "numpy>=1.24.0",
 ]
 
 [project.scripts]
@@ -45,3 +46,15 @@ addopts = "-ra -q"
 [tool.ruff]
 line-length = 120
 target-version = "py39"
+
+[tool.ruff.lint]
+select = [
+    "E4",
+    "E7",
+    "E9",
+    "F",
+]
+ignore = [
+    "E402",  # Module level import not at top of file (needed for headless SDL environment & sys.path setup)
+    "E501",  # Line length is 120 max, avoid flagging long comments/strings
+]

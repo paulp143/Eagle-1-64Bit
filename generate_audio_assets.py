@@ -8,6 +8,7 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from tools.generate_audio_assets import *  # noqa: F401,F403
+from tools.generate_audio_assets import generate_all
 
 
 if __name__ == "__main__":

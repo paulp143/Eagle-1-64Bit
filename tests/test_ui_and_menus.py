@@ -1,6 +1,5 @@
 """Tests for HelpMenu, SettingsMenu, and user interface navigation."""
 
-import pygame
 from eagle1.ui.help_menu import HelpMenu
 from eagle1.ui.settings_menu import SettingsMenu
 from eagle1.systems.audio_manager import AudioManager

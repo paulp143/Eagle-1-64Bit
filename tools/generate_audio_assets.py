@@ -7,7 +7,6 @@ NumPy and standard Python wave libraries. Produces clean 44.1kHz 16-bit stereo W
 
 import os
 import wave
-import struct
 import numpy as np
 
 SAMPLE_RATE = 44100
@@ -448,10 +447,16 @@ def generate_music(output_dir):
     print("All Music Tracks generated successfully.")
 
 
-def generate_all():
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    sfx_dir = os.path.join(base_dir, "audio", "sfx")
-    music_dir = os.path.join(base_dir, "audio", "music")
+def generate_all(output_root=None):
+    if output_root is None:
+        # Default to project root audio directory
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        audio_dir = os.path.join(project_root, "audio")
+    else:
+        audio_dir = output_root
+
+    sfx_dir = os.path.join(audio_dir, "sfx")
+    music_dir = os.path.join(audio_dir, "music")
 
     generate_sfx(sfx_dir)
     generate_music(music_dir)

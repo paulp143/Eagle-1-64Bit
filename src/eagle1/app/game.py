@@ -12,29 +12,11 @@ from eagle1.systems.ground_support import (
     PLAYER_STEERING_SLOW_MO_FACTOR,
     SLOW_MO_TIME_SCALE,
     StratagemSelectMenu,
-    WEAPON_SLOT_MAIN_GUN,
 )
 from eagle1.systems.powerups import (
     DAMAGE_BOOST_MULTIPLIER,
-    DURATION_DAMAGE_BOOST,
-    DURATION_DRONE_COMPANION,
-    DURATION_FREEZE_BLAST,
-    DURATION_HOMING_PODS,
-    DURATION_RAPID_FIRE,
-    DURATION_SHIELD_BUBBLE,
-    DURATION_THRUSTER_BOOST,
-    DURATION_TIME_SLOW,
-    HOMING_POD_DAMAGE,
-    POWERUP_DROP_BASE_CHANCE,
-    POWERUP_LIFETIME_SECONDS,
-    POWERUP_MAGNET_RADIUS,
-    POWERUP_PITY_INCREMENT,
     RAPID_FIRE_COOLDOWN_MS,
     RAPID_FIRE_RELOAD_MS,
-    RARITY_COMMON_WEIGHT,
-    RARITY_EPIC_WEIGHT,
-    RARITY_RARE_WEIGHT,
-    SCORE_MILESTONE_THRESHOLDS,
     SHIELD_BUBBLE_BONUS,
     PowerUpManager,
 )
@@ -2313,6 +2295,10 @@ def run_game():
                     action = help_menu.handle_event(event, canvas_mouse_pos)
                     if action == "close":
                         game_state = previous_game_state
+                    elif event.key == pygame.K_m:
+                        is_muted = audio_manager.toggle_mute()
+                        status_str = "MUTED" if is_muted else "UNMUTED"
+                        ground_support_manager.add_combat_popup(f"AUDIO {status_str}", player.pos_x, player.pos_y, (255, 80, 80) if is_muted else (80, 255, 120))
 
                 elif game_state == "main_menu":
                     if event.key in (pygame.K_LSHIFT, pygame.K_RSHIFT):
@@ -2324,6 +2310,10 @@ def run_game():
                         previous_game_state = "main_menu"
                         settings_menu.sync_from_manager()
                         game_state = "settings_menu"
+                    elif event.key == pygame.K_m:
+                        is_muted = audio_manager.toggle_mute()
+                        status_str = "MUTED" if is_muted else "UNMUTED"
+                        ground_support_manager.add_combat_popup(f"AUDIO {status_str}", player.pos_x, player.pos_y, (255, 80, 80) if is_muted else (80, 255, 120))
 
                 elif game_state == "mission_select":
                     action = mission_select_menu.handle_event(event, canvas_mouse_pos)
@@ -2332,6 +2322,10 @@ def run_game():
                     elif isinstance(action, dict):
                         pending_mission_config = action
                         game_state = "stratagem_select"
+                    elif event.key == pygame.K_m:
+                        is_muted = audio_manager.toggle_mute()
+                        status_str = "MUTED" if is_muted else "UNMUTED"
+                        ground_support_manager.add_combat_popup(f"AUDIO {status_str}", player.pos_x, player.pos_y, (255, 80, 80) if is_muted else (80, 255, 120))
 
                 elif game_state == "stratagem_select":
                     action = stratagem_select_menu.handle_event(event, canvas_mouse_pos)
@@ -2340,7 +2334,12 @@ def run_game():
                     elif isinstance(action, list):
                         respawn(pending_mission_config, selected_stratagems=action)
                         game_state = ""
-
+                    elif event.key == pygame.K_m:
+                        is_muted = audio_manager.toggle_mute()
+                        status_str = "MUTED" if is_muted else "UNMUTED"
+                        ground_support_manager.add_combat_popup(f"AUDIO {status_str}", player.pos_x, player.pos_y, (255, 80, 80) if is_muted else (80, 255, 120))
+                
+                
                 elif game_state == "pause_menu":
                     if event.key == pygame.K_p:
                         game_state = ""
@@ -2353,6 +2352,10 @@ def run_game():
                         game_state = "settings_menu"
                     elif event.key == pygame.K_ESCAPE:
                         game_state = "main_menu"
+                    elif event.key == pygame.K_m:
+                        is_muted = audio_manager.toggle_mute()
+                        status_str = "MUTED" if is_muted else "UNMUTED"
+                        ground_support_manager.add_combat_popup(f"AUDIO {status_str}", player.pos_x, player.pos_y, (255, 80, 80) if is_muted else (80, 255, 120))
 
                 elif game_state == "":
                     if player.health <= 0:
