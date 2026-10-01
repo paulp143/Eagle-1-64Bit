@@ -24,6 +24,7 @@ A 2D top-down space combat arcade game built in Python using Pygame. The game fe
 - [Help Menu (6 Tabs)](#help-menu-6-tabs)
 - [Gameplay Description](#gameplay-description)
 - [Controls](#controls)
+- [Game Audio & Extensible Settings Architecture](#game-audio--extensible-settings-architecture)
 - [Automated Testing Suite](#automated-testing-suite)
 - [Requirements & Dependencies](#requirements--dependencies)
 - [Installation Instructions](#installation-instructions)
@@ -81,7 +82,7 @@ A custom 2D camera tracks the player ship across the map, clamping to world bord
 - **Tactical Ramming / Kamikaze Damage:** Direct physical collisions with enemy craft deal damage to both sides.
 - **Autonomous Enemy Aircraft:** Hostile `Light_Enemy` units spawn in coordinated squadrons with flocking and combat AI.
 - **In-Game Help Menu (6 Tabs):** Multi-tab help overlay providing weapons, abilities, radar, controls, wave combat, and Helldiver support guidance.
-- **Automated Headless Test Suite:** 53 automated tests covering mission configs, base defense, Factory Strider boss, ground combat, fabricators, and stratagems.
+- **Automated Headless Test Suite:** 25 automated pytest tests covering mission configs, ground combat, fabricators, stratagems, flight physics, persistence, and UI menus.
 
 
 
@@ -354,33 +355,65 @@ Eagle-1-64Bit features a centralized, 16-channel audio system (`audio_manager.py
 
 ## Automated Testing Suite
 
-The repository includes a comprehensive, headless automated test suite covering all modules:
+The repository includes a comprehensive, headless automated test suite powered by `pytest` and configured via `pyproject.toml`. Headless dummy video and audio drivers (`SDL_VIDEODRIVER=dummy`, `SDL_AUDIODRIVER=dummy`) are initialized automatically in `tests/conftest.py`:
 
 ```bash
-python -m unittest test_help_menu.py test_ground_support.py test_gameplay_integration.py
+python -m pytest
 ```
 
-### Test Coverage Summary (47 Tests)
+Or run `pytest` directly with detailed test reporting:
 
-- **`test_ground_support.py` (25 tests):**
-  - **`TestAirStrikeWeaponMenu` (4 tests):** Tests menu initialization, hotkey toggling (`V`/`TAB`), number-key switching (`1`-`8`), mouse card selection, and cooldown tracking.
-  - **`TestHelldiverUnit` (4 tests):** Tests squad member health, energy shield absorption, healing, and anti-air engagement.
-  - **`TestGroundSupportManager` (6 tests):** Tests squad spawning, air strike deployment, supply drops, CAS bonuses, wave survival rewards, and UI rendering.
-  - **`TestEnemyGroundForces` (5 tests):** Tests Automaton Trooper/Walker lifecycles, health/stats, laser fire, damage collisions on Helldivers and Player, and fabricator reinforcement spawning/demolition.
-  - **`TestAimingReticle` (3 tests):** Tests gun convergence pip projection (180px), predictive strike impact coordinates with velocity compensation, and reticle rendering across all 8 stratagems.
-  - **`TestSquadAirStrikeRequest` (2 tests):** Tests Helldiver CAS mission generation, timer expiration, and weapon-agnostic delivery bonuses.
-- **`test_help_menu.py` (11 tests):**
-  - Tests tab switching across all 6 tabs via mouse clicks and number hotkeys (`1`-`6`), tab cycling, escape handling, and headless render verification.
-- **`test_gameplay_integration.py` (11 tests):**
-  - Tests headless game loop frame stepping, air strikes detonating on enemies, supply pod landings, menu key switching, CAS enemy kill bonuses, `respawn()` state resets, cannon/rocket collisions on ground units and fabricators, CAS mission completion, and reticle drawing.
+```bash
+pytest -v
+```
+
+### Test Coverage Summary (25 Tests)
+
+- **`tests/test_ground_support.py` (4 tests):**
+  - Initial squad roster instantiation (Viper 1-4 with full health and shields).
+  - Helldiver callsigns and role assignments (Lead, Heavy, Scout, Medic).
+  - Supply drop pod parachute descent, ground landing, and replenishment availability.
+  - CAS ground delivery bonus (`+500 PTS`) and survivor wave reward (`+500 PTS`) constants.
+- **`tests/test_health_and_damage.py` (4 tests):**
+  - Player initial health (5 HP) and shield (20 points) setup.
+  - Shields-first damage absorption priority preserving hull integrity.
+  - Spillover mechanics when damage exceeds current shield capacity.
+  - Post-hit invulnerability state preventing overlapping damage.
+- **`tests/test_math_and_physics.py` (4 tests):**
+  - Flight speed boundaries clamped between `PLAYER_MIN_SPEED` (2.0) and `PLAYER_MAX_SPEED` (7.0).
+  - Camera viewport coordinate clamping against map boundaries (`0 .. 3000`).
+  - Dynamic predictive reticle lead formula ($\text{lead} = 320.0 + v \times 8.0$).
+  - Radar operational search ranges for directional `CONE` and 360° `OMNI` modes.
+- **`tests/test_persistence.py` (3 tests):**
+  - Safe high score reading, writing, and corrupted-file recovery using temporary files.
+  - Audio settings fallback to default values when configuration file is missing.
+  - Graceful partial-key dictionary merging for missing settings.
+- **`tests/test_powerups.py` (4 tests):**
+  - Ability definitions catalog (8 abilities across Common, Rare, and Epic tiers).
+  - Initial `PowerUpManager` state verification.
+  - Power-up drop entity lifecycle, positioning, and expiration countdown.
+  - Pity system probability progression and base drop constants.
+- **`tests/test_ui_and_menus.py` (3 tests):**
+  - Help menu 6-tab cycle, boundary wrapping, and headless render execution.
+  - Settings menu 3-tab navigation, slider updates, and headless drawing.
+  - Audio manager mute state toggling.
+- **`tests/test_weapons_and_cooldowns.py` (3 tests):**
+  - Primary quad-cannon capacity (200 rounds) and reload timer (5.0s).
+  - Secondary homing rocket payload (4 missiles) and reload cycle (25.0s).
+  - Stratagem definitions (8 air strikes with cooldowns, blast radii, and tactical metadata).
 
 
 
 ## Requirements & Dependencies
 
-- **Python:** Python 3.8+ (compatible with Python 3.10, 3.11, 3.12, 3.13, 3.14)
-- **Pygame:** `pygame` or `pygame-ce`
-- **Standard Library:** `os`, `sys`, `random`, `math`, `unittest`
+- **Python:** Python 3.9+ (compatible with Python 3.10, 3.11, 3.12, 3.13, 3.14)
+- **Core Dependencies:**
+  - `pygame-ce>=2.5.0` (or `pygame>=2.5.0`)
+- **Development & Testing Dependencies:**
+  - `pytest>=8.0.0`
+  - `ruff>=0.5.0`
+  - `pyinstaller>=6.5.0`
+- **Standard Library:** `os`, `sys`, `random`, `math`, `json`, `pathlib`
 
 
 
@@ -392,16 +425,21 @@ python -m unittest test_help_menu.py test_ground_support.py test_gameplay_integr
    cd Eagle-1-64Bit
    ```
 
-2. Install the required `pygame` dependency:
+2. Install runtime dependencies:
    ```bash
-   pip install pygame
+   pip install -r requirements.txt
+   ```
+
+   *Alternatively, install the package in editable mode:*
+   ```bash
+   pip install -e .
    ```
 
 
 
 ## Development Setup
 
-To configure an isolated virtual environment:
+To configure an isolated virtual environment for development and testing:
 
 1. Create a virtual environment:
    ```bash
@@ -413,22 +451,50 @@ To configure an isolated virtual environment:
    - **Windows (CMD):** `venv\Scripts\activate.bat`
    - **Linux / macOS:** `source venv/bin/activate`
 
-3. Install dependencies:
+3. Install development dependencies:
    ```bash
-   pip install pygame
+   pip install -r requirements-dev.txt
+   pip install -e .
    ```
 
-4. Run the test suite to verify installation:
+4. Run the automated test suite:
    ```bash
-   python -m unittest test_help_menu.py test_ground_support.py test_gameplay_integration.py
+   python -m pytest
+   ```
+
+5. Run code linting:
+   ```bash
+   ruff check .
+   ```
+
+6. Generate procedural audio waveforms (if needed):
+   ```bash
+   python tools/generate_audio_assets.py
    ```
 
 ---
 
 ## Run Instructions
 
-Execute `main.py` directly:
+Eagle-1-64Bit can be launched through multiple interfaces:
 
+### Option 1: Installed Console Command
+If installed via `pip install -e .`:
+```bash
+eagle1
+```
+
+### Option 2: Python Module Execution
+```bash
+python -m eagle1
+```
+
+### Option 3: Repository Root Launcher
+```bash
+python run_game.py
+```
+
+### Option 4: Compatibility Launcher
 ```bash
 python main.py
 ```
@@ -460,43 +526,40 @@ python main.py
 ## Project Architecture Overview
 
 ```text
-main.py
-├── Configuration Constants & Game Tuning
-├── Asset Loader & Robust Path Resolver
-├── Persistence Layer (Highscore)
-├── Interactive UI & Help Menu System
-├── Player Aircraft & Quad-Cannon Physics
-├── Secondary Homing Rocket & Lock-on Engine
-├── Ground Support Manager Hook (Helldivers & Enemies)
-├── Wave Manager & Light_Enemy Combat AI
-├── Power-Up Manager Hook
-├── Dynamic Reticle & HUD Renderers
-└── 60 FPS Main Game Loop
+src/eagle1/
+├── __main__.py               # CLI entrypoint for `eagle1` and `python -m eagle1`
+├── paths.py                  # Centralized cross-platform asset, data, and root path resolver
+├── effects.py                # Visual FX, particle bursts, floating damage & score text
+├── app/
+│   └── game.py               # 60 FPS main game loop, camera, player aircraft, aerial combat,
+│                             # wave management, combat state machine, rendering pipeline, HUD
+├── systems/
+│   ├── ground_support.py     # Helldivers (Viper 1-4), Automaton ground units, fabricators,
+│   │                         # Factory Strider boss, stratagems, CAS beacon requests,
+│   │                         # supply drops, predictive reticle, weapon selection menu
+│   ├── powerups.py           # 8 abilities across 3 rarities, drop mechanics with pity counter,
+│   │                         # magnetics, escort drones, swarm homing micro-missiles
+│   └── audio_manager.py      # Centralized 16-channel mixer, procedural SFX & dynamic combat music,
+│                             # thruster modulation, voice limiter, persistence
+└── ui/
+    ├── help_menu.py          # 6-tab tactical manual overlay (Weapons, Abilities, Radar, Controls, Waves, Helldivers)
+    └── settings_menu.py      # Tabbed settings interface (Audio, Gameplay/HUD, Flight Controls)
 
-ground_support.py
-├── Tuning Constants & Stratagem Definitions
-├── HelldiverUnit Entity & Tactical AI
-├── EnemyGroundUnit Entity (Troopers & Walkers)
-├── EnemyFabricator Foundry Entity
-├── SquadAirStrikeRequest Mission Handler
-├── AimingReticle Fire-Control System
-├── ActiveAirStrike Entity & Area Blast Logic
-├── SupplyDropPod Entity
-├── AirStrikeWeaponMenu Overlay
-└── GroundSupportManager Subsystem
+tools/
+└── generate_audio_assets.py  # Standalone procedural audio waveform generator (44.1kHz stereo PCM)
 
-powerup_system.py
-├── Configurable Constants & Ability Tables
-├── PowerUpDrop Entity & Magnetics
-├── DroneCompanion Escort Entity
-├── HomingMicroMissile Swarm Entity
-└── PowerUpManager Subsystem
-
-help_menu.py
-├── HelpMenu State Machine & Layout Engine
-├── 6 Tactical Tab Briefing Renderers
-└── Keyboard & Mouse Navigation Handlers
+tests/                        # Automated headless pytest suite (25 unit and integration tests)
+├── conftest.py               # Headless Pygame fixture & dummy rendering surface
+├── test_ground_support.py    # Helldivers, ground units, CAS delivery, and supply drops
+├── test_health_and_damage.py # Health, shield absorption, and invulnerability mechanics
+├── test_math_and_physics.py  # Flight physics, camera clamping, and predictive reticle lead
+├── test_persistence.py       # High score file I/O and audio settings fallback
+├── test_powerups.py          # Power-up drops, pity system, drone companions, and abilities
+├── test_ui_and_menus.py      # Help and settings menu navigation and rendering
+└── test_weapons_and_cooldowns.py # Primary cannons, homing rockets, and stratagems
 ```
+
+Root-level launcher scripts (`run_game.py`, `main.py`) and legacy wrappers (`ground_support.py`, `powerup_system.py`, `audio_manager.py`, `help_menu.py`, `settings_menu.py`, `generate_audio_assets.py`) provide backward compatibility delegating directly to the modular package.
 
 
 
@@ -504,15 +567,24 @@ help_menu.py
 
 ```text
 .
-├── .gitignore
-├── LICENSE
-├── README.md
+├── .github/
+│   ├── workflows/
+│   │   ├── build-exe.yml
+│   │   └── ci.yml
+│   ├── ISSUE_TEMPLATE/
+│   │   ├── bug_report.yml
+│   │   └── feature_request.yml
+│   └── PULL_REQUEST_TEMPLATE.md
+├── audio/
+│   ├── music/
+│   └── sfx/
 ├── data/
+│   ├── audio_settings.json
 │   └── highscore.txt
-├── data.csv
-├── ground_support.py
-├── help_menu.py
 ├── images/
+│   ├── Documentation images/
+│   │   ├── game.png
+│   │   └── main_menu.png
 │   ├── 20260820_085135933_iOS.webp
 │   ├── LargeExplosionA_spritesheet.png
 │   ├── Space-Invaders-Ship.png
@@ -525,11 +597,46 @@ help_menu.py
 │   ├── health.png
 │   ├── light_enemy_explosion.png
 │   └── newbackround.png
+├── src/
+│   └── eagle1/
+│       ├── app/
+│       │   └── game.py
+│       ├── systems/
+│       │   ├── audio_manager.py
+│       │   ├── ground_support.py
+│       │   └── powerups.py
+│       ├── ui/
+│       │   ├── help_menu.py
+│       │   └── settings_menu.py
+│       ├── effects.py
+│       ├── paths.py
+│       └── __main__.py
+├── tests/
+│   ├── conftest.py
+│   ├── test_ground_support.py
+│   ├── test_health_and_damage.py
+│   ├── test_math_and_physics.py
+│   ├── test_persistence.py
+│   ├── test_powerups.py
+│   ├── test_ui_and_menus.py
+│   └── test_weapons_and_cooldowns.py
+├── tools/
+│   └── generate_audio_assets.py
+├── .gitignore
+├── LICENSE
+├── README.md
+├── contributing.md
+├── pyproject.toml
+├── requirements.txt
+├── requirements-dev.txt
+├── run_game.py
 ├── main.py
+├── ground_support.py
 ├── powerup_system.py
-├── test_gameplay_integration.py
-├── test_ground_support.py
-└── test_help_menu.py
+├── audio_manager.py
+├── help_menu.py
+├── settings_menu.py
+└── generate_audio_assets.py
 ```
 
 
@@ -556,7 +663,7 @@ help_menu.py
 
 ## Configuration Explanation
 
-### General Gameplay & Combat Constants (`main.py`)
+### General Gameplay & Combat Constants (`src/eagle1/app/game.py`)
 
 
 | Constant | Value | Description |
@@ -582,7 +689,7 @@ help_menu.py
 | `RADAR_OMNI_RANGE` | `420` | Maximum search radius for `OMNI` radar mode (pixels). |
 | `BORDER_TICK_DAMAGE` | `0.1` | Damage dealt per tick when flying outside map perimeter. |
 
-### Ground Support & Stratagem Constants (`ground_support.py`)
+### Ground Support & Stratagem Constants (`src/eagle1/systems/ground_support.py`)
 
 | Constant | Value | Description |
 | :--- | :--- | :--- |
@@ -604,15 +711,16 @@ help_menu.py
 ## Troubleshooting
 
 ### 1. `ModuleNotFoundError: No module named 'pygame'`
-- **Cause:** Pygame is not installed in your active environment.
-- **Solution:** Run `pip install pygame`.
+- **Cause:** Pygame or pygame-ce is not installed in your active Python environment.
+- **Solution:** Run `pip install -r requirements.txt` (or `pip install pygame-ce`).
 
 ### 2. Assets Not Found / `pygame.error: Couldn't open images/...`
-- **Cause:** Script run from an unexpected directory.
-- **Solution:** Run from the repository root:
+- **Cause:** Script launched from an external working directory without package installation.
+- **Solution:** Launch from the repository root:
   ```bash
   cd Eagle-1-64Bit
-  python main.py
+  python run_game.py
+  # Alternatively: python -m eagle1
   ```
 
 ### 3. Highscore Does Not Save

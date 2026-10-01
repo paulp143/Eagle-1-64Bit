@@ -1,0 +1,5 @@
+# Development, testing, and packaging dependencies for Eagle-1-64Bit
+-r requirements.txt
+pytest>=8.0.0
+ruff>=0.5.0
+pyinstaller>=6.5.0

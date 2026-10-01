@@ -1,0 +1,2 @@
+# Core runtime dependencies for Eagle-1-64Bit
+pygame-ce>=2.5.0

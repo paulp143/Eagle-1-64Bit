@@ -12,11 +12,11 @@ Please be respectful, constructive, and welcoming in issues, pull requests, and 
 
 ### Prerequisites
 
-- Python 3.8 or newer
+- Python 3.9 or newer
 - Git
 - A working desktop environment capable of running Pygame
 
-The project currently supports Python versions through the development versions documented in `README.md`. Pygame is the primary runtime dependency.
+The project currently supports Python versions through the development versions documented in `README.md`. Pygame (`pygame-ce` or `pygame`) is the primary runtime dependency.
 
 ### Clone the Repository
 
@@ -54,28 +54,34 @@ source venv/bin/activate
 
 ```bash
 python -m pip install --upgrade pip
-python -m pip install pygame
+python -m pip install -r requirements-dev.txt
+python -m pip install -e .
 ```
 
 ### Run the Game
 
-Run the game from the repository root so that image and data paths resolve correctly:
+Run the game from the repository root:
 
 ```bash
-python main.py
+python run_game.py
+# Alternatively: python -m eagle1 (or eagle1 if installed in editable mode)
 ```
 
 ## Project Structure
 
-The main modules are:
+The project follows a standard `src/` layout with modular packages:
 
-- `main.py` — game initialization, player aircraft, combat loop, UI, waves, and persistence.
-- `ground_support.py` — Helldiver units, Automaton ground forces, fabricators, air strikes, supply drops, and CAS missions.
-- `powerup_system.py` — power-up drops, abilities, escort drones, and homing micro-missiles.
-- `help_menu.py` — the in-game tactical help menu and its six information tabs.
+- `src/eagle1/app/game.py` — game initialization, player aircraft, combat loop, UI, waves, and persistence.
+- `src/eagle1/systems/ground_support.py` — Helldiver units, Automaton ground forces, fabricators, air strikes, supply drops, and CAS missions.
+- `src/eagle1/systems/powerups.py` — power-up drops, abilities, escort drones, and homing micro-missiles.
+- `src/eagle1/systems/audio_manager.py` — 16-channel mixer, procedural SFX & dynamic combat music, persistence.
+- `src/eagle1/ui/help_menu.py` — in-game tactical help menu and its six information tabs.
+- `src/eagle1/ui/settings_menu.py` — tabbed settings interface.
+- `tools/generate_audio_assets.py` — standalone audio synthesis tool.
+- `tests/` — automated headless test suite running under `pytest`.
 - `images/` — sprites, backgrounds, explosions, and interface assets.
-- `data/` — runtime data such as the saved high score.
-- `test_*.py` — automated tests for menus, ground support, and gameplay integration.
+- `data/` — runtime data such as high scores and audio settings.
+- Root scripts (`run_game.py`, `main.py`, etc.) provide convenient launchers and compatibility shims.
 
 Read the relevant module and existing tests before changing behavior. Prefer extending existing systems over duplicating logic.
 
@@ -121,13 +127,19 @@ Suggested branch names:
 Run the automated test suite before submitting a pull request:
 
 ```bash
-python -m unittest test_help_menu.py test_ground_support.py test_gameplay_integration.py
+python -m pytest
 ```
 
-You can also discover and run all unittest-based tests with:
+You can also run pytest with verbose output:
 
 ```bash
-python -m unittest discover
+pytest -v
+```
+
+To run lint checks:
+
+```bash
+ruff check .
 ```
 
 When adding a feature, consider tests for:

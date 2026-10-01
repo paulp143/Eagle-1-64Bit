@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "eagle1"
+version = "0.2.0"
+description = "A 2D top-down arcade space combat and Helldiver close-air-support game."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [
+    { name = "paulp143" }
+]
+keywords = [
+    "pygame",
+    "arcade",
+    "space-shooter",
+    "close-air-support",
+    "helldivers",
+    "top-down-shooter"
+]
+dependencies = [
+    "pygame-ce>=2.5.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.5.0",
+    "pyinstaller>=6.5.0",
+]
+
+[project.scripts]
+eagle1 = "eagle1.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-ra -q"
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"
