@@ -47,9 +47,6 @@ def get_project_root():
             p_dir = os.path.dirname(p) if os.path.isfile(p) else p
             candidates.append(p_dir)
             candidates.append(os.path.join(p_dir, "Eagle-1-64Bit"))
-    # 4. Primary known project directories
-    candidates.append(r"C:\Users\paul\OneDrive\Desktop\Python\Pygame\Eagle-1-64Bit")
-    candidates.append(r"C:\Users\paul\.gemini\antigravity\worktrees\Eagle-1-64Bit\improve_enemy_combat_ai")
 
     # Normalize candidates: convert file paths to directories, check existence
     clean_candidates = []
@@ -100,8 +97,6 @@ if PROJECT_ROOT not in sys.path:
 for c in [
     PROJECT_ROOT,
     os.getcwd(),
-    r"C:\Users\paul\OneDrive\Desktop\Python\Pygame\Eagle-1-64Bit",
-    r"C:\Users\paul\.gemini\antigravity\worktrees\Eagle-1-64Bit\improve_enemy_combat_ai",
 ]:
     if os.path.isdir(c) and c not in sys.path:
         if os.path.exists(os.path.join(c, "help_menu.py")) or os.path.exists(os.path.join(c, "powerup_system.py")):
@@ -283,7 +278,6 @@ def load_image(image_path, scale=None):
             os.path.join(os.getcwd(), "images", image_path),
             os.path.join(os.getcwd(), "images", basename),
             os.path.join(os.getcwd(), "Eagle-1-64Bit", "images", basename),
-            os.path.join(r"C:\Users\paul\OneDrive\Desktop\Python\Pygame\Eagle-1-64Bit", "images", basename),
         ]
         found = None
         for path in candidates:
