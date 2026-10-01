@@ -45,7 +45,7 @@ jobs:
           Compress-Archive -Path dist\Eagle-1 -DestinationPath dist\Eagle-1-Windows.zip
 
       - name: Upload Build Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Eagle-1-Windows
           path: dist/Eagle-1-Windows.zip
