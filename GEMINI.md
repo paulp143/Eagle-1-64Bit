@@ -106,10 +106,6 @@ Always keep coordinate spaces strictly separated:
 5. **Preserve User Data**:
    - Never overwrite or reset `data/highscore.txt` with dummy test scores.
    - Ensure `data/audio_settings.json` handles missing keys gracefully with fallback defaults.
-6. **Proactive Improvement Suggestions**:
-   - Whenever you identify code, architecture, performance, test coverage, gameplay balancing, or usability that could be improved, **proactively state your observations and recommendations to the user**.
-   - Outline the rationale, expected benefits, and possible implementation approach clearly, without performing unrequested invasive refactors.
-
 
 ---
 
@@ -154,46 +150,3 @@ Verify:
 ## Documentation Synchronization
 - If controls, weapon statistics, stratagems, or operational modes are added or changed, update `README.md` and the relevant tab in `help_menu.py`.
 - If development, installation, or test workflows change, update `contributing.md`.
-
----
-
-## GitHub CLI (`gh`) & Repository Operations
-
-Use the GitHub CLI (`gh`) whenever explicitly requested by the user, or whenever you determine it is necessary or advantageous to complete a task. If you decide so, tell the user why you think it would improve the task and ask him for permission.
-
-### Key Use Cases
-1. **Direct User Commands**: Execute `gh` commands whenever the user requests managing issues, pull requests, runs, or releases.
-2. **Autonomous Issue & PR Context**:
-   - Inspect related issues, feature requirements, or bug reports:
-     ```bash
-     gh issue list
-     gh issue view <issue-number> --comments
-     ```
-   - Review or diff existing pull requests:
-     ```bash
-     gh pr list
-     gh pr view <pr-number>
-     gh pr diff <pr-number>
-     ```
-3. **Pull Request Management**:
-   - Create PRs with explicit, non-interactive flags:
-     ```bash
-     gh pr create --title "<type>: <brief summary>" --body "<structured description>"
-     ```
-4. **CI/CD Workflow & Build Inspection**:
-   - Check workflow runs and inspect failing logs to diagnose CI test errors:
-     ```bash
-     gh run list --limit 5
-     gh run view <run-id> --log-failed
-     ```
-5. **Release & Repository Metadata**:
-   - Check latest releases or tags:
-     ```bash
-     gh release list
-     ```
-
-### Execution Best Practices
-- **Non-Interactive Execution**: Always pass necessary parameters (`--title`, `--body`, `--fill`, `-y`) so commands never block on interactive terminal prompts.
-- **Structured Output**: Use `--json <fields>` or `--jq` when querying data programmatically.
-- **Auth Verification**: The CLI is authenticated under `paulp143`. If permission issues arise, verify via `gh auth status`.
-

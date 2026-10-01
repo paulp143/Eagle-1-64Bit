@@ -2,6 +2,7 @@
 
 A 2D top-down space combat arcade game built in Python using Pygame. The game features an expansive 3000×3000 scrolling arena, inertia-driven flight mechanics, quad-cannon combat, homing rockets, radar lock-on modes, a power-up system, friendly Helldiver ground squads, hostile Automaton ground forces, destructible fabricators, a stratagem air strike arsenal, a dynamic predictive aiming reticle, and a fully interactive 6-tab in-game help menu.
 
+![Eagle-1-64Bit Main Menu](images/Documentation%20images/main_menu.png)
 
 
 ## Table of Contents
@@ -557,15 +558,6 @@ help_menu.py
 
 ### General Gameplay & Combat Constants (`main.py`)
 
-#### Main Menu & Hangar
-![Eagle-1-64Bit Main Menu](images/Documentation%20images/main_menu.png)
-
-*The main menu / hangar interface featuring game start (`SHIFT`), help & weapons guide (`H`), and highscore management.*
-
-#### In-Game Combat & Tactical HUD
-![Eagle-1-64Bit Gameplay](images/Documentation%20images/game.png)
-
-*Active combat view showing wave progression, squad defense status, top-mounted radar cone, speed gauge, tactical minimap, and the bottom-right weapon arsenal selector.*
 
 | Constant | Value | Description |
 | :--- | :--- | :--- |
