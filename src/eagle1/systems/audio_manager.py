@@ -48,6 +48,8 @@ SOUND_CHANNELS = {
     "explosion": [CH_EXPLOSION_1, CH_EXPLOSION_2],
     "explosion_small": [CH_EXPLOSION_1, CH_EXPLOSION_2],
     "player_damage": [CH_WARNINGS],
+    "low_health": [CH_WARNINGS],
+    "low_shield": [CH_WARNINGS],
     "shield_regen": [CH_PICKUPS],
     "health_pickup": [CH_PICKUPS],
     "powerup_pickup": [CH_PICKUPS],
@@ -56,6 +58,9 @@ SOUND_CHANNELS = {
     "ui_hover": [CH_UI],
     "airstrike_siren": [CH_TACTICAL],
     "engine_loop": [CH_ENGINE],
+    "hangar_ambience": [CH_TACTICAL],
+    "rearm_crane": [CH_IMPACTS],
+    "reentry_burn": [CH_TACTICAL],
 }
 
 # Minimum cooldown interval (in ms) to prevent ear-piercing volume stacking / clipping
@@ -69,8 +74,12 @@ SOUND_MIN_INTERVALS = {
     "ui_click": 40,
     "ui_hover": 60,
     "player_damage": 300,
+    "low_health": 700,
+    "low_shield": 200,
     "shield_regen": 200,
     "rocket_lock": 150,
+    "rearm_crane": 200,
+    "reentry_burn": 500,
 }
 
 

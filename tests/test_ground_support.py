@@ -51,3 +51,47 @@ def test_ground_support_bonus_constants():
     """Verify CAS ground delivery and survivor wave bonuses."""
     assert SCORE_MISSION_DELIVERY_BONUS == 500
     assert SCORE_SURVIVOR_WAVE_BONUS == 500
+
+
+def test_helldiver_extraction_no_kia():
+    """Verify Helldivers boarding Pelican-1 are marked EXTRACTED without KIA penalty."""
+    class MockPlayer:
+        def __init__(self):
+            self.pos_x = 500.0
+            self.pos_y = 500.0
+            self.score = 1000
+
+    gsm = GroundSupportManager()
+    assert gsm.flawless_protection is True
+    assert gsm.survivors_count == 4
+
+    # Setup extraction beacon with Pelican landed
+    gsm.beacon.active = True
+    gsm.beacon.pelican_arrived = True
+    gsm.beacon.pelican_departed = False
+    gsm.beacon.pelican_altitude = 0.0
+    gsm.beacon.x = 500.0
+    gsm.beacon.y = 500.0
+
+    # Place Helldiver 0 right at the beacon
+    lead = gsm.units[0]
+    lead.pos_x = 500.0
+    lead.pos_y = 500.0
+
+    # Run update
+    player = MockPlayer()
+    gsm.update(0.016, player, [], [], 0)
+
+    # Unit 0 must have boarded Pelican-1
+    assert lead.state == "EXTRACTED"
+    # Flawless protection must be retained
+    assert gsm.flawless_protection is True
+    # Extracted Helldivers must count as survivors
+    assert gsm.survivors_count == 4
+    # Check popups: must have EXTRACTED! and must NOT have KIA
+    popup_texts = [p["text"] for p in gsm.floating_popups]
+    assert any("EXTRACTED!" in t for t in popup_texts)
+    assert not any("KIA" in t for t in popup_texts)
+    # Score should not have casualty penalty applied
+    assert player.score >= 1000
+

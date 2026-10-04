@@ -218,6 +218,57 @@ def generate_sfx(output_dir):
     engine[:fade_len] = engine[:fade_len] * fade_in + engine[-fade_len:] * fade_out
     save_wav(os.path.join(output_dir, "engine_loop.wav"), engine * 0.5)
 
+    # 18. Low Health Warning (Rhythmic Cardiac Heartbeat + Alarm)
+    dur = 0.6
+    t = np.linspace(0, dur, int(SAMPLE_RATE * dur), False)
+    # First thump (lub) at t=0, second thump (dub) at t=0.22
+    thump1 = np.sin(2 * np.pi * 55.0 * t) * np.exp(-t * 22.0)
+    t2 = np.maximum(0.0, t - 0.22)
+    thump2 = np.sin(2 * np.pi * 48.0 * t2) * np.exp(-t2 * 20.0) * (t >= 0.22)
+    alarm_pulse = np.sin(2 * np.pi * 440.0 * t) * np.exp(-t * 8.0) * 0.15
+    low_health = (thump1 * 0.75 + thump2 * 0.65 + alarm_pulse) * 0.8
+    save_wav(os.path.join(output_dir, "low_health.wav"), low_health)
+
+    # 19. Low Shield Warning (Urgent High-Tech Chirp / Beep)
+    dur = 0.18
+    t = np.linspace(0, dur, int(SAMPLE_RATE * dur), False)
+    freq_sweep = np.geomspace(1200, 750, len(t))
+    phase = 2 * np.pi * np.cumsum(freq_sweep) / SAMPLE_RATE
+    carrier = 0.7 * np.sin(phase) + 0.3 * np.sin(phase * 2)
+    env = np.exp(-t * 18.0)
+    low_shield = carrier * env * 0.6
+    save_wav(os.path.join(output_dir, "low_shield.wav"), low_shield)
+
+    # 20. Hangar Ambience (Low Industrial Electrical Drone)
+    dur = 2.0
+    t = np.linspace(0, dur, int(SAMPLE_RATE * dur), False)
+    drone = 0.3 * np.sin(2 * np.pi * 60.0 * t) + 0.15 * np.sin(2 * np.pi * 120.0 * t) + 0.08 * np.sin(2 * np.pi * 180.0 * t)
+    noise = np.random.uniform(-0.04, 0.04, len(t))
+    hangar = drone + noise
+    fade = int(SAMPLE_RATE * 0.1)
+    hangar[:fade] *= np.linspace(0, 1, fade)
+    hangar[-fade:] *= np.linspace(1, 0, fade)
+    save_wav(os.path.join(output_dir, "hangar_ambience.wav"), hangar * 0.6)
+
+    # 21. Rearm Crane Servo & Pneumatic Clank
+    dur = 0.7
+    t = np.linspace(0, dur, int(SAMPLE_RATE * dur), False)
+    hiss = np.random.uniform(-0.2, 0.2, len(t)) * np.exp(-t * 8.0)
+    servo = 0.25 * np.sin(2 * np.pi * 320.0 * t + 5.0 * np.sin(2 * np.pi * 20.0 * t)) * np.exp(-t * 4.0)
+    clank = 0.4 * np.sin(2 * np.pi * 140.0 * t) * np.exp(-t * 22.0)
+    crane = hiss + servo + clank
+    save_wav(os.path.join(output_dir, "rearm_crane.wav"), crane * 0.7)
+
+    # 22. Reentry Burn (Fiery Atmospheric Plasma Rush)
+    dur = 1.4
+    t = np.linspace(0, dur, int(SAMPLE_RATE * dur), False)
+    noise = np.random.uniform(-0.5, 0.5, len(t))
+    k = np.ones(80) / 80
+    rumble = np.convolve(noise, k, mode='same') * (1.0 + np.sin(np.pi * t / dur))
+    sub = 0.3 * np.sin(2 * np.pi * 50.0 * t) * np.sin(np.pi * t / dur)
+    reentry = rumble + sub
+    save_wav(os.path.join(output_dir, "reentry_burn.wav"), reentry * 0.8)
+
     print("All SFX generated successfully.")
 
 

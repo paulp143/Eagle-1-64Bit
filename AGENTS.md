@@ -159,7 +159,7 @@ Verify:
 
 ## GitHub CLI (`gh`) & Repository Operations
 
-Use the GitHub CLI (`gh`) whenever explicitly requested by the user, or whenever you determine it is necessary or advantageous to complete a task. If you decide so, tell the user why you think it would improve the task and ask him for permission.
+Use the GitHub CLI (`gh`) whenever you determine it is necessary or advantageous to complete a task. If you decide so, tell the user why you think it would improve the task and ask him for permission.
 
 ### Key Use Cases
 1. **Direct User Commands**: Execute `gh` commands whenever the user requests managing issues, pull requests, runs, or releases.

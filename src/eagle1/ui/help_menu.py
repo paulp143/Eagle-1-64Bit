@@ -331,14 +331,14 @@ class HelpMenu:
                 "color": (120, 220, 255),
             },
             {
-                "name": "Kamikaze Hull Collision",
+                "name": "Hull Impact Collision",
                 "type": "Emergency Melee Contact",
-                "trigger": "Ramming directly into an enemy aircraft",
-                "damage": "4 DMG dealt to enemy aircraft  |  Self-Damage: 5 explosion DMG received",
-                "range": "0 px (Direct physical impact)",
+                "trigger": "Ramming into an enemy aircraft (Light enemies will strafe to evade)",
+                "damage": "4 DMG dealt to enemy aircraft  |  Self-Damage: 12 DMG absorbed by shield first",
+                "range": "0 px (Direct physical contact; causes physical separation recoil)",
                 "cooldown": "Immediate upon contact  |  Triggers 1.0s temporary invincibility",
-                "capacity": "Limited by remaining hull integrity and shield points",
-                "notes": "High-risk maneuver. Absorbed by shield if available, otherwise inflicts direct hull damage.",
+                "capacity": "Absorbed by shield pool (20 max) before damaging hull structure",
+                "notes": "Light hostiles break away at <180px. Impact drains shield with recoil push to prevent multi-hits.",
                 "color": (255, 80, 80),
             },
         ]
@@ -715,6 +715,8 @@ class HelpMenu:
             ("WEAPONS & COMBAT", [
                 ("SPACEBAR / LEFT CLICK", "Fire equipped weapon (Autocannon on Slot 1; Hold & Release on Slots 2-5)"),
                 ("SCROLL WHEEL / [1-5]", "Cycle between Quad Autocannon (Slot 1) and 4 equipped Stratagems (Slots 2-5)"),
+                ("R KEY", "Super Destroyer Rearm: Eagle-1 returns to orbit for 15s rearm; combat simulation freezes"),
+                ("ARROWS / WASD", "Stratagem Hero: play the arcade terminal on the Super Destroyer during rearm for bonus score"),
                 ("SLOW-MOTION AIMING", "Hold fire button with a stratagem equipped to slow down time (3s max) and aim"),
                 ("RIGHT CLICK / E / F", "Launch Homing Rocket at locked aerial enemies, bombers, or ground forces"),
             ]),
@@ -722,10 +724,11 @@ class HelpMenu:
                 ("Q KEY", "Toggle Radar Mode (CONE: 300-1050px forward  <->  OMNI: 360° 0-420px)"),
                 ("P KEY", "Pause Game / Open In-Game Pause Menu"),
                 ("H KEY", "Open Help & Tactical Guide (Accessible in Pause, Respawn, & Main Menu)"),
-                ("1 - 5 KEYS", "Quick-switch tabs in Help Guide  |  TAB / Arrows cycle tabs"),
+                ("1 - 6 KEYS", "Quick-switch tabs in Help Guide  |  TAB / Arrows cycle tabs"),
                 ("WAVE HUD & MINIMAP", "Top-left HUD shows Wave & Hostiles; Radar shows Orange (patrol) & Red (agro)"),
                 ("ESC KEY", "Return to Main Menu (from Pause)  /  Close Help Menu"),
-                ("R KEY / SHIFT+R", "Press R to Respawn  |  L-SHIFT+R-SHIFT+R resets Highscore in Menu"),
+                ("MISSION DEBRIEFING", "Post-mission AAR rank & stats. [R] Replay, [SPACE] Missions, [ESC] Menu"),
+                ("RESPAWN / HIGHSCORE", "Press R to Respawn after K.I.A.  |  L-SHIFT+R-SHIFT+R resets Highscore in Menu"),
             ]),
         ]
 
@@ -922,12 +925,13 @@ class HelpMenu:
             "tag": "TACTICAL 5-SLOT DOCK",
             "accent": (255, 200, 50),
             "bullets": [
-                ("Pre-Mission Loadout:", "Select exactly 4 Stratagems before launch that apply to your entire mission."),
-                ("Scroll Wheel / [1-5]:", "Rotate between your Autocannon (Slot 1) and 4 chosen stratagems (Slots 2-5)."),
-                ("Slow-Mo Aim [Hold Fire]:", "Holding LMB / Space with a stratagem equipped slows time (3s) for pinpoint bombing!"),
-                ("Release to Deploy:", "Release fire button to deploy the payload at the predictive reticle footprint."),
+                ("Charges & Operational Delay:", "Stratagems have discrete stocks (e.g. 500kg x1, Strafe x3) and fast operational delays."),
+                ("Eagle Rearm [R]:", "Eagle-1 blasts into orbit aboard the Super Destroyer (15s); ground combat freezes and Helldivers are safe."),
+                ("Stratagem Hero:", "Input arrow/WASD codes on the hangar arcade terminal to score bonus points and climb the Hero leaderboard!"),
+                ("Atmospheric Re-entry:", "Eagle-1 catapults back with atmospheric plasma burn, full charges, and 1.0s invulnerability."),
+                ("Buffed 500kg Bomb:", "Massive 480px blast radius with 38.0 Heavy DMG demolishes fabricators and heavy bosses."),
             ],
-            "footer": "TACTICAL DOCK: Bottom HUD displays live status, cooldown bars, and equipped weapon system.",
+            "footer": "TACTICAL DOCK: Quickbar displays live charges, operational cooldowns, and rearm status.",
         }
 
         card3 = {
@@ -948,12 +952,12 @@ class HelpMenu:
             "tag": "OBJECTIVES & REWARDS",
             "accent": (255, 120, 50),
             "bullets": [
-                ("Factory Strider Boss (500 HP):", "Colossal 6-legged Automaton fortress firing twin chin lasers and top AA cannon."),
-                ("Orbital Base Defense (300 HP):", "Intercept heavy Automaton Bombers before they breach the station's shield perimeter."),
-                ("Outpost Demolition:", "Destroy 3 Automaton Fabricator foundries spawning hostile ground reinforcements."),
-                ("Pelican-1 Evacuation (+2.5k):", "Hold perimeter until Pelican-1 lands. Extract surviving Helldivers for massive bonuses!"),
+                ("Factory Strider Boss (300 HP):", "Colossal walker firing heavy plasma bolts (red laser telegraph) and chin lasers."),
+                ("Base Defense (5 Waves):", "Protect orbital base against 75 HP Automaton Bombers. Repel all 5 waves to extract."),
+                ("Outpost Demolition (6 Waves):", "Destroy 3 Automaton Fabricator foundries; auto-triggers Pelican extraction."),
+                ("Pelican-1 Evacuation (+2.5k):", "Hold perimeter until Pelican-1 lands. Surviving squad boards to secure victory!"),
             ],
-            "footer": "EXTRACTION: Successfully extract surviving Helldivers for a massive +2,500 point completion bonus!",
+            "footer": "VICTORY: Complete primary mission objectives to summon Pelican-1 and extract surviving squad!",
         }
 
         # Row 1

@@ -51,15 +51,21 @@ A custom 2D camera tracks the player ship across the map, clamping to world bord
 
 - **Mission Selection System:** Tactical operational menu (`game_state = "mission_select"`) featuring 5 focused modes to prevent chaotic gameplay.
 - **5 Focused Operational Modes:**
-  - **Air Superiority:** Pure aerial dogfighting against 5 wave squadrons (ground hostiles disabled).
-  - **Orbital Base Defense:** Protect a stationary friendly Orbital Defense Base against heavy **Automaton Bombers**.
-  - **Factory Strider Boss Raid:** Cooperate with Helldivers to destroy a colossal 6-legged **Factory Strider** walking fortress.
-  - **Outpost Demolition:** Demolish 3 Automaton Fabricator foundries defended by Troopers & Walkers, then evacuate via Pelican-1.
+  - **Air Superiority:** Pure aerial dogfighting against 5 wave squadrons (ground hostiles disabled); extraction beacon deploys upon wave 5 completion.
+  - **Orbital Base Defense:** Protect a stationary friendly Orbital Defense Base across 5 waves against rebalanced **Automaton Bombers** (75 HP). Extraction is strictly gated until all 5 bomber waves are repelled and bombers are no longer spawning, whereupon Pelican-1 deploys for evacuation.
+  - **Factory Strider Boss Raid:** Cooperate with Helldivers to destroy a colossal 300 HP **Factory Strider** walking fortress firing heavy plasma bolts with laser targeting telegraphs. Defeating the boss auto-triggers Pelican extraction.
+  - **Outpost Demolition:** Demolish 3 Automaton Fabricator foundries defended by Troopers & Walkers across 6 waves, auto-triggering Pelican extraction upon clearing the foundries.
   - **Endless War:** Combined full-scale classic operation featuring all ground and aerial hostiles.
-- **Factory Strider Boss Ground Unit:** Colossal 500 HP 6-legged walking fortress equipped with twin chin dual lasers, top anti-air cannon, and internal trooper spawn bay.
-- **Automaton Heavy Bombers:** Armored aerial bombers (160 HP, 15 damage bombs) targeting orbital base structures.
-- **Friendly Orbital Defense Base:** Stationed command base (300 HP + 100 Shield) with rotating radar and shield perimeter.
+- **Factory Strider Boss Ground Unit:** Colossal 300 HP 6-legged walking fortress equipped with heavy plasma cannon (red laser targeting beam), twin chin dual lasers, and internal trooper spawn bay.
+- **Automaton Heavy Bombers:** Armored aerial bombers (75 HP, 15 damage bombs) targeting orbital base structures.
+- **Friendly Orbital Defense Base:** Stationed command base (300 HP + 100 Shield) with rotating radar and shield perimeter, displayed clearly on radar/minimap.
 - **Top HUD Mission Objective Tracker Banner:** Real-time top-center HUD objective tracker displaying active mission goals, base hull integrity, and boss HP bars.
+- **Post-Mission Debriefing Screen & Exploit Fix:** Once mission objectives are completed across any operational mode, combat simulation immediately halts to prevent post-mission point farming. A dedicated Helldivers-themed After-Action Report (AAR) screen displays military combat readiness evaluations (Rank S/A/B/C), highscore status, mission time, aerial and bomber kill counts, fabricators and bosses demolished, squad survival status (with Flawless +500 PTS callout), and options for Replay (`[R]`), Mission Select (`[SPACE]`), or Main Menu (`[ESC]`).
+- **Super Destroyer Orbital Rearm (`R`):** When stratagems are depleted, pressing `R` triggers a 15.0s cinematic return to the Super Destroyer maintenance bay in low orbit. Ground simulation and Helldivers are safely frozen during orbit while robotic gantry cranes rearm the 500kg bomb and rockets with steam vents and welding sparks. Eagle-1 then catapults back down with an atmospheric re-entry burn, full stock, and 1.0s invulnerability.
+- **Stratagem Hero Arcade Minigame:** Play the interactive arcade terminal inside the Super Destroyer hangar during rearm using Arrow Keys or WASD to match stratagem sequences for combo scores, saved to persistent leaderboard tracker (`data/stratagem_hero_highscore.txt`).
+- **Buffed Eagle 500kg Bomb:** Massive 480px blast radius with 38.0 heavy burst damage, devastating clustered structures and bosses.
+- **Light Enemy Anti-Ramming & Collision Physics:** `Light_Enemy` fighters execute break-away strafe maneuvers at <180px distance; physical collisions deal 12 damage absorbed by shields first with separation recoil.
+- **Prominent Health & Shield Feedback:** High-visibility 230×13px top-left shield and hull bars with numeric labels, accompanied by low-health red cardiac vignette + heartbeat SFX and low-shield warning vignette + chirp SFX.
 - **Large Continuous World Arena:** 3000×3000 pixel world with seamless background tiling and camera viewport clamping.
 - **Out-of-Bounds Hazard Zone:** World boundaries are highlighted with a 4-pixel red border. Flying beyond boundary coordinates inflicts continuous boundary damage.
 - **Inertia & Momentum Flight Dynamics:** Ships maintain continuous forward movement in their heading direction with smooth turn acceleration.
@@ -70,19 +76,19 @@ A custom 2D camera tracks the player ship across the map, clamping to world bord
 - **Hostile Ground Units (Automaton Troopers & Walkers):** Enemy ground forces advancing across the terrain and engaging Helldivers with red laser fire.
 - **Destructible Automaton Fabricators:** Heavy enemy foundry structures that continuously produce ground reinforcements until demolished by cannons, rockets, or bombs.
 - **Air-to-Ground Combat:** Quad-cannons, homing rockets, and stratagem air strikes directly damage and eliminate ground hostiles and structures.
-- **Tactical CAS Call-In Missions:** Helldivers under pressure call in Close Air Support strikes (weapon-agnostic, supporting 500kg bombs and all other stratagems), awarding +500 PTS upon delivery.
+- **Tactical CAS Call-In Missions:** Helldivers under pressure call in Close Air Support strikes (equipped weapon-aware, supporting 500kg bombs and all other stratagems), awarding +500 PTS upon delivery.
 - **Dynamic Aiming Reticle:** Projects a forward gun convergence pip and a weapon-specific predictive bomb impact zone that leads the ship based on velocity and angle, highlighting target locks.
-- **Air Strike Stratagem Arsenal & Weapon Menu:** Interactive selection menu (`V` / `TAB`) featuring 8 devastating air strikes fired via `C`.
+- **Air Strike Stratagem Arsenal & Quickbar:** Interactive selection menu (`V` / `TAB`) or 5-slot flight quickbar (`1`–`5`, single-slot scroll wheel) featuring 8 devastating air strikes fired via `C`.
 - **Tactical Orbital Supply Drops:** Call in orbital supply pods (`X`) providing squad healing, ammo reloads, hull repair, and shield nanites.
 - **Danger Zone Alerts & Off-Screen Compass:** Real-time threat detection and directional guidance towards endangered allies.
-- **Dynamic Objectives & Pelican-1 Extraction:** Outpost defense transitioning into a 30-second extraction countdown with shuttle evacuation.
+- **Dynamic Objectives & Pelican-1 Extraction:** Outpost defense transitioning into a 30-second extraction countdown with shuttle evacuation upon completing objectives.
 - **Modular Power-Up Subsystem:** 8 distinct abilities across Common, Rare, and Epic tiers, featuring drop chances with pity protection.
 - **Guaranteed Score Milestone Airdrops:** Reaching major score milestones automatically summons guaranteed supply crates.
 - **Dual Defense System (Shield + Health):** Energy shields absorb incoming damage before hull health is impacted.
-- **Tactical Ramming / Kamikaze Damage:** Direct physical collisions with enemy craft deal damage to both sides.
 - **Autonomous Enemy Aircraft:** Hostile `Light_Enemy` units spawn in coordinated squadrons with flocking and combat AI.
 - **In-Game Help Menu (6 Tabs):** Multi-tab help overlay providing weapons, abilities, radar, controls, wave combat, and Helldiver support guidance.
-- **Automated Headless Test Suite:** 25 automated pytest tests covering mission configs, ground combat, fabricators, stratagems, flight physics, persistence, and UI menus.
+- **Automated Headless Test Suite:** 32 automated pytest tests covering mission configs, ground combat, fabricators, stratagems, flight physics, persistence, and UI menus.
+- **Automated Headless Test Suite:** 33 automated pytest tests covering mission configs, ground combat, fabricators, stratagems, flight physics, persistence, and UI menus.
 
 
 
@@ -189,20 +195,26 @@ The dynamic aiming reticle (`AimingReticle` in `ground_support.py`) provides rea
 
 ## Air Strike Weapon Arsenal
 
-Access the comprehensive stratagem arsenal by pressing **`V`** or **`TAB`** to open the interactive **Air Strike Weapon Menu**, or press number keys **`1`** through **`8`** for instant quick-selection during flight. Deploy the selected strike along your heading using **`C`**.
+Access the comprehensive stratagem arsenal by pressing **`V`** or **`TAB`** to open the interactive **Air Strike Weapon Menu**, select your 4-stratagem loadout prior to launch, or cycle between your Autocannon (Slot 1) and equipped stratagems (Slots 2–5) via number keys **`1`** through **`5`** or the single-slot mouse scroll wheel.
+
+### Super Destroyer Orbital Rearm (`R`) & Stratagem Hero
+Stratagems operate with discrete charge counts and fast operational delays between deployments. When charges are exhausted or low, pressing **`R`** triggers a **15.0s Super Destroyer Orbital Rearm**:
+1. **Atmospheric Ascent (1.2s):** Eagle-1 accelerates skyward with flared afterburners and streaks through the upper atmosphere.
+2. **Orbital Maintenance Bay & Combat Freeze (12.6s):** Eagle-1 docks in low orbit aboard the SES Super Destroyer maintenance deck. Ground combat is safely frozen so Helldivers cannot take damage while the player plays the **Stratagem Hero Arcade Terminal** (using Arrow Keys or WASD). An articulated gantry crane reloads the 500kg heavy bomb and wing rockets with welding sparks and pneumatic steam.
+3. **Catapult Launch & Atmospheric Re-entry (1.2s):** Eagle-1 catapults through the hangar blast doors with warning klaxons, plunging back to the battlefield with a fiery atmospheric plasma sheath, full weapon charges, and a 1.0s invulnerability window.
 
 ### Stratagem Arsenal Table
 
-| Key | Stratagem | Cooldown | Blast Profile | Effect & Tactical Application |
-| :---: | :--- | :---: | :--- | :--- |
-| **`1`** | **Machine Gun Dive** | 12.0s | Straight-line stream | 26 rapid 20mm rotary cannon tracer rounds shredding targets along flight vector. |
-| **`2`** | **Eagle 500kg Bomb** | 35.0s | 320px Colossal blast | High-explosive ground-zero detonation dealing massive 16.0 burst damage. |
-| **`3`** | **Cluster Bomb** | 18.0s | 280px Carpet saturation | 8 explosive sub-munitions blanketing a wide circular area against swarms. |
-| **`4`** | **Napalm Strike** | 22.0s | 300px Wall of fire | Line of searing incendiary canisters igniting enemies with heavy burning damage over 6.5s. |
-| **`5`** | **Gas Strike** | 18.0s | 240px Corrosive cloud | Lingering chemical cloud inflicting rapid corrosive tick damage and slowing enemies for 7.0s. |
-| **`6`** | **Rocket Pods** | 20.0s | 3 Guided missiles | Heavy armor-piercing guided anti-tank missiles tracking priority hostile craft. |
-| **`7`** | **EMS Stun Strike** | 24.0s | 280px EMP wave | Electromagnetic pulse disabling and freezing enemy flight systems and engines for 4.5s. |
-| **`8`** | **Smoke Screen** | 22.0s | 280px Radar cloud | Thick radar-absorbing smoke screen breaking enemy agro and concealing ground forces. |
+| Key | Stratagem | Charges | Op Delay | Blast Profile | Effect & Tactical Application |
+| :---: | :--- | :---: | :---: | :---: | :--- |
+| **`1`** | **Machine Gun Dive** | 3 | 4.0s | Straight-line stream | 26 rapid 20mm rotary cannon tracer rounds (55px width) shredding targets along flight vector. |
+| **`2`** | **Eagle 500kg Bomb** | 1 | 8.0s | 480px Colossal blast | Buffed high-explosive ground-zero detonation dealing massive 38.0 Heavy burst damage. |
+| **`3`** | **Cluster Bomb** | 3 | 5.0s | 280px Carpet saturation | 10 explosive sub-munitions (5.2 damage each) blanketing a wide circular area against swarms. |
+| **`4`** | **Napalm Strike** | 2 | 6.0s | 300px Wall of fire | Line of searing incendiary canisters igniting ground/air enemies with heavy burning damage over 6.5s. |
+| **`5`** | **Gas Strike** | 2 | 6.0s | 240px Corrosive cloud | Lingering chemical cloud inflicting rapid corrosive tick damage and slowing enemies for 7.0s. |
+| **`6`** | **Rocket Pods** | 2 | 5.0s | 3 Guided missiles | Heavy armor-piercing guided anti-tank missiles tracking priority hostile craft. |
+| **`7`** | **EMS Stun Strike** | 2 | 6.0s | 280px EMP wave | Electromagnetic pulse disabling and freezing enemy flight systems and engines for 4.5s. |
+| **`8`** | **Smoke Screen** | 2 | 6.0s | 280px Radar cloud | Thick radar-absorbing smoke screen breaking enemy agro and concealing ground forces. |
 
 
 ## Power-Up System
@@ -321,7 +333,11 @@ Access the interactive in-game tactical manual at any time by pressing **`H`**. 
 | **Steer Right (Clockwise)** | `D` | `Right Arrow` | Active Gameplay |
 | **Accelerate / Increase Speed** | `W` | `Up Arrow` | Active Gameplay |
 | **Decelerate / Decrease Speed** | `S` | `Down Arrow` | Active Gameplay |
-| **Fire Quad Cannons** | `Spacebar` | — | Active Gameplay |
+| **Fire Quad Cannons** | `Spacebar` | Left Click | Active Gameplay |
+| **Hold-to-Aim Stratagem (Slow-Mo)** | Hold `Spacebar` / Left Click | Release to deploy | Active Gameplay (Slots 2–5) |
+| **Cycle Weapon Quickbar (Slots 1–5)** | `Scroll Wheel` | `1` - `5` | Active Gameplay |
+| **Super Destroyer Rearm (15.0s)** | `R` | — | Active Gameplay |
+| **Play Stratagem Hero Minigame** | `Arrow Keys` / `W,A,S,D` | `Up` / `Down` / `Left` / `Right` | Super Destroyer Hangar (during Rearm) |
 | **Fire Secondary Homing Rocket** | `Right Mouse Button` | `E`, `F`, or `LCTRL` | Active Gameplay |
 | **Launch Active Air Strike** | `C` | — | Active Gameplay |
 | **Call Tactical Supply Drop** | `X` | — | Active Gameplay |
@@ -367,16 +383,21 @@ Or run `pytest` directly with detailed test reporting:
 pytest -v
 ```
 
-### Test Coverage Summary (25 Tests)
+### Test Coverage Summary (32 Tests)
+### Test Coverage Summary (33 Tests)
 
-- **`tests/test_ground_support.py` (4 tests):**
+- **`tests/test_ground_support.py` (7 tests):**
   - Initial squad roster instantiation (Viper 1-4 with full health and shields).
   - Helldiver callsigns and role assignments (Lead, Heavy, Scout, Medic).
   - Supply drop pod parachute descent, ground landing, and replenishment availability.
   - CAS ground delivery bonus (`+500 PTS`) and survivor wave reward (`+500 PTS`) constants.
-- **`tests/test_health_and_damage.py` (4 tests):**
+  - Buffed 500kg bomb blast radius (`480.0px`) verifying heavy demolition power against multi-unit targets.
+  - Factory Strider boss defeat automatically activating immediate Pelican extraction.
+  - Helldiver obstacle unstuck watchdog resetting stuck units to outpost clear ground.
+- **`tests/test_health_and_damage.py` (5 tests):**
   - Player initial health (5 HP) and shield (20 points) setup.
   - Shields-first damage absorption priority preserving hull integrity.
+  - Physical collision damage absorption draining shields before depleting hull.
   - Spillover mechanics when damage exceeds current shield capacity.
   - Post-hit invulnerability state preventing overlapping damage.
 - **`tests/test_math_and_physics.py` (4 tests):**
@@ -397,10 +418,15 @@ pytest -v
   - Help menu 6-tab cycle, boundary wrapping, and headless render execution.
   - Settings menu 3-tab navigation, slider updates, and headless drawing.
   - Audio manager mute state toggling.
-- **`tests/test_weapons_and_cooldowns.py` (3 tests):**
+- **`tests/test_weapons_and_cooldowns.py` (6 tests):**
+- **`tests/test_weapons_and_cooldowns.py` (7 tests):**
   - Primary quad-cannon capacity (200 rounds) and reload timer (5.0s).
   - Secondary homing rocket payload (4 missiles) and reload cycle (25.0s).
   - Stratagem definitions (8 air strikes with cooldowns, blast radii, and tactical metadata).
+  - Discrete stratagem charge consumption and operational deployment delays.
+  - Eagle Rearm timer mechanics (15.0s fixed duration restoring all charges).
+  - Stratagem Hero minigame arrow code input matching and combo scoring.
+  - Single-slot weapon quickbar cycling (avoiding double-slot jumps).
 
 
 

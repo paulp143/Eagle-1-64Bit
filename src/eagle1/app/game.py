@@ -11,6 +11,7 @@ from eagle1.systems.ground_support import (
     GroundSupportManager,
     PLAYER_STEERING_SLOW_MO_FACTOR,
     SLOW_MO_TIME_SCALE,
+    SCORE_EXTRACTION_BONUS,
     StratagemSelectMenu,
 )
 from eagle1.systems.powerups import (
@@ -22,6 +23,12 @@ from eagle1.systems.powerups import (
 )
 from eagle1.ui.help_menu import HelpMenu
 from eagle1.ui.settings_menu import SettingsMenu
+from eagle1.ui.debriefing_screen import DebriefingScreen
+from eagle1.systems.hangar_cinematic import (
+    PHASE_ASCENT,
+    PHASE_HANGAR,
+    PHASE_DESCENT,
+)
 
 BASE_DIR = str(PROJECT_ROOT)
 audio_manager = get_audio_manager()
@@ -62,7 +69,7 @@ ROCKET_WIDTH = 12
 ROCKET_HEIGHT = 16
 ROCKET_VELOCITY = 7.0
 ROCKET_TURN_RATE = 2.0         
-ROCKET_DAMAGE = 4
+ROCKET_DAMAGE = 20
 ROCKET_SHOOTING_TIMER = 350
 ROCKET_MAX_FLIGHT_TIME = 2500  
 ROCKET_MAX_RANGE = 1200       
@@ -287,7 +294,13 @@ powerup_manager = PowerUpManager()
 ground_support_manager = GroundSupportManager()
 help_menu = HelpMenu(GAME_WIDTH, GAME_HEIGHT)
 settings_menu = SettingsMenu(GAME_WIDTH, GAME_HEIGHT)
+debriefing_screen = DebriefingScreen(GAME_WIDTH, GAME_HEIGHT)
 previous_game_state = "main_menu"
+
+# Mission Performance Tracking Variables
+mission_start_time = pygame.time.get_ticks()
+mission_air_kills = 0
+mission_bomber_kills = 0
 
 # =====================================================================
 # MISSION SELECTION SYSTEM & FOCUSED OPERATION CONFIGURATIONS
@@ -326,7 +339,7 @@ MISSION_CONFIGS = {
         "has_strider": False,
         "has_bombers": True,
         "has_base": True,
-        "max_waves": 3,
+        "max_waves": 5,
         "icon_color": (255, 140, 0)
     },
     MissionType.STRIDER_RAID: {
@@ -354,7 +367,7 @@ MISSION_CONFIGS = {
         "has_strider": False,
         "has_bombers": False,
         "has_base": False,
-        "max_waves": 2,
+        "max_waves": 6,
         "target_fabs": 3,
         "icon_color": (255, 215, 0)
     },
@@ -386,8 +399,8 @@ class BomberEnemy(pygame.Rect):
         self.pos_x = float(rx)
         self.pos_y = float(ry)
         self.speed = 1.8
-        self.max_health = 160.0
-        self.health = 160.0
+        self.max_health = 75.0
+        self.health = 75.0
         self.exploding = False
         self.score_value = 150
         self.angle = 180.0
@@ -758,6 +771,10 @@ gameover_lobby_box = TextBox(
 score_box = TextBox("Score: 0", font, centerx=GAME_WIDTH//2, bottom=GAME_HEIGHT-10)
 highscore_box = TextBox("highscore: 0", font, centerx=GAME_WIDTH//2, bottom=GAME_HEIGHT-30)
 speed_box = TextBox("Speed: 0.0 / 0.0", speed_font, topleft=(20, GAME_HEIGHT - MINIMAP_SIZE - 50))
+
+# Pre-allocated transparent surfaces for HUD vignettes to eliminate 60 FPS allocations
+vignette_health_surf = pygame.Surface((GAME_WIDTH, GAME_HEIGHT), pygame.SRCALPHA)
+vignette_shield_surf = pygame.Surface((GAME_WIDTH, GAME_HEIGHT), pygame.SRCALPHA)
 
 
 SHOOTING_END = pygame.USEREVENT + 1
@@ -1174,6 +1191,15 @@ class Light_Enemy(pygame.Rect):
         if self.exploding:
             return
 
+        # Status effects: EMS stun & smoke screen blindness
+        if getattr(self, "stun_timer", 0) > 0:
+            self.stun_timer = max(0.0, self.stun_timer - 0.016 * speed_factor)
+            return
+
+        if getattr(self, "smoke_blinded", False):
+            self.state = "PATROL"
+            self.smoke_blinded = False
+
         target = target_player if target_player is not None else player
         if target is not None and target.health > 0:
             cx = self.pos_x + LIGHT_ENEMY_WIDTH / 2
@@ -1192,10 +1218,16 @@ class Light_Enemy(pygame.Rect):
 
             # Determine target angle & speed by state
             if self.state == "AGRO":
-                self.speed = ENEMY_AGRO_SPEED
                 dx = pcx - cx
                 dy = pcy - cy
-                target_angle = math.degrees(math.atan2(dx, dy))
+                if dist_to_player < 180.0:
+                    # Break-away evasive flight: strafe pass rather than head-on suicide ramming
+                    evade_sign = getattr(self, "orbit_direction", 1)
+                    target_angle = (math.degrees(math.atan2(dx, dy)) + evade_sign * 75.0) % 360
+                    self.speed = ENEMY_AGRO_SPEED * 1.2
+                else:
+                    self.speed = ENEMY_AGRO_SPEED
+                    target_angle = math.degrees(math.atan2(dx, dy))
             else:
                 self.speed = ENEMY_PATROL_SPEED
                 angular_speed = (self.speed / max(100.0, self.orbit_radius)) * (180.0 / math.pi) * self.orbit_direction * speed_factor
@@ -1389,9 +1421,17 @@ class WaveManager:
             elif self.state == "INTERMISSION":
                 if pygame.time.get_ticks() >= self.intermission_timer:
                     next_wave = self.wave + 1
-                    max_w = active_mission_config.get("max_waves", 3)
+                    max_w = active_mission_config.get("max_waves", 5)
                     if next_wave <= max_w:
                         self.spawn_wave(next_wave)
+                    else:
+                        # All bomber waves repelled and bombers are no longer spawning!
+                        self.state = "COMPLETE"
+                        if not ground_support_manager.beacon.active:
+                            ground_support_manager.beacon.activate(3.0)
+                            ground_support_manager.objective_phase = "EXTRACTION"
+                            player.score += 1500
+                            ground_support_manager.add_combat_popup("BOMBERS REPELLED! FLY TO EXTRACTION BEACON", ground_support_manager.beacon.x, ground_support_manager.beacon.y, (0, 255, 180))
             return
 
         if active_mission_config.get("id") == MissionType.STRIDER_RAID:
@@ -1414,12 +1454,50 @@ class WaveManager:
                 max_w = active_mission_config.get("max_waves", MAX_WAVE_LEVEL)
                 if next_wave <= max_w:
                     self.spawn_wave(next_wave)
+                else:
+                    if active_mission_config.get("id") == MissionType.AIR_SUPERIORITY:
+                        if not ground_support_manager.beacon.active:
+                            ground_support_manager.beacon.activate(3.0)
+                            ground_support_manager.objective_phase = "EXTRACTION"
+                            ground_support_manager.add_combat_popup("AIRSPACE SECURED! FLY TO EXTRACTION BEACON", ground_support_manager.beacon.x, ground_support_manager.beacon.y, (0, 255, 180))
+
+
+def trigger_mission_complete():
+    """Concludes mission simulation, logs statistics, and activates the debriefing screen."""
+    global game_state
+    if game_state == "mission_debriefing":
+        return
+    if player.score > player.highscore:
+        player.highscore = player.score
+        add_highscore(player.score)
+    duration_s = max(1.0, (pygame.time.get_ticks() - mission_start_time) / 1000.0)
+    results = {
+        "mission_name": active_mission_config.get("name", "OPERATION"),
+        "final_score": player.score,
+        "highscore": player.highscore,
+        "is_new_highscore": player.score >= player.highscore and player.score > 0,
+        "duration_seconds": duration_s,
+        "waves_cleared": wave_manager.wave,
+        "aerial_kills": mission_air_kills,
+        "bomber_kills": mission_bomber_kills,
+        "fabricators_destroyed": getattr(ground_support_manager, "destroyed_fabs_count", 0),
+        "strider_destroyed": getattr(ground_support_manager, "strider_destroyed", False),
+        "cas_kills": ground_support_manager.total_cas_kills,
+        "survivors_count": ground_support_manager.survivors_count,
+        "flawless_squad": ground_support_manager.flawless_protection,
+        "hero_score": ground_support_manager.hero_score,
+    }
+    debriefing_screen.set_results(results)
+    game_state = "mission_debriefing"
+    audio_manager.stop_engine_sound()
+    audio_manager.play_music("menu_theme")
 
 
 def move():
     global light_enemy, wave_manager, health_drops
     global explosion_group
-    if player.health <= 0:
+    global mission_air_kills, mission_bomber_kills
+    if player.health <= 0 or game_state == "mission_debriefing":
         return
 
     # Boundary damage
@@ -1447,7 +1525,12 @@ def move():
     powerup_manager.update(1.0 / 60.0, player, primary_enemy)
 
     # Update ground support subsystem (Helldivers, airstrikes, supply drops, danger alerts)
-    ground_support_manager.update(1.0 / 60.0, player, wave_manager.enemies, explosion_group, large_explosion_a_spritesheet.frames)
+    all_air_targets = list(wave_manager.enemies) + list(bomber_enemies)
+    ground_support_manager.update(1.0 / 60.0, player, all_air_targets, explosion_group, large_explosion_a_spritesheet.frames)
+
+    if ground_support_manager.objective_phase == "COMPLETE":
+        trigger_mission_complete()
+        return
 
     # Update Bomber Enemies & Orbital Base Defense
     if active_mission_config.get("has_bombers"):
@@ -1465,6 +1548,7 @@ def move():
 
                 if bomber.health <= 0 and not bomber.exploding:
                     bomber.exploding = True
+                    mission_bomber_kills += 1
                     player.score += bomber.score_value
                     ground_support_manager.add_combat_popup(f"BOMBER DOWN! +{bomber.score_value}", bomber.pos_x, bomber.pos_y, (255, 200, 50))
                     explosion_group.add(Large_explosion_a(bomber.pos_x + 32, bomber.pos_y + 26, large_explosion_a_spritesheet.frames))
@@ -1604,17 +1688,41 @@ def move():
                         audio_manager.play_sfx("explosion")
                         break
 
-    # Player Kamikaze Collision
+    # Player Kamikaze Collision (Absorbed by Shields first, with separation recoil)
     for enemy in wave_manager.enemies:
         if not enemy.exploding and player.colliderect(enemy):
             enemy.health -= player.kamikaze_attack_damage
-            player.take_damage(enemy.explosion_damage)
+            player.take_damage(12.0)
             enemy.trigger_agro(wave_manager.enemies)
+            
+
+    # Aerial extraction check in non-ground missions (Air Superiority, Base Defense)
+    if ground_support_manager.beacon.active and not ground_support_manager.beacon.pelican_departed:
+        if not active_mission_config.get("has_ground", True):
+            # Guard: You can only extract if bombers are no longer spawning
+            bombers_spawning = False
+            if active_mission_config.get("has_bombers"):
+                max_w = active_mission_config.get("max_waves", 5)
+                living_bombers = [b for b in bomber_enemies if not b.exploding and b.health > 0]
+                if wave_manager.wave < max_w or len(living_bombers) > 0 or wave_manager.state != "COMPLETE":
+                    bombers_spawning = True
+
+            if not bombers_spawning:
+                if math.hypot((player.pos_x + PLAYER_WIDTH / 2) - ground_support_manager.beacon.x,
+                              (player.pos_y + PLAYER_HEIGHT / 2) - ground_support_manager.beacon.y) <= ground_support_manager.beacon.radius:
+                    ground_support_manager.beacon.pelican_departed = True
+                    ground_support_manager.objective_phase = "COMPLETE"
+                    bonus = SCORE_EXTRACTION_BONUS
+                    player.score += bonus
+                    ground_support_manager.add_combat_popup(f"EXTRACTION COMPLETE! +{bonus}", player.pos_x, player.pos_y, (0, 255, 180))
+                    trigger_mission_complete()
+                    return
         
     # Enemy Defeated checks
     for enemy in wave_manager.enemies:
         if enemy.health <= 0 and not enemy.exploding:
             enemy.exploding = True
+            mission_air_kills += 1
             explosion = Large_explosion_a(
                 enemy.x + LIGHT_ENEMY_WIDTH // 2, 
                 enemy.y + LIGHT_ENEMY_HEIGHT // 2, 
@@ -1710,9 +1818,13 @@ def respawn(mission_config=None, selected_stratagems=None):
 
     player.score = 0
     global wave_manager, health_drops, light_enemy, ground_support_manager
-    wave_manager = WaveManager()
+    global mission_start_time, mission_air_kills, mission_bomber_kills
+    mission_start_time = pygame.time.get_ticks()
+    mission_air_kills = 0
+    mission_bomber_kills = 0
     health_drops.clear()
     bomber_enemies.clear()
+    wave_manager = WaveManager()
 
     if active_mission_config.get("has_base"):
         orbital_base = OrbitalBase(1500, 1500)
@@ -1753,8 +1865,14 @@ def draw(mouse_pos=None):
     canvas.fill((0, 0, 0))
 
     # Calculate camera offset bounded to map dimensions
-    camera_x = max(0, min(MAP_WIDTH - GAME_WIDTH, player.pos_x + PLAYER_WIDTH / 2 - GAME_WIDTH / 2))
-    camera_y = max(0, min(MAP_HEIGHT - GAME_HEIGHT, player.pos_y + PLAYER_HEIGHT / 2 - GAME_HEIGHT / 2))
+    if ground_support_manager.super_destroyer.is_active:
+        target_cam_x = ground_support_manager.super_destroyer.departure_x + PLAYER_WIDTH / 2 - GAME_WIDTH / 2
+        target_cam_y = ground_support_manager.super_destroyer.departure_y + PLAYER_HEIGHT / 2 - GAME_HEIGHT / 2
+        camera_x = max(0, min(MAP_WIDTH - GAME_WIDTH, target_cam_x))
+        camera_y = max(0, min(MAP_HEIGHT - GAME_HEIGHT, target_cam_y))
+    else:
+        camera_x = max(0, min(MAP_WIDTH - GAME_WIDTH, player.pos_x + PLAYER_WIDTH / 2 - GAME_WIDTH / 2))
+        camera_y = max(0, min(MAP_HEIGHT - GAME_HEIGHT, player.pos_y + PLAYER_HEIGHT / 2 - GAME_HEIGHT / 2))
 
     # Seamless background tiling inside map boundaries
     bg_w, bg_h = backround_image.get_size()
@@ -1896,11 +2014,37 @@ def draw(mouse_pos=None):
         highscore_box.draw(canvas)
 
         # Wave Counter HUD Box
+        # Modern Prominent Health & Shield Gauges (Upper Left, x=24)
+        gauge_x = 24
+        gauge_y = 18
+        gauge_w = 210
+        gauge_h = 13
+
+        # Shield Gauge
+        pygame.draw.rect(canvas, (14, 20, 32), (gauge_x, gauge_y, gauge_w, gauge_h), border_radius=4)
+        pygame.draw.rect(canvas, (50, 75, 110), (gauge_x, gauge_y, gauge_w, gauge_h), 1, border_radius=4)
+        sh_pct = max(0.0, min(1.0, player.shield / PLAYER_MAX_SHIELD))
+        sh_col = (255, 180, 0) if player.shield > PLAYER_MAX_SHIELD else (0, 220, 255)
+        pygame.draw.rect(canvas, sh_col, (gauge_x + 1, gauge_y + 1, int((gauge_w - 2) * sh_pct), gauge_h - 2), border_radius=3)
+        sh_lbl = hud_small_font.render(f"SHIELD: {int(player.shield)}/{PLAYER_MAX_SHIELD}", True, (255, 255, 255))
+        canvas.blit(sh_lbl, (gauge_x + gauge_w // 2 - sh_lbl.get_width() // 2, gauge_y - 1))
+
+        # Hull Armor Gauge
+        hull_y = gauge_y + gauge_h + 5
+        pygame.draw.rect(canvas, (14, 20, 32), (gauge_x, hull_y, gauge_w, gauge_h), border_radius=4)
+        pygame.draw.rect(canvas, (50, 75, 110), (gauge_x, hull_y, gauge_w, gauge_h), 1, border_radius=4)
+        hp_pct = max(0.0, min(1.0, player.health / player.max_health))
+        hp_col = (46, 204, 113) if player.health > 2 else (255, 60, 60)
+        pygame.draw.rect(canvas, hp_col, (gauge_x + 1, hull_y + 1, int((gauge_w - 2) * hp_pct), gauge_h - 2), border_radius=3)
+        hp_lbl = hud_small_font.render(f"HULL ARMOR: {int(player.health)}/{player.max_health}", True, (255, 255, 255))
+        canvas.blit(hp_lbl, (gauge_x + gauge_w // 2 - hp_lbl.get_width() // 2, hull_y - 1))
+
+        # Wave Counter HUD Box (Adjacent to Gauges at x=248)
         living_count = len([e for e in wave_manager.enemies if not getattr(e, 'exploding', False)])
-        wave_box_w = 175
+        wave_box_w = 165
         wave_box_h = 42
-        wave_box_x = 65
-        wave_box_y = 28
+        wave_box_x = 248
+        wave_box_y = 16
         pygame.draw.rect(canvas, (18, 24, 36), (wave_box_x, wave_box_y, wave_box_w, wave_box_h), border_radius=6)
         pygame.draw.rect(canvas, (60, 90, 130), (wave_box_x, wave_box_y, wave_box_w, wave_box_h), 1, border_radius=6)
 
@@ -1931,10 +2075,18 @@ def draw(mouse_pos=None):
             canvas.blit(banner_surface, bg_rect.topleft)
             canvas.blit(banner_surf, banner_bg.topleft)
 
-        # Health Bar
-        pygame.draw.rect(canvas, "black", (32, 32, HEALTH_WIDTH, HEALTH_HEIGHT * player.max_health))
-        for i in range(int(player.max_health - player.health), player.max_health):
-            canvas.blit(health_image, (32, 32 + i * HEALTH_HEIGHT, HEALTH_WIDTH, HEALTH_HEIGHT))
+        # Warning Feedback: Vignettes (Zero per-frame allocations) & Heartbeat Audio
+        if player.health <= 2 and player.health > 0:
+            pulse = int(140 + 80 * math.sin(pygame.time.get_ticks() * 0.008))
+            vignette_health_surf.fill((0, 0, 0, 0))
+            pygame.draw.rect(vignette_health_surf, (220, 20, 20, max(25, min(90, pulse // 3))), (0, 0, GAME_WIDTH, GAME_HEIGHT), width=20)
+            canvas.blit(vignette_health_surf, (0, 0))
+            audio_manager.play_sfx("low_health")
+        elif player.shield <= 5 and player.shield > 0:
+            vignette_shield_surf.fill((0, 0, 0, 0))
+            pygame.draw.rect(vignette_shield_surf, (0, 200, 255, 30), (0, 0, GAME_WIDTH, GAME_HEIGHT), width=12)
+            canvas.blit(vignette_shield_surf, (0, 0))
+            audio_manager.play_sfx("low_shield")
 
         # Bullet Ammo UI (Rechte Seite)
         bg_height = int(BULLET_UI_HEIGHT * (player.max_bullets / 10))
@@ -1945,19 +2097,10 @@ def draw(mouse_pos=None):
         for i in range(remaining_icons):
             canvas.blit(bullet_ui_image, (GAME_WIDTH - 32, 32 + i * BULLET_UI_HEIGHT))
 
-        # Shield Bar (Gold if overcharged with Shield Bubble)
-        current_shield_width = max(0, min(238, (player.shield / PLAYER_MAX_SHIELD) * 238))
-        shield_ui_width = SHIELD_UI_WIDTH * PLAYER_MAX_SHIELD
-        shield_x = GAME_WIDTH / 2 - shield_ui_width / 2
-        shield_y = 32
-        shield_color = "#f39c12" if player.shield > PLAYER_MAX_SHIELD else "#09c8f1"
-        pygame.draw.rect(canvas, "black", (shield_x, shield_y, shield_ui_width, SHIELD_UI_HEIGHT))
-        pygame.draw.rect(canvas, shield_color, (shield_x + 1, shield_y + 1, current_shield_width, 6))
-
         # Controls & Radar Mode Hint
         mode_str = "CONE [FAR]" if player.radar_mode == "CONE" else "360° OMNI [CLOSE]"
-        controls_hint = hud_small_font.render(f"[SPACE] Gun   [E/R-Click] Missile   [Q] Radar: {mode_str}   [C] Strike   [X] Supply   [V] Arsenal", True, (255, 255, 255))
-        canvas.blit(controls_hint, (int(GAME_WIDTH / 2 - controls_hint.get_width() / 2), 46))
+        controls_hint = hud_small_font.render(f"[SPACE] Gun  [E/RMB] Missile  [Q] Radar: {mode_str}  [1-5] Weapons  [R] Rearm  [X] Supply", True, (210, 230, 255))
+        canvas.blit(controls_hint, (int(GAME_WIDTH / 2 - controls_hint.get_width() / 2), 38))
 
         # --- ROCKET HUD UI ---
         rocket_ui_x = GAME_WIDTH - 190
@@ -2086,6 +2229,19 @@ def draw(mouse_pos=None):
                 dot_color = (255, 40, 40) if enemy.state == "AGRO" else (255, 170, 0)
                 pygame.draw.circle(minimap_surface, dot_color, (int(enemy_mm_x), int(enemy_mm_y)), 3)
 
+        # Bomber dots (Large Flashing Red/Orange Squares)
+        for bomber in bomber_enemies:
+            if not bomber.exploding and bomber.health > 0:
+                bx = (bomber.pos_x + 32) * MINIMAP_SCALE
+                by = (bomber.pos_y + 26) * MINIMAP_SCALE
+                pygame.draw.rect(minimap_surface, (255, 60, 20), (int(bx - 3), int(by - 3), 6, 6))
+
+        # Orbital Base on minimap
+        if orbital_base and orbital_base.is_alive:
+            obx = (orbital_base.pos_x + 60) * MINIMAP_SCALE
+            oby = (orbital_base.pos_y + 60) * MINIMAP_SCALE
+            pygame.draw.circle(minimap_surface, (0, 220, 255), (int(obx), int(oby)), 5, 2)
+
         # Minimap frame border
         pygame.draw.rect(minimap_surface, (100, 120, 160), (0, 0, mm_size, mm_size), 2)
         
@@ -2100,19 +2256,31 @@ def draw(mouse_pos=None):
         # --- MISSION OBJECTIVE HUD BANNER ---
         obj_text = f"OBJECTIVE: {active_mission_config['name']}"
         if active_mission_config["id"] == MissionType.BASE_DEFENSE and orbital_base:
-            hp_pct = max(0, int((orbital_base.health / orbital_base.max_health) * 100))
-            obj_text = f"OBJECTIVE: DEFEND BASE [HULL: {hp_pct}% | SHIELD: {int(orbital_base.shield)}]"
+            if ground_support_manager.objective_phase == "EXTRACTION":
+                obj_text = "OBJECTIVE: BASE DEFENDED! FLY TO EXTRACTION BEACON"
+            else:
+                hp_pct = max(0, int((orbital_base.health / orbital_base.max_health) * 100))
+                max_w = active_mission_config.get("max_waves", 5)
+                obj_text = f"OBJECTIVE: DEFEND BASE [HULL: {hp_pct}% | SHIELD: {int(orbital_base.shield)}] (WAVE {wave_manager.wave}/{max_w})"
         elif active_mission_config["id"] == MissionType.STRIDER_RAID:
-            if ground_support_manager.factory_strider and ground_support_manager.factory_strider.is_alive:
+            if ground_support_manager.objective_phase == "EXTRACTION":
+                obj_text = "OBJECTIVE: STRIDER DESTROYED! ESCORT SQUAD TO EXTRACTION"
+            elif ground_support_manager.factory_strider and ground_support_manager.factory_strider.is_alive:
                 hp = int(ground_support_manager.factory_strider.health)
-                obj_text = f"OBJECTIVE: DESTROY FACTORY STRIDER [HP: {hp}/500]"
+                obj_text = f"OBJECTIVE: DESTROY FACTORY STRIDER [HP: {hp}/300]"
             else:
                 obj_text = "OBJECTIVE: FACTORY STRIDER DESTROYED!"
         elif active_mission_config["id"] == MissionType.OUTPOST_DEMOLITION:
-            rem = len(ground_support_manager.enemy_fabricators)
-            obj_text = f"OBJECTIVE: DEMOLISH FABRICATORS [{rem} REMAINING]"
+            if ground_support_manager.objective_phase == "EXTRACTION":
+                obj_text = "OBJECTIVE: OUTPOST DEMOLISHED! ESCORT SQUAD TO EXTRACTION"
+            else:
+                rem = len(ground_support_manager.enemy_fabricators)
+                obj_text = f"OBJECTIVE: DEMOLISH FABRICATORS [{rem} REMAINING]"
         elif active_mission_config["id"] == MissionType.AIR_SUPERIORITY:
-            obj_text = f"OBJECTIVE: AIR SUPERIORITY [WAVE {wave_manager.wave}/5]"
+            if ground_support_manager.objective_phase == "EXTRACTION":
+                obj_text = "OBJECTIVE: AIRSPACE SECURED! FLY TO EXTRACTION BEACON"
+            else:
+                obj_text = f"OBJECTIVE: AIR SUPERIORITY [WAVE {wave_manager.wave}/5]"
 
         obj_surf = hud_small_font.render(obj_text, True, active_mission_config.get("icon_color", (255, 220, 80)))
         obj_bg = pygame.Rect(GAME_WIDTH // 2 - obj_surf.get_width() // 2 - 12, 8, obj_surf.get_width() + 24, 22)
@@ -2253,6 +2421,16 @@ def run_game():
                     elif pause_menu_box.is_clicked(event, canvas_mouse_pos):
                         game_state = "main_menu"
 
+                elif game_state == "mission_debriefing":
+                    action = debriefing_screen.handle_event(event, canvas_mouse_pos)
+                    if action == "replay":
+                        respawn()
+                        game_state = ""
+                    elif action == "mission_select":
+                        game_state = "mission_select"
+                    elif action == "main_menu":
+                        game_state = "main_menu"
+
                 elif game_state == "":
                     if player.health <= 0:
                         if gameover_respawn_box.is_clicked(event, canvas_mouse_pos):
@@ -2263,11 +2441,7 @@ def run_game():
                         elif gameover_lobby_box.is_clicked(event, canvas_mouse_pos):
                             game_state = "main_menu"
                     else:
-                        if event.button == 4:
-                            ground_support_manager.cycle_weapon(-1)
-                        elif event.button == 5:
-                            ground_support_manager.cycle_weapon(1)
-                        elif ground_support_manager.weapon_menu.is_open:
+                        if ground_support_manager.weapon_menu.is_open:
                             ground_support_manager.weapon_menu.handle_event(event, canvas_mouse_pos)
                         elif event.button == 1:
                             if ground_support_manager.equipped_slot > 0:
@@ -2357,6 +2531,20 @@ def run_game():
                         status_str = "MUTED" if is_muted else "UNMUTED"
                         ground_support_manager.add_combat_popup(f"AUDIO {status_str}", player.pos_x, player.pos_y, (255, 80, 80) if is_muted else (80, 255, 120))
 
+                elif game_state == "mission_debriefing":
+                    action = debriefing_screen.handle_event(event, canvas_mouse_pos)
+                    if action == "replay":
+                        respawn()
+                        game_state = ""
+                    elif action == "mission_select":
+                        game_state = "mission_select"
+                    elif action == "main_menu":
+                        game_state = "main_menu"
+                    elif event.key == pygame.K_m:
+                        is_muted = audio_manager.toggle_mute()
+                        status_str = "MUTED" if is_muted else "UNMUTED"
+                        ground_support_manager.add_combat_popup(f"AUDIO {status_str}", player.pos_x, player.pos_y, (255, 80, 80) if is_muted else (80, 255, 120))
+
                 elif game_state == "":
                     if player.health <= 0:
                         if event.key == pygame.K_r:
@@ -2371,42 +2559,79 @@ def run_game():
                         elif event.key == pygame.K_SPACE:
                             game_state = "main_menu"
                     else:
-                        if event.key == pygame.K_p:
-                            game_state = "pause_menu"
-                        elif event.key == pygame.K_o:
-                            previous_game_state = ""
-                            settings_menu.sync_from_manager()
-                            game_state = "settings_menu"
-                        elif event.key == pygame.K_m:
-                            is_muted = audio_manager.toggle_mute()
-                            status_str = "MUTED" if is_muted else "UNMUTED"
-                            ground_support_manager.add_combat_popup(f"AUDIO {status_str}", player.pos_x, player.pos_y, (255, 80, 80) if is_muted else (80, 255, 120))
-                        elif event.key == pygame.K_q:
-                            player.toggle_radar_mode()
-                        elif event.key in (pygame.K_v, pygame.K_TAB):
-                            ground_support_manager.weapon_menu.toggle()
-                        elif event.key == pygame.K_ESCAPE:
-                            if ground_support_manager.aiming_active:
-                                ground_support_manager.stop_aiming()
-                            elif ground_support_manager.weapon_menu.is_open:
-                                ground_support_manager.weapon_menu.is_open = False
-                        elif event.key == pygame.K_SPACE:
-                            if ground_support_manager.equipped_slot > 0:
-                                ground_support_manager.start_aiming()
-                        elif event.key == pygame.K_c:
-                            ground_support_manager.trigger_air_strike(player)
-                        elif event.key == pygame.K_x:
-                            ground_support_manager.trigger_supply_drop(player)
-                        elif event.key in (pygame.K_1, pygame.K_0):
-                            ground_support_manager.select_weapon_slot(0)
-                        elif event.key == pygame.K_2:
-                            ground_support_manager.select_weapon_slot(1)
-                        elif event.key == pygame.K_3:
-                            ground_support_manager.select_weapon_slot(2)
-                        elif event.key == pygame.K_4:
-                            ground_support_manager.select_weapon_slot(3)
-                        elif event.key == pygame.K_5:
-                            ground_support_manager.select_weapon_slot(4)
+                        if ground_support_manager.objective_phase == "COMPLETE":
+                            if event.key == pygame.K_r:
+                                respawn()
+                            elif event.key == pygame.K_ESCAPE:
+                                game_state = "main_menu"
+
+                        sdm = ground_support_manager.super_destroyer
+                        if sdm.is_active and sdm.phase == PHASE_HANGAR:
+                            if event.key in (pygame.K_UP, pygame.K_w):
+                                ground_support_manager.handle_hero_input("UP", player)
+                            elif event.key in (pygame.K_DOWN, pygame.K_s):
+                                ground_support_manager.handle_hero_input("DOWN", player)
+                            elif event.key in (pygame.K_LEFT, pygame.K_a):
+                                ground_support_manager.handle_hero_input("LEFT", player)
+                            elif event.key in (pygame.K_RIGHT, pygame.K_d):
+                                ground_support_manager.handle_hero_input("RIGHT", player)
+                            elif event.key == pygame.K_p:
+                                game_state = "pause_menu"
+                            elif event.key == pygame.K_o:
+                                previous_game_state = ""
+                                settings_menu.sync_from_manager()
+                                game_state = "settings_menu"
+                            elif event.key == pygame.K_m:
+                                is_muted = audio_manager.toggle_mute()
+                                status_str = "MUTED" if is_muted else "UNMUTED"
+                                ground_support_manager.add_combat_popup(f"AUDIO {status_str}", player.pos_x, player.pos_y, (255, 80, 80) if is_muted else (80, 255, 120))
+                        else:
+                            if event.key == pygame.K_r:
+                                ground_support_manager.trigger_eagle_rearm(player)
+                            elif event.key == pygame.K_UP:
+                                ground_support_manager.handle_hero_input("UP", player)
+                            elif event.key == pygame.K_DOWN:
+                                ground_support_manager.handle_hero_input("DOWN", player)
+                            elif event.key == pygame.K_LEFT:
+                                ground_support_manager.handle_hero_input("LEFT", player)
+                            elif event.key == pygame.K_RIGHT:
+                                ground_support_manager.handle_hero_input("RIGHT", player)
+                            elif event.key == pygame.K_p:
+                                game_state = "pause_menu"
+                            elif event.key == pygame.K_o:
+                                previous_game_state = ""
+                                settings_menu.sync_from_manager()
+                                game_state = "settings_menu"
+                            elif event.key == pygame.K_m:
+                                is_muted = audio_manager.toggle_mute()
+                                status_str = "MUTED" if is_muted else "UNMUTED"
+                                ground_support_manager.add_combat_popup(f"AUDIO {status_str}", player.pos_x, player.pos_y, (255, 80, 80) if is_muted else (80, 255, 120))
+                            elif event.key == pygame.K_q:
+                                player.toggle_radar_mode()
+                            elif event.key in (pygame.K_v, pygame.K_TAB):
+                                ground_support_manager.weapon_menu.toggle()
+                            elif event.key == pygame.K_ESCAPE:
+                                if ground_support_manager.aiming_active:
+                                    ground_support_manager.stop_aiming()
+                                elif ground_support_manager.weapon_menu.is_open:
+                                    ground_support_manager.weapon_menu.is_open = False
+                            elif event.key == pygame.K_SPACE:
+                                if ground_support_manager.equipped_slot > 0:
+                                    ground_support_manager.start_aiming()
+                            elif event.key == pygame.K_c:
+                                ground_support_manager.trigger_air_strike(player)
+                            elif event.key == pygame.K_x:
+                                ground_support_manager.trigger_supply_drop(player)
+                            elif event.key in (pygame.K_1, pygame.K_0):
+                                ground_support_manager.select_weapon_slot(0)
+                            elif event.key == pygame.K_2:
+                                ground_support_manager.select_weapon_slot(1)
+                            elif event.key == pygame.K_3:
+                                ground_support_manager.select_weapon_slot(2)
+                            elif event.key == pygame.K_4:
+                                ground_support_manager.select_weapon_slot(3)
+                            elif event.key == pygame.K_5:
+                                ground_support_manager.select_weapon_slot(4)
 
             # Spacebar release to deploy equipped Stratagem
             if event.type == pygame.KEYUP:
@@ -2455,49 +2680,72 @@ def run_game():
                 draw(None)
             help_menu.draw(canvas, canvas_mouse_pos)
 
+        elif game_state == "mission_debriefing":
+            draw(None)
+            debriefing_screen.draw(canvas, canvas_mouse_pos)
+
         elif game_state == "":
             if player.health > 0:
-                turn_rate = player.turn_rate * (0.75 if ground_support_manager.is_slow_mo else 1.0)
-                if keys[pygame.K_a] or keys[pygame.K_LEFT]:
-                    player.angle += turn_rate
-                if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
-                    player.angle -= turn_rate
+                sdm = ground_support_manager.super_destroyer
+                if sdm.is_active:
+                    if sdm.phase == PHASE_ASCENT:
+                        move()
+                        draw(canvas_mouse_pos)
+                        sdm.draw(canvas, GAME_WIDTH, GAME_HEIGHT, player)
+                    elif sdm.phase == PHASE_HANGAR:
+                        # Battlefield combat simulation frozen in orbit
+                        ground_support_manager.update(1.0 / 60.0, player, [], explosion_group, large_explosion_a_spritesheet.frames)
+                        sdm.draw(canvas, GAME_WIDTH, GAME_HEIGHT, player)
+                    elif sdm.phase == PHASE_DESCENT:
+                        move()
+                        draw(canvas_mouse_pos)
+                        sdm.draw(canvas, GAME_WIDTH, GAME_HEIGHT, player)
+                else:
+                    turn_rate = player.turn_rate * (0.75 if ground_support_manager.is_slow_mo else 1.0)
+                    if keys[pygame.K_a] or keys[pygame.K_LEFT]:
+                        player.angle += turn_rate
+                    if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
+                        player.angle -= turn_rate
 
-                rad = math.radians(player.angle)
-                dx = -math.sin(rad)
-                dy = -math.cos(rad)
+                    rad = math.radians(player.angle)
+                    dx = -math.sin(rad)
+                    dy = -math.cos(rad)
 
-                if keys[pygame.K_w] or keys[pygame.K_UP]:
-                    player.velocity_x = min(player.max_speed, player.velocity_x + player.acceleration)
-                    player.velocity_y = min(player.max_speed, player.velocity_y + player.acceleration)
-                elif keys[pygame.K_s] or keys[pygame.K_DOWN]:
-                    player.velocity_x = max(player.min_speed, player.velocity_x - player.acceleration)
-                    player.velocity_y = max(player.min_speed, player.velocity_y - player.acceleration)
+                    if keys[pygame.K_w] or keys[pygame.K_UP]:
+                        player.velocity_x = min(player.max_speed, player.velocity_x + player.acceleration)
+                        player.velocity_y = min(player.max_speed, player.velocity_y + player.acceleration)
+                    elif keys[pygame.K_s] or keys[pygame.K_DOWN]:
+                        player.velocity_x = max(player.min_speed, player.velocity_x - player.acceleration)
+                        player.velocity_y = max(player.min_speed, player.velocity_y - player.acceleration)
 
-                steering_factor = PLAYER_STEERING_SLOW_MO_FACTOR if ground_support_manager.is_slow_mo else 1.0
-                player.pos_x += dx * player.velocity_x * steering_factor
-                player.pos_y += dy * player.velocity_y * steering_factor
+                    steering_factor = PLAYER_STEERING_SLOW_MO_FACTOR if ground_support_manager.is_slow_mo else 1.0
+                    player.pos_x += dx * player.velocity_x * steering_factor
+                    player.pos_y += dy * player.velocity_y * steering_factor
 
-                player.angle %= 360
-                player.x = int(player.pos_x)
-                player.y = int(player.pos_y)
+                    player.angle %= 360
+                    player.x = int(player.pos_x)
+                    player.y = int(player.pos_y)
 
-                if ground_support_manager.equipped_slot == 0:
-                    is_firing = keys[pygame.K_SPACE] or (pygame.mouse.get_pressed()[0] and not ground_support_manager.weapon_menu.is_open)
-                    if is_firing and not player.reloading:
-                        player.set_shoot()
+                    if ground_support_manager.equipped_slot == 0:
+                        is_firing = keys[pygame.K_SPACE] or (pygame.mouse.get_pressed()[0] and not ground_support_manager.weapon_menu.is_open)
+                        if is_firing and not player.reloading:
+                            player.set_shoot()
 
-                if (keys[pygame.K_e] or keys[pygame.K_f] or keys[pygame.K_LCTRL]) and not player.rocket_reloading:
-                    targets = list(wave_manager.enemies) + [g for g in ground_support_manager.enemy_ground_units if g.is_alive] + [f for f in ground_support_manager.enemy_fabricators if f.is_alive]
-                    player.set_shoot_rocket(targets)
+                    if (keys[pygame.K_e] or keys[pygame.K_f] or keys[pygame.K_LCTRL]) and not player.rocket_reloading:
+                        targets = list(wave_manager.enemies) + [g for g in ground_support_manager.enemy_ground_units if g.is_alive] + [f for f in ground_support_manager.enemy_fabricators if f.is_alive]
+                        player.set_shoot_rocket(targets)
 
-                move()
-                draw(canvas_mouse_pos)
+                    move()
+                    draw(canvas_mouse_pos)
             else:
                 draw(canvas_mouse_pos)
+                if (keys[pygame.K_m]):
+                    is_muted = audio_manager.toggle_mute()
+                    status_str = "MUTED" if is_muted else "UNMUTED"
+                    ground_support_manager.add_combat_popup(f"AUDIO {status_str}", player.pos_x, player.pos_y, (255, 80, 80) if is_muted else (80, 255, 120))
 
         # Background Music & Engine Audio Loop Updates
-        if game_state in ("main_menu", "mission_select", "stratagem_select"):
+        if game_state in ("main_menu", "mission_select", "stratagem_select", "mission_debriefing"):
             audio_manager.play_music("menu_theme")
             audio_manager.stop_engine_sound()
         elif game_state in ("pause_menu", "settings_menu", "help_menu"):
@@ -2505,6 +2753,8 @@ def run_game():
         elif game_state == "":
             if player.health <= 0:
                 audio_manager.play_music("gameover_theme", loop=False)
+                audio_manager.stop_engine_sound()
+            elif ground_support_manager.super_destroyer.is_active and ground_support_manager.super_destroyer.phase == PHASE_HANGAR:
                 audio_manager.stop_engine_sound()
             else:
                 # Modulate engine sound with speed

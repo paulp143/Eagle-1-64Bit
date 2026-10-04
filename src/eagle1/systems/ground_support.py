@@ -22,9 +22,15 @@ Features:
 6. Tactical Supply Drops & Pelican-1 Extraction.
 """
 
+import os
 import math
 import random
 import pygame
+
+from eagle1.paths import DATA_DIR
+from eagle1.systems.hangar_cinematic import (
+    SuperDestroyerManager,
+)
 
 try:
     from eagle1.systems.audio_manager import get_audio_manager
@@ -54,10 +60,12 @@ ENEMY_TROOPER_SPEED = 1.0
 ENEMY_WALKER_MAX_HEALTH = 100.0
 ENEMY_WALKER_SPEED = 0.65
 ENEMY_FABRICATOR_MAX_HEALTH = 220.0
-ENEMY_FACTORY_STRIDER_MAX_HEALTH = 500.0
+ENEMY_FACTORY_STRIDER_MAX_HEALTH = 300.0
 ENEMY_GROUND_ENGAGE_RADIUS = 380.0
 ENEMY_LASER_DAMAGE = 4.0
 ENEMY_LASER_SPEED = 10.0
+
+EAGLE_REARM_TIME = 15.0
 
 # Stratagem Cooldowns (seconds)
 COOLDOWN_STRAFING_RUN = 12.0
@@ -110,11 +118,13 @@ class AirStrikeType:
             "name": "Machine Gun Dive",
             "subtitle": "Eagle Strafing Run",
             "cooldown": COOLDOWN_STRAFING_RUN,
+            "max_charges": 3,
+            "delay": 3.0,
             "color": (255, 200, 50),
             "border_color": (255, 220, 80),
             "symbol": "MG",
             "desc": "Eagle-1 sweeps in low, unloading a dense line of 20mm rotary cannon fire along the attack path.",
-            "stats": {"Damage": "High DPS", "Radius": "Straight Line", "Type": "Kinetic Penetration"},
+            "stats": {"Damage": "High DPS (3.2x7)", "Radius": "Straight Line", "Type": "Kinetic Penetration"},
         },
         BOMB_500KG: {
             "id": BOMB_500KG,
@@ -122,11 +132,13 @@ class AirStrikeType:
             "name": "Eagle 500kg Bomb",
             "subtitle": "High Explosive Munition",
             "cooldown": COOLDOWN_500KG_BOMB,
+            "max_charges": 1,
+            "delay": 4.0,
             "color": (255, 60, 40),
             "border_color": (255, 100, 70),
             "symbol": "500",
-            "desc": "The ultimate explosive ordnance. Massive ground zero blast annihilating anything in its radius.",
-            "stats": {"Damage": "Massive (16.0)", "Radius": "320px Blast", "Type": "Heavy Ordnance"},
+            "desc": "The ultimate explosive ordnance. Colossal ground zero blast annihilating anything in its 480px radius.",
+            "stats": {"Damage": "Colossal (38.0)", "Radius": "480px Blast", "Type": "Heavy Ordnance"},
         },
         CLUSTER: {
             "id": CLUSTER,
@@ -134,11 +146,13 @@ class AirStrikeType:
             "name": "Cluster Bomb",
             "subtitle": "Area Saturation Munitions",
             "cooldown": COOLDOWN_CLUSTER_BOMB,
+            "max_charges": 3,
+            "delay": 3.5,
             "color": (255, 140, 20),
             "border_color": (255, 175, 60),
             "symbol": "CB",
             "desc": "Blankets a broad zone with dozens of explosive sub-munitions, tearing apart swarms of hostiles.",
-            "stats": {"Damage": "Medium (3.8x8)", "Radius": "280px Spread", "Type": "Saturation"},
+            "stats": {"Damage": "Heavy Area (5.2x10)", "Radius": "320px Spread", "Type": "Saturation"},
         },
         NAPALM: {
             "id": NAPALM,
@@ -146,6 +160,8 @@ class AirStrikeType:
             "name": "Napalm Strike",
             "subtitle": "Incendiary Wall of Fire",
             "cooldown": COOLDOWN_NAPALM_STRIKE,
+            "max_charges": 2,
+            "delay": 4.0,
             "color": (255, 80, 20),
             "border_color": (255, 120, 40),
             "symbol": "NP",
@@ -158,6 +174,8 @@ class AirStrikeType:
             "name": "Gas Strike",
             "subtitle": "Corrosive Chemical Cloud",
             "cooldown": COOLDOWN_GAS_STRIKE,
+            "max_charges": 2,
+            "delay": 4.0,
             "color": (46, 204, 113),
             "border_color": (80, 230, 140),
             "symbol": "GAS",
@@ -170,11 +188,13 @@ class AirStrikeType:
             "name": "Rocket Pods",
             "subtitle": "Anti-Armor Guided Salvo",
             "cooldown": COOLDOWN_ROCKET_PODS,
+            "max_charges": 2,
+            "delay": 3.5,
             "color": (0, 190, 255),
             "border_color": (80, 220, 255),
             "symbol": "RP",
             "desc": "Launches 3 guided anti-tank rockets that aggressively home in on high-threat hostile targets.",
-            "stats": {"Damage": "Heavy (4.5x3)", "Radius": "Homing Single", "Type": "Target Seeking"},
+            "stats": {"Damage": "Anti-Armor (16.0x3)", "Radius": "Homing Salvo", "Type": "Heavy Ordnance"},
         },
         EMS: {
             "id": EMS,
@@ -182,11 +202,13 @@ class AirStrikeType:
             "name": "EMS Stun Strike",
             "subtitle": "Electromagnetic Pulse",
             "cooldown": COOLDOWN_EMS_STUN,
+            "max_charges": 2,
+            "delay": 3.0,
             "color": (155, 110, 255),
             "border_color": (190, 150, 255),
             "symbol": "EMS",
-            "desc": "Discharges an electromagnetic field that temporarily freezes enemy flight systems and engines for 4.5s.",
-            "stats": {"Damage": "Stun / EMP", "Radius": "280px Pulse", "Type": "Disabling Field"},
+            "desc": "Discharges an electromagnetic field that completely freezes and disarms enemy combat systems for 4.5s.",
+            "stats": {"Damage": "Full EMP Stun (4.5s)", "Radius": "320px Pulse", "Type": "Disabling Field"},
         },
         SMOKE: {
             "id": SMOKE,
@@ -194,11 +216,13 @@ class AirStrikeType:
             "name": "Smoke Screen",
             "subtitle": "Tactical Countermeasures",
             "cooldown": COOLDOWN_SMOKE_SCREEN,
+            "max_charges": 2,
+            "delay": 3.0,
             "color": (180, 195, 210),
             "border_color": (215, 225, 235),
             "symbol": "SMK",
-            "desc": "Deploys thick radar-absorbing smoke that breaks enemy agro and shields allied forces from attack.",
-            "stats": {"Damage": "Concealment", "Radius": "280px Screen", "Type": "Defense / Stealth"},
+            "desc": "Deploys thick radar-absorbing smoke that breaks enemy agro, scrambles weapons, and shields allies.",
+            "stats": {"Damage": "Radar Blind / 50% Shield", "Radius": "300px Screen", "Type": "Defense / Stealth"},
         },
     }
 
@@ -257,9 +281,9 @@ class ExtractionBeacon:
         self.pelican_altitude = 500.0
         self.pelican_departed = False
 
-    def activate(self):
+    def activate(self, countdown=30.0):
         self.active = True
-        self.countdown = 30.0
+        self.countdown = countdown
 
     def update(self, dt):
         if self.active and not self.pelican_arrived:
@@ -468,7 +492,8 @@ class HelldiverUnit:
             self.state = "EXTRACTING"
             self.target_waypoint = (beacon.x + self.formation_offset[0] * 0.4, beacon.y + self.formation_offset[1] * 0.4)
             dist_to_beacon = math.hypot(beacon.x - self.pos_x, beacon.y - self.pos_y)
-            if dist_to_beacon < 35.0:
+            board_dist = 50.0 if getattr(beacon, "pelican_altitude", 0) <= 60.0 else 35.0
+            if dist_to_beacon <= board_dist:
                 self.state = "EXTRACTED"
                 return
 
@@ -496,25 +521,49 @@ class HelldiverUnit:
             vx = (move_dx / dist_to_target) * speed
             vy = (move_dy / dist_to_target) * speed
 
-        # Obstacle avoidance
+        # Obstacle avoidance with tangential sliding
         for obs in obstacles:
-            if obs.rect.inflate(24, 24).collidepoint(self.pos_x + vx * 6, self.pos_y + vy * 6):
+            if obs.rect.inflate(28, 28).collidepoint(self.pos_x + vx * 6, self.pos_y + vy * 6):
                 cx, cy = obs.rect.centerx, obs.rect.centery
                 diff_x, diff_y = self.pos_x - cx, self.pos_y - cy
                 d = max(1.0, math.hypot(diff_x, diff_y))
-                vx += (diff_x / d) * 2.0
-                vy += (diff_y / d) * 2.0
+                # Push away normal
+                vx += (diff_x / d) * 2.4
+                vy += (diff_y / d) * 2.4
+                # Tangential sliding vector around obstacle
+                vx += (-diff_y / d) * 1.6
+                vy += (diff_x / d) * 1.6
 
-        # Boundary containment
-        margin = 150
+        # Boundary containment with smooth repulsive margin
+        margin = 250
         if self.pos_x < margin:
-            vx += 2.0
+            vx += 3.0 * (1.0 - max(0.0, self.pos_x / margin))
         elif self.pos_x > MAP_WIDTH - margin:
-            vx -= 2.0
+            vx -= 3.0 * (1.0 - max(0.0, (MAP_WIDTH - self.pos_x) / margin))
         if self.pos_y < margin:
-            vy += 2.0
+            vy += 3.0 * (1.0 - max(0.0, self.pos_y / margin))
         elif self.pos_y > MAP_HEIGHT - margin:
-            vy -= 2.0
+            vy -= 3.0 * (1.0 - max(0.0, (MAP_HEIGHT - self.pos_y) / margin))
+
+        # Stuck Watchdog: detect if trapped in a corner or collision deadlock
+        if not hasattr(self, 'last_check_pos'):
+            self.last_check_pos = (self.pos_x, self.pos_y)
+            self.stuck_time = 0.0
+
+        d_moved = math.hypot(self.pos_x - self.last_check_pos[0], self.pos_y - self.last_check_pos[1])
+        if d_moved < 3.5 and self.state in ("ENGAGING", "DEFENDING", "EXTRACTING", "SUPPLYING"):
+            self.stuck_time += dt
+            if self.stuck_time > 1.2:
+                # Apply emergency unstuck impulse towards squad center or extraction beacon
+                hub = (beacon.x, beacon.y) if (beacon and beacon.active and self.state == "EXTRACTING") else squad_center
+                hx = hub[0] - self.pos_x
+                hy = hub[1] - self.pos_y
+                hd = max(1.0, math.hypot(hx, hy))
+                vx += (hx / hd) * 3.8 + random.uniform(-1.0, 1.0)
+                vy += (hy / hd) * 3.8 + random.uniform(-1.0, 1.0)
+        else:
+            self.last_check_pos = (self.pos_x, self.pos_y)
+            self.stuck_time = 0.0
 
         self.pos_x += vx
         self.pos_y += vy
@@ -631,6 +680,55 @@ class EnemyLaserBullet(pygame.Rect):
         sy = self.pos_y - camera_y
         pygame.draw.circle(surface, (255, 60, 60), (int(sx), int(sy)), 3)
         pygame.draw.line(surface, (255, 120, 120), (int(sx), int(sy)), (int(sx - self.vx * 1.5), int(sy - self.vy * 1.5)), 2)
+
+
+class HeavyPlasmaBolt(pygame.Rect):
+    """Large, glowing high-caliber plasma bolt fired by the Factory Strider top cannon."""
+    def __init__(self, x, y, target_x, target_y, damage=18.0):
+        pygame.Rect.__init__(self, int(x - 8), int(y - 8), 16, 16)
+        self.pos_x = float(x)
+        self.pos_y = float(y)
+        self.damage = damage
+        self.used = False
+
+        dx = target_x - x
+        dy = target_y - y
+        dist = max(1.0, math.hypot(dx, dy))
+        speed = 10.5
+        self.vx = (dx / dist) * speed
+        self.vy = (dy / dist) * speed
+        self.lifetime = 1800
+        self.spawn_time = pygame.time.get_ticks()
+        self.trail = []
+
+    def update(self):
+        self.pos_x += self.vx
+        self.pos_y += self.vy
+        self.x = int(self.pos_x)
+        self.y = int(self.pos_y)
+        self.trail.append((self.pos_x, self.pos_y))
+        if len(self.trail) > 5:
+            self.trail.pop(0)
+        if pygame.time.get_ticks() - self.spawn_time > self.lifetime:
+            self.used = True
+
+    def draw(self, surface, camera_x, camera_y):
+        sx = self.pos_x - camera_x
+        sy = self.pos_y - camera_y
+
+        for idx, (tx, ty) in enumerate(self.trail):
+            tsx = tx - camera_x
+            tsy = ty - camera_y
+            alpha = int(40 + (idx / max(1, len(self.trail))) * 160)
+            tr_surf = pygame.Surface((14, 14), pygame.SRCALPHA)
+            pygame.draw.circle(tr_surf, (255, 100, 30, alpha), (7, 7), int(3 + idx * 0.7))
+            surface.blit(tr_surf, (int(tsx - 7), int(tsy - 7)))
+
+        glow_surf = pygame.Surface((30, 30), pygame.SRCALPHA)
+        pygame.draw.circle(glow_surf, (255, 50, 20, 110), (15, 15), 14)
+        pygame.draw.circle(glow_surf, (255, 140, 30, 190), (15, 15), 8)
+        pygame.draw.circle(glow_surf, (255, 255, 220, 255), (15, 15), 4)
+        surface.blit(glow_surf, (int(sx - 15), int(sy - 15)))
 
 
 class EnemyGroundUnit:
@@ -919,12 +1017,17 @@ class FactoryStrider:
 
         # 2. Top Heavy Anti-Air Cannon targeting Player
         if player and getattr(player, 'health', 0) > 0:
+            self.target_player = player
             self.top_fire_timer -= dt
             if self.top_fire_timer <= 0:
-                self.top_fire_timer = 1.8
+                self.top_fire_timer = 2.4
                 cx = self.pos_x + self.width / 2
                 cy = self.pos_y + 15.0
-                lasers_list.append(EnemyLaserBullet(cx, cy, player.pos_x, player.pos_y, damage=15.0))
+                lasers_list.append(HeavyPlasmaBolt(cx, cy, player.pos_x + 18, player.pos_y + 18, damage=18.0))
+                if get_audio_manager:
+                    get_audio_manager().play_sfx("explosion_small")
+        else:
+            self.target_player = None
 
         # 3. Reinforcement Bay spawning Automaton Troopers
         self.spawn_timer -= dt
@@ -942,6 +1045,16 @@ class FactoryStrider:
 
         sx = self.pos_x - camera_x
         sy = self.pos_y - camera_y
+
+        # Targeting Telegraph Laser Line (warning before top cannon fires at player)
+        if 0 < self.top_fire_timer <= 0.6 and getattr(self, 'target_player', None):
+            tc_x = sx + self.width // 2
+            tc_y = sy - 14
+            tp_x = self.target_player.pos_x + 18 - camera_x
+            tp_y = self.target_player.pos_y + 18 - camera_y
+            pulse = int(180 + 75 * math.sin(pygame.time.get_ticks() * 0.04))
+            pygame.draw.line(surface, (255, 40, 40), (tc_x, tc_y), (tp_x, tp_y), 2)
+            pygame.draw.circle(surface, (255, pulse, 50), (int(tp_x), int(tp_y)), 14, 1)
 
         if -200 <= sx <= 1480 and -200 <= sy <= 920:
             rect = pygame.Rect(int(sx), int(sy), self.width, self.height)
@@ -1244,12 +1357,12 @@ class ActiveAirStrike:
                 for enemy in enemies:
                     if not getattr(enemy, 'exploding', False) and getattr(enemy, 'health', 0) > 0:
                         if math.hypot(enemy.x + 18 - zx, enemy.y + 18 - zy) <= zr:
-                            enemy.health -= 0.28
+                            enemy.health -= 0.09
                             if score_callback and enemy.health <= 0:
                                 score_callback(enemy, "Napalm Strike")
                 for ge in ground_enemies:
                     if ge.is_alive and math.hypot(ge.pos_x + ge.width / 2 - zx, ge.pos_y + ge.height / 2 - zy) <= zr:
-                        ge.take_damage(0.4)
+                        ge.take_damage(0.14)
                         if score_callback and not ge.is_alive:
                             score_callback(ge, "Napalm Strike")
 
@@ -1257,34 +1370,43 @@ class ActiveAirStrike:
                 for enemy in enemies:
                     if not getattr(enemy, 'exploding', False):
                         if math.hypot(enemy.x + 18 - zx, enemy.y + 18 - zy) <= zr:
-                            enemy.speed = 0.0
+                            setattr(enemy, "stun_timer", 4.5)
                 for ge in ground_enemies:
                     if ge.is_alive and math.hypot(ge.pos_x + ge.width / 2 - zx, ge.pos_y + ge.height / 2 - zy) <= zr:
-                        ge.speed = 0.0
+                        setattr(ge, "stun_timer", 4.5)
+
+            elif zone["kind"] == "smoke":
+                for enemy in enemies:
+                    if not getattr(enemy, 'exploding', False):
+                        if math.hypot(enemy.x + 18 - zx, enemy.y + 18 - zy) <= zr:
+                            setattr(enemy, "smoke_blinded", True)
+                for ge in ground_enemies:
+                    if ge.is_alive and math.hypot(ge.pos_x + ge.width / 2 - zx, ge.pos_y + ge.height / 2 - zy) <= zr:
+                        setattr(ge, "smoke_blinded", True)
 
         self.lingering_zones = [z for z in self.lingering_zones if z["lifetime"] > 0]
 
-        # Sequential Strafe firing
+        # Sequential Strafe firing with widened corridor and boosted impact
         if self.type == AirStrikeType.STRAFE and self.strafe_fired < self.strafe_shots:
             step = self.strafe_fired - self.strafe_shots // 2
             rad = math.radians(self.angle)
-            spread_dist = step * 24.0
+            spread_dist = step * 28.0
             sx = self.target_x - math.sin(rad) * spread_dist
             sy = self.target_y - math.cos(rad) * spread_dist
 
-            self.sub_projectiles.append({"x": sx, "y": sy, "timer": 0.18})
+            self.sub_projectiles.append({"x": sx, "y": sy, "timer": 0.22})
             self.strafe_fired += 1
 
             for enemy in enemies:
                 if not getattr(enemy, 'exploding', False) and getattr(enemy, 'health', 0) > 0:
-                    if math.hypot(enemy.x + 18 - sx, enemy.y + 18 - sy) <= 35.0:
-                        enemy.health -= 1.8
+                    if math.hypot(enemy.x + 18 - sx, enemy.y + 18 - sy) <= 55.0:
+                        enemy.health -= 3.2
                         if score_callback and enemy.health <= 0:
                             score_callback(enemy, "Machine Gun Dive")
 
             for ge in ground_enemies:
-                if ge.is_alive and math.hypot(ge.pos_x + ge.width / 2 - sx, ge.pos_y + ge.height / 2 - sy) <= 35.0:
-                    ge.take_damage(2.2)
+                if ge.is_alive and math.hypot(ge.pos_x + ge.width / 2 - sx, ge.pos_y + ge.height / 2 - sy) <= 55.0:
+                    ge.take_damage(3.5)
                     if score_callback and not ge.is_alive:
                         score_callback(ge, "Machine Gun Dive")
 
@@ -1299,17 +1421,17 @@ class ActiveAirStrike:
         tx, ty = self.target_x, self.target_y
 
         if self.type == AirStrikeType.BOMB_500KG:
-            radius = 320.0
-            damage = 16.0
+            radius = 480.0
+            damage = 380.0
             self._apply_area_blast(tx, ty, radius, damage, enemies, ground_enemies, score_callback)
-            self._spawn_cluster_explosions(tx, ty, 5, 60.0, explosion_group, frames)
+            self._spawn_cluster_explosions(tx, ty, 8, 100.0, explosion_group, frames)
 
         elif self.type == AirStrikeType.CLUSTER:
-            radius = 280.0
-            for _ in range(8):
-                cx = tx + random.uniform(-140, 140)
-                cy = ty + random.uniform(-140, 140)
-                self._apply_area_blast(cx, cy, 110.0, 3.8, enemies, ground_enemies, score_callback)
+            radius = 320.0
+            for _ in range(10):
+                cx = tx + random.uniform(-160, 160)
+                cy = ty + random.uniform(-160, 160)
+                self._apply_area_blast(cx, cy, 120.0, 5.2, enemies, ground_enemies, score_callback)
                 self._spawn_cluster_explosions(cx, cy, 1, 0, explosion_group, frames)
 
         elif self.type == AirStrikeType.NAPALM:
@@ -1339,28 +1461,28 @@ class ActiveAirStrike:
             for i in range(min(3, len(all_targets))):
                 gx, gy, target = all_targets[i]
                 if hasattr(target, 'take_damage'):
-                    target.take_damage(4.5)
+                    target.take_damage(16.0)
                 else:
-                    target.health -= 4.5
+                    target.health -= 16.0
                 self._spawn_cluster_explosions(gx, gy, 1, 0, explosion_group, frames)
                 if score_callback and ((hasattr(target, 'is_alive') and not target.is_alive) or (getattr(target, 'health', 1) <= 0)):
                     score_callback(target, "Rocket Pods")
 
         elif self.type == AirStrikeType.EMS:
-            self.lingering_zones.append({"kind": "ems", "x": tx, "y": ty, "radius": 280.0, "lifetime": 4.5})
+            self.lingering_zones.append({"kind": "ems", "x": tx, "y": ty, "radius": 320.0, "lifetime": 5.0})
             for enemy in enemies:
                 if not getattr(enemy, 'exploding', False):
-                    if math.hypot(enemy.x + 18 - tx, enemy.y + 18 - ty) <= 280.0:
-                        enemy.speed = 0.0
+                    if math.hypot(enemy.x + 18 - tx, enemy.y + 18 - ty) <= 320.0:
+                        setattr(enemy, "stun_timer", 4.5)
             for ge in ground_enemies:
-                if ge.is_alive and math.hypot(ge.pos_x + ge.width / 2 - tx, ge.pos_y + ge.height / 2 - ty) <= 280.0:
-                    ge.speed = 0.0
+                if ge.is_alive and math.hypot(ge.pos_x + ge.width / 2 - tx, ge.pos_y + ge.height / 2 - ty) <= 320.0:
+                    setattr(ge, "stun_timer", 4.5)
 
         elif self.type == AirStrikeType.SMOKE:
             for i in range(-2, 3):
                 sx = tx + random.uniform(-50, 50) + i * 40
                 sy = ty + random.uniform(-50, 50)
-                self.lingering_zones.append({"kind": "smoke", "x": sx, "y": sy, "radius": 130.0, "lifetime": 9.0})
+                self.lingering_zones.append({"kind": "smoke", "x": sx, "y": sy, "radius": 140.0, "lifetime": 9.0})
 
     def _apply_area_blast(self, x, y, radius, damage, enemies, ground_enemies, score_callback):
         for enemy in enemies:
@@ -1669,7 +1791,11 @@ class AirStrikeWeaponMenu:
         self.is_open = False
         self.selected_type = AirStrikeType.STRAFE
 
+        self.charges = {st: AirStrikeType.DATA[st].get("max_charges", 1) for st in AirStrikeType.ORDER}
         self.cooldowns = {st: 0.0 for st in AirStrikeType.ORDER}
+        self.is_rearming = False
+        self.rearm_timer = 0.0
+
         self.card_rects = {}
         self._init_layout()
 
@@ -1692,7 +1818,28 @@ class AirStrikeWeaponMenu:
     def toggle(self):
         self.is_open = not self.is_open
 
+    def trigger_rearm(self):
+        if self.is_rearming:
+            return False
+        self.is_rearming = True
+        self.rearm_timer = EAGLE_REARM_TIME
+        if get_audio_manager:
+            get_audio_manager().play_sfx("ui_click")
+        return True
+
     def update(self, dt):
+        if self.is_rearming:
+            self.rearm_timer -= dt
+            if self.rearm_timer <= 0:
+                self.is_rearming = False
+                self.rearm_timer = 0.0
+                for st in self.charges:
+                    self.charges[st] = AirStrikeType.DATA[st].get("max_charges", 1)
+                for st in self.cooldowns:
+                    self.cooldowns[st] = 0.0
+                if get_audio_manager:
+                    get_audio_manager().play_sfx("powerup_pickup")
+
         for st in self.cooldowns:
             if self.cooldowns[st] > 0:
                 self.cooldowns[st] = max(0.0, self.cooldowns[st] - dt)
@@ -1702,14 +1849,16 @@ class AirStrikeWeaponMenu:
             self.selected_type = strike_type
 
     def is_ready(self, strike_type=None):
+        if self.is_rearming:
+            return False
         st = strike_type if strike_type is not None else self.selected_type
-        return self.cooldowns.get(st, 0.0) <= 0.0
+        return self.charges.get(st, 0) > 0 and self.cooldowns.get(st, 0.0) <= 0.0
 
     def trigger_strike(self, strike_type=None):
         st = strike_type if strike_type is not None else self.selected_type
         if self.is_ready(st):
-            max_cd = AirStrikeType.DATA[st]["cooldown"]
-            self.cooldowns[st] = max_cd
+            self.charges[st] = max(0, self.charges.get(st, 1) - 1)
+            self.cooldowns[st] = AirStrikeType.DATA[st].get("delay", 2.0)
             return True
         return False
 
@@ -1765,7 +1914,9 @@ class AirStrikeWeaponMenu:
             is_sel = (st == self.selected_type)
             is_hov = (mouse_pos is not None and rect.collidepoint(mouse_pos))
             cd = self.cooldowns[st]
-            is_ready = (cd <= 0)
+            ch = self.charges.get(st, 0)
+            max_ch = data.get("max_charges", 1)
+            is_ready = self.is_ready(st)
 
             bg_col = (26, 36, 52) if is_sel else ((20, 28, 42) if is_hov else (14, 20, 32))
             pygame.draw.rect(surface, bg_col, rect, border_radius=8)
@@ -1780,10 +1931,14 @@ class AirStrikeWeaponMenu:
             key_txt = font_small.render(f"[{data['key']}]", True, (255, 230, 100))
             surface.blit(key_txt, (badge_rect.centerx - key_txt.get_width() // 2, badge_rect.centery - key_txt.get_height() // 2))
 
-            if is_ready:
-                status_txt = font_small.render("READY", True, (46, 204, 113))
+            if self.is_rearming:
+                status_txt = font_small.render(f"REARM {self.rearm_timer:.1f}s", True, (255, 140, 40))
+            elif cd > 0:
+                status_txt = font_small.render(f"CD {cd:.1f}s", True, (255, 140, 40))
+            elif ch == 0:
+                status_txt = font_small.render("EMPTY (R)", True, (255, 80, 80))
             else:
-                status_txt = font_small.render(f"{cd:.1f}s", True, (255, 140, 40))
+                status_txt = font_small.render(f"{ch}/{max_ch} READY", True, (46, 204, 113))
             surface.blit(status_txt, (rect.right - status_txt.get_width() - 10, rect.y + 11))
 
             name_col = (255, 255, 255) if is_ready else (170, 180, 195)
@@ -1793,7 +1948,7 @@ class AirStrikeWeaponMenu:
             sub_txt = font_small.render(data["subtitle"], True, data["color"])
             surface.blit(sub_txt, (rect.x + 10, rect.y + 60))
 
-            stat_str = f"Type: {data['stats']['Type']}"
+            stat_str = f"Uses: {ch}/{max_ch} | Delay: {data.get('delay', 2.0):.1f}s"
             stat_txt = font_small.render(stat_str, True, (140, 160, 185))
             surface.blit(stat_txt, (rect.x + 10, rect.y + 82))
 
@@ -1802,17 +1957,23 @@ class AirStrikeWeaponMenu:
             bar_w = rect.width - 20
             bar_h = 6
             pygame.draw.rect(surface, (25, 32, 45), (bar_x, bar_y, bar_w, bar_h), border_radius=2)
-            if not is_ready:
-                max_cd = data["cooldown"]
-                fill_w = int((1.0 - (cd / max_cd)) * bar_w)
+            if self.is_rearming:
+                fill_w = int((1.0 - (self.rearm_timer / EAGLE_REARM_TIME)) * bar_w)
                 pygame.draw.rect(surface, (255, 140, 0), (bar_x, bar_y, fill_w, bar_h), border_radius=2)
-            else:
-                pygame.draw.rect(surface, (46, 204, 113), (bar_x, bar_y, bar_w, bar_h), border_radius=2)
+            elif cd > 0:
+                max_cd = data.get("delay", 2.0)
+                fill_w = int((1.0 - (cd / max(0.1, max_cd))) * bar_w)
+                pygame.draw.rect(surface, (255, 140, 0), (bar_x, bar_y, fill_w, bar_h), border_radius=2)
+            elif ch > 0:
+                fill_w = int((ch / max_ch) * bar_w)
+                pygame.draw.rect(surface, (46, 204, 113), (bar_x, bar_y, fill_w, bar_h), border_radius=2)
 
     def draw_hud_quickbar(self, surface, x, y, font_sub, font_small):
         data = AirStrikeType.DATA[self.selected_type]
         cd = self.cooldowns[self.selected_type]
-        is_ready = (cd <= 0)
+        ch = self.charges.get(self.selected_type, 0)
+        max_ch = data.get("max_charges", 1)
+        is_ready = self.is_ready(self.selected_type)
 
         box_w = 260
         box_h = 56
@@ -1823,13 +1984,36 @@ class AirStrikeWeaponMenu:
         title_txt = font_sub.render(f"[C] {data['name']}", True, title_col)
         surface.blit(title_txt, (x + 8, y + 6))
 
-        status_str = "READY [FIRE: C]" if is_ready else f"REARMING: {cd:.1f}s"
-        status_col = (46, 204, 113) if is_ready else (255, 140, 40)
+        if self.is_rearming:
+            status_str = f"EAGLE REARMING: {self.rearm_timer:.1f}s"
+            status_col = (255, 140, 40)
+        elif cd > 0:
+            status_str = f"DELAY: {cd:.1f}s ({ch}/{max_ch})"
+            status_col = (255, 140, 40)
+        elif ch == 0:
+            status_str = "DEPLETED [R: REARM]"
+            status_col = (255, 75, 75)
+        else:
+            status_str = f"READY: {ch}/{max_ch} [FIRE: C]"
+            status_col = (46, 204, 113)
+
         status_txt = font_small.render(status_str, True, status_col)
         surface.blit(status_txt, (x + 8, y + 26))
 
-        menu_hint = font_small.render("[V] Arsenal Menu [1-8] Swap", True, (130, 150, 175))
+        menu_hint = font_small.render("[V] Arsenal Menu  [R] Eagle Rearm", True, (130, 150, 175))
         surface.blit(menu_hint, (x + 8, y + 40))
+
+
+HERO_STRATAGEM_SEQUENCES = [
+    ("REINFORCE", ["UP", "DOWN", "RIGHT", "LEFT", "UP"]),
+    ("500KG BOMB", ["UP", "RIGHT", "DOWN", "DOWN", "DOWN"]),
+    ("ORBITAL LASER", ["RIGHT", "DOWN", "UP", "RIGHT", "DOWN"]),
+    ("EAGLE STRAFE", ["UP", "RIGHT", "RIGHT"]),
+    ("CLUSTER BOMB", ["UP", "RIGHT", "DOWN", "DOWN", "RIGHT"]),
+    ("NAPALM STRIKE", ["UP", "RIGHT", "DOWN", "UP"]),
+    ("SUPPLY DROP", ["DOWN", "DOWN", "UP", "RIGHT"]),
+    ("RESUPPLY PACK", ["DOWN", "LEFT", "DOWN", "UP", "UP"]),
+]
 
 
 # =====================================================================
@@ -1871,6 +2055,8 @@ class GroundSupportManager:
         self.flawless_protection = True
         self.total_cas_kills = 0
         self.survivors_count = HELLDIVER_COUNT
+        self.destroyed_fabs_count = 0
+        self.strider_destroyed = False
 
         # Stratagem Loadout & 5-Slot Weapon System
         self.active_loadout = [
@@ -1883,7 +2069,104 @@ class GroundSupportManager:
         self.aiming_active = False
         self.slow_mo_energy = SLOW_MO_MAX_DURATION
 
+        # Super Destroyer Orbital Cinematic & Stratagem Hero System
+        self.super_destroyer = SuperDestroyerManager()
+
+        # Stratagem Hero Minigame & High Score Tracker
+        self.hero_sequence_name = "500KG BOMB"
+        self.hero_sequence = ["UP", "RIGHT", "DOWN", "DOWN", "DOWN"]
+        self.hero_index = 0
+        self.hero_score = 0
+        self.hero_highscore = self._load_hero_highscore()
+
         self._spawn_world()
+
+    @property
+    def is_super_destroyer_active(self):
+        return self.super_destroyer.is_active
+
+    @property
+    def is_combat_paused(self):
+        return self.super_destroyer.is_combat_paused
+
+    def _sync_hero_from_super_destroyer(self):
+        self.hero_score = self.super_destroyer.hero_score
+        self.hero_highscore = self.super_destroyer.hero_highscore
+        self.hero_sequence = self.super_destroyer.hero_sequence
+        self.hero_sequence_name = self.super_destroyer.hero_sequence_name
+        self.hero_index = self.super_destroyer.hero_index
+
+    def _load_hero_highscore(self):
+        hs_file = os.path.join(DATA_DIR, "stratagem_hero_highscore.txt")
+        try:
+            if os.path.exists(hs_file):
+                with open(hs_file, "r") as f:
+                    content = f.read().strip()
+                    if content.isdigit():
+                        return int(content)
+        except Exception:
+            pass
+        return 0
+
+    def _save_hero_highscore(self):
+        hs_file = os.path.join(DATA_DIR, "stratagem_hero_highscore.txt")
+        try:
+            with open(hs_file, "w") as f:
+                f.write(str(self.hero_highscore))
+        except Exception:
+            pass
+
+    def _generate_next_hero_code(self):
+        name, seq = random.choice(HERO_STRATAGEM_SEQUENCES)
+        self.hero_sequence_name = name
+        self.hero_sequence = list(seq)
+        self.hero_index = 0
+
+    def handle_hero_input(self, direction, player=None):
+        if self.super_destroyer.is_active:
+            self.super_destroyer.handle_hero_input(direction, player)
+            self._sync_hero_from_super_destroyer()
+            return
+
+        if not self.weapon_menu.is_rearming:
+            return
+        if self.hero_sequence and self.hero_index < len(self.hero_sequence):
+            if direction == self.hero_sequence[self.hero_index]:
+                self.hero_index += 1
+                if get_audio_manager:
+                    get_audio_manager().play_sfx("ui_click")
+                if self.hero_index >= len(self.hero_sequence):
+                    self.hero_score += 100
+                    if player:
+                        player.score += 100
+                        self.add_combat_popup("+100 HERO BONUS!", player.pos_x, player.pos_y, (0, 255, 200))
+                    if self.hero_score > self.hero_highscore:
+                        self.hero_highscore = self.hero_score
+                        self._save_hero_highscore()
+                    if get_audio_manager:
+                        get_audio_manager().play_sfx("powerup_pickup")
+                    self._generate_next_hero_code()
+            else:
+                self.hero_index = 0
+                if get_audio_manager:
+                    get_audio_manager().play_sfx("low_shield")
+                self._generate_next_hero_code()
+
+    def trigger_eagle_rearm(self, player=None):
+        if self.weapon_menu.is_rearming or self.super_destroyer.is_active:
+            return False
+        can_rearm = any(self.weapon_menu.charges.get(st, 0) < AirStrikeType.DATA[st].get("max_charges", 1) for st in self.active_loadout)
+        if not can_rearm:
+            if player:
+                self.add_combat_popup("STRATAGEMS ALREADY FULL", player.pos_x, player.pos_y, (160, 200, 255))
+            return False
+        success = self.weapon_menu.trigger_rearm()
+        if success:
+            if player:
+                self.super_destroyer.start_rearm(player)
+                self.add_combat_popup("EAGLE REARM INITIATED (15.0s)", player.pos_x, player.pos_y, (255, 200, 40))
+            self._sync_hero_from_super_destroyer()
+        return success
 
     @property
     def is_slow_mo(self):
@@ -2006,10 +2289,15 @@ class GroundSupportManager:
         self.flawless_protection = True
         self.total_cas_kills = 0
         self.survivors_count = HELLDIVER_COUNT
+        self.destroyed_fabs_count = 0
+        self.strider_destroyed = False
         self.beacon = ExtractionBeacon(self.outpost_center[0], self.outpost_center[1])
         self.weapon_menu = AirStrikeWeaponMenu(1280, 720)
+        self.super_destroyer = SuperDestroyerManager()
         self.active_callout = None
         self.callout_timer = 20.0
+        self.hero_score = 0
+        self._generate_next_hero_code()
 
     def trigger_air_strike(self, player):
         """Fires the selected Air Strike at the predicted impact coordinates."""
@@ -2066,6 +2354,12 @@ class GroundSupportManager:
         })
 
     def update(self, dt, player, enemies, explosion_group, frames):
+        if self.super_destroyer.is_active:
+            self.super_destroyer.update(dt, player, self.weapon_menu)
+            self._sync_hero_from_super_destroyer()
+            if self.super_destroyer.is_combat_paused:
+                return
+
         self.weapon_menu.update(dt)
         if self.supply_cooldown > 0:
             self.supply_cooldown = max(0.0, self.supply_cooldown - dt)
@@ -2077,18 +2371,26 @@ class GroundSupportManager:
             self.slow_mo_energy = min(SLOW_MO_MAX_DURATION, self.slow_mo_energy + SLOW_MO_RECHARGE_RATE * dt)
 
         living_units = [u for u in self.units if u.is_alive]
-        self.survivors_count = len(living_units)
+        self.survivors_count = len([u for u in self.units if u.health > 0 and u.state != "DOWNED"])
 
         if living_units:
             squad_cx = sum(u.pos_x for u in living_units) / len(living_units)
             squad_cy = sum(u.pos_y for u in living_units) / len(living_units)
-        else:
+            # Tether squad centroid within 220px of outpost center
+            ocx, ocy = self.outpost_center
+            dist_from_outpost = math.hypot(squad_cx - ocx, squad_cy - ocy)
+            if dist_from_outpost > 220.0:
+                squad_cx = ocx + (squad_cx - ocx) / dist_from_outpost * 220.0
+                squad_cy = ocy + (squad_cy - ocy) / dist_from_outpost * 220.0
+        elif len(self.units) > 0 and any(u.state != "EXTRACTED" for u in self.units):
             squad_cx, squad_cy = self.outpost_center
-            if self.objective_phase != "FAILED":
+            if self.objective_phase not in ("FAILED", "COMPLETE", "EXTRACTION"):
                 self.objective_phase = "FAILED"
                 self.flawless_protection = False
                 player.score = max(0, player.score - SCORE_CASUALTY_PENALTY)
                 self.add_combat_popup("ALLIED SQUAD ELIMINATED! -250", player.pos_x, player.pos_y, (255, 60, 60))
+        else:
+            squad_cx, squad_cy = self.outpost_center
 
         # Check Helldiver Tactical Air Strike Call-in Mission Generation
         if self.active_callout:
@@ -2109,24 +2411,27 @@ class GroundSupportManager:
                     fab = self.enemy_fabricators[0]
                     cx, cy = fab.pos_x + fab.width / 2, fab.pos_y + fab.height / 2
 
-                # Helldivers request an appropriate strike (500kg, Napalm, Cluster, Strafe, Gas, Rockets)
+                # Helldivers request an equipped strike that has charges and is ready
                 candidate_types = [
-                    AirStrikeType.BOMB_500KG,
-                    AirStrikeType.NAPALM,
-                    AirStrikeType.CLUSTER,
-                    AirStrikeType.STRAFE,
-                    AirStrikeType.GAS,
-                    AirStrikeType.ROCKETS,
+                    st for st in self.active_loadout
+                    if self.weapon_menu.charges.get(st, 0) > 0 and not self.weapon_menu.is_rearming
                 ]
+                if not candidate_types:
+                    candidate_types = [AirStrikeType.STRAFE]
                 req_type = random.choice(candidate_types)
                 self.active_callout = SquadAirStrikeRequest(cx, cy, req_type)
                 # Auto-prepare strike in player weapon menu for rapid deployment
                 self.weapon_menu.select(req_type)
-                self.weapon_menu.cooldowns[req_type] = 0.0
                 self.add_combat_popup(f"SQUAD CALLING IN {AirStrikeType.DATA[req_type]['name'].upper()}!", squad_cx, squad_cy, (255, 60, 40))
 
         # Extraction Beacon
         self.beacon.update(dt)
+        if self.beacon.pelican_arrived and self.beacon.pelican_altitude <= 0:
+            living_unextracted = [u for u in self.units if u.is_alive and u.state != "EXTRACTED"]
+            if len(living_unextracted) == 0 and not self.beacon.extracted:
+                self.beacon.extracted = True
+                self.add_combat_popup("ALL SQUAD MEMBERS ABOARD! PELICAN DEPARTING", self.beacon.x, self.beacon.y, (0, 255, 180))
+
         if self.beacon.pelican_departed and self.objective_phase != "COMPLETE":
             self.objective_phase = "COMPLETE"
             bonus = SCORE_EXTRACTION_BONUS
@@ -2138,8 +2443,11 @@ class GroundSupportManager:
         # Update Helldivers AI (engages aerial and enemy ground units)
         for unit in self.units:
             prev_alive = unit.is_alive
+            prev_state = unit.state
             unit.update_ai(dt, (squad_cx, squad_cy), enemies, self.obstacles, self.bullets, self.supply_pods, self.beacon, self.enemy_ground_units)
-            if prev_alive and not unit.is_alive:
+            if prev_state != "EXTRACTED" and unit.state == "EXTRACTED":
+                self.add_combat_popup(f"{unit.callsign} EXTRACTED!", self.beacon.x, self.beacon.y, (0, 255, 180))
+            elif prev_alive and not unit.is_alive and unit.state != "EXTRACTED":
                 self.flawless_protection = False
                 player.score = max(0, player.score - SCORE_CASUALTY_PENALTY)
                 self.add_combat_popup(f"CASUALTY: {unit.callsign} KIA!", unit.pos_x, unit.pos_y, (255, 75, 75))
@@ -2150,6 +2458,7 @@ class GroundSupportManager:
             if self.factory_strider.is_alive:
                 self.factory_strider.update(dt, self.units, self.enemy_lasers, self.enemy_ground_units, player)
             else:
+                self.strider_destroyed = True
                 player.score += self.factory_strider.score_value
                 self.add_combat_popup(f"FACTORY STRIDER DESTROYED! +{self.factory_strider.score_value}", self.factory_strider.pos_x, self.factory_strider.pos_y, (255, 50, 50))
                 if explosion_group and frames:
@@ -2161,6 +2470,10 @@ class GroundSupportManager:
                             frames, speed=0.3
                         ))
                 self.factory_strider = None
+                if not self.beacon.active:
+                    self.beacon.activate(3.0)
+                    self.objective_phase = "EXTRACTION"
+                    self.add_combat_popup("STRIDER ELIMINATED! PELICAN INBOUND (3s)", self.beacon.x, self.beacon.y, (0, 255, 180))
 
         # Update Enemy Fabricators
         for fab in self.enemy_fabricators:
@@ -2260,6 +2573,7 @@ class GroundSupportManager:
         for fab in list(self.enemy_fabricators):
             if not fab.is_alive:
                 self.enemy_fabricators.remove(fab)
+                self.destroyed_fabs_count += 1
                 player.score += 150
                 self.add_combat_popup("FABRICATOR DESTROYED! +150", fab.pos_x, fab.pos_y, (255, 140, 40))
                 if explosion_group and frames:
@@ -2270,6 +2584,10 @@ class GroundSupportManager:
                             fab.pos_y + random.uniform(10, fab.height - 10),
                             frames, speed=0.4
                         ))
+                if len(self.enemy_fabricators) == 0 and not self.beacon.active:
+                    self.beacon.activate(5.0)
+                    self.objective_phase = "EXTRACTION"
+                    self.add_combat_popup("OUTPOST DEMOLISHED! PELICAN INBOUND (5s)", self.beacon.x, self.beacon.y, (0, 255, 180))
 
         # Danger Zone Alert Detection (tracks aerial and ground threats near squad)
         threat_count = 0
@@ -2314,10 +2632,15 @@ class GroundSupportManager:
             player.score += survivor_bonus
             self.add_combat_popup(f"SQUAD SURVIVAL BONUS! +{survivor_bonus}", player.pos_x, player.pos_y, (255, 215, 0))
 
-        if wave_num >= 3 and not self.beacon.active:
-            self.beacon.activate()
-            self.objective_phase = "EXTRACTION"
-            self.add_combat_popup("EXTRACTION BEACON ACTIVATED!", self.beacon.x, self.beacon.y, (0, 220, 255))
+        # Only activate extraction in Endless War if wave_num >= 3 and not already active.
+        # Dedicated missions (Air Superiority, Base Defense, Outpost Demolition, Strider Raid)
+        # govern extraction when their specific conditions or all waves are accomplished.
+        m_cfg = getattr(self, "active_mission", None) or {}
+        if m_cfg.get("id") == "endless_war" and not m_cfg.get("has_bombers", False):
+            if wave_num >= 3 and not self.beacon.active:
+                self.beacon.activate()
+                self.objective_phase = "EXTRACTION"
+                self.add_combat_popup("EXTRACTION BEACON ACTIVATED!", self.beacon.x, self.beacon.y, (0, 220, 255))
 
     def draw_world_entities(self, surface, camera_x, camera_y, font):
         for obs in self.obstacles:
@@ -2482,38 +2805,92 @@ class GroundSupportManager:
             strider_lbl = font_small.render(f"FACTORY STRIDER (BOSS) - {int(self.factory_strider.health)} / {int(self.factory_strider.max_health)} HP", True, (255, 220, 220))
             surface.blit(strider_lbl, (screen_w // 2 - strider_lbl.get_width() // 2, by - 16))
 
-        # 1. Squad Status Panel
-        panel_x = 65
-        panel_y = 76
-        panel_w = 205
-        panel_h = 74
-        pygame.draw.rect(surface, (14, 20, 32), (panel_x, panel_y, panel_w, panel_h), border_radius=6)
-        pygame.draw.rect(surface, (50, 75, 110), (panel_x, panel_y, panel_w, panel_h), 1, border_radius=6)
+        # 1. Squad Status Panel (Only if mission features ground forces)
+        has_ground = True
+        if self.active_mission and not self.active_mission.get("has_ground", True):
+            has_ground = False
 
-        header_str = f"HELLDIVERS: {self.survivors_count}/{HELLDIVER_COUNT} ALIVE"
-        header_col = (0, 220, 255) if self.survivors_count > 0 else (255, 70, 70)
-        header_lbl = font_small.render(header_str, True, header_col)
-        surface.blit(header_lbl, (panel_x + 8, panel_y + 4))
+        if has_ground:
+            panel_x = 24
+            panel_y = 66
+            panel_w = 210
+            panel_h = 74
+            pygame.draw.rect(surface, (14, 20, 32), (panel_x, panel_y, panel_w, panel_h), border_radius=6)
+            pygame.draw.rect(surface, (50, 75, 110), (panel_x, panel_y, panel_w, panel_h), 1, border_radius=6)
 
-        row_y = panel_y + 20
-        for i, unit in enumerate(self.units):
-            ux = panel_x + 8 + (i % 2) * 96
-            uy = row_y + (i // 2) * 24
-            name_txt = font_small.render(f"V{i+1}:", True, (180, 200, 220))
-            surface.blit(name_txt, (ux, uy))
-
-            bar_w = 58
-            bar_h = 5
-            bx = ux + 24
-            by = uy + 4
-            pygame.draw.rect(surface, (20, 25, 38), (bx, by, bar_w, bar_h))
-            if unit.is_alive:
-                hp_w = max(0, int((unit.health / unit.max_health) * bar_w))
-                hp_col = (46, 204, 113) if unit.health > 50 else (241, 196, 15)
-                pygame.draw.rect(surface, hp_col, (bx, by, hp_w, bar_h))
+            extracted_count = len([u for u in self.units if u.state == "EXTRACTED"])
+            if extracted_count > 0:
+                header_str = f"HELLDIVERS: {self.survivors_count}/{HELLDIVER_COUNT} ({extracted_count} EXTRACTED)"
             else:
-                kia_txt = font_small.render("K.I.A.", True, (255, 75, 75))
-                surface.blit(kia_txt, (bx, by - 3))
+                header_str = f"HELLDIVERS: {self.survivors_count}/{HELLDIVER_COUNT} ALIVE"
+            header_col = (0, 220, 255) if self.survivors_count > 0 else (255, 70, 70)
+            header_lbl = font_small.render(header_str, True, header_col)
+            surface.blit(header_lbl, (panel_x + 8, panel_y + 4))
+
+            row_y = panel_y + 20
+            for i, unit in enumerate(self.units):
+                ux = panel_x + 8 + (i % 2) * 96
+                uy = row_y + (i // 2) * 24
+                name_txt = font_small.render(f"V{i+1}:", True, (180, 200, 220))
+                surface.blit(name_txt, (ux, uy))
+
+                bar_w = 58
+                bar_h = 5
+                bx = ux + 24
+                by = uy + 4
+                pygame.draw.rect(surface, (20, 25, 38), (bx, by, bar_w, bar_h))
+                if unit.state == "EXTRACTED":
+                    ext_txt = font_small.render("EXTRACTED", True, (0, 255, 180))
+                    surface.blit(ext_txt, (bx, by - 3))
+                elif unit.is_alive:
+                    hp_w = max(0, int((unit.health / unit.max_health) * bar_w))
+                    hp_col = (46, 204, 113) if unit.health > 50 else (241, 196, 15)
+                    pygame.draw.rect(surface, hp_col, (bx, by, hp_w, bar_h))
+                else:
+                    kia_txt = font_small.render("K.I.A.", True, (255, 75, 75))
+                    surface.blit(kia_txt, (bx, by - 3))
+
+        # Stratagem Hero Minigame Panel (Fallback when Super Destroyer cinematic is not active)
+        if self.weapon_menu.is_rearming and not self.super_destroyer.is_active:
+            hero_w = 420
+            hero_h = 80
+            hx = screen_w // 2 - hero_w // 2
+            hy = 100
+            pygame.draw.rect(surface, (14, 18, 28), (hx, hy, hero_w, hero_h), border_radius=8)
+            pygame.draw.rect(surface, (255, 200, 40), (hx, hy, hero_w, hero_h), 2, border_radius=8)
+
+            htitle_txt = font_sub.render(f"★ STRATAGEM HERO ★ [REARM: {self.weapon_menu.rearm_timer:.1f}s]", True, (255, 220, 50))
+            surface.blit(htitle_txt, (screen_w // 2 - htitle_txt.get_width() // 2, hy + 6))
+
+            hscore_txt = font_small.render(f"COMBO: {self.hero_score} PTS   |   BEST: {self.hero_highscore} PTS", True, (0, 220, 255))
+            surface.blit(hscore_txt, (screen_w // 2 - hscore_txt.get_width() // 2, hy + 26))
+
+            arrow_symbols = {"UP": "▲", "DOWN": "▼", "LEFT": "◄", "RIGHT": "►"}
+            seq_len = len(self.hero_sequence)
+            box_sz = 26
+            gap = 8
+            start_ax = screen_w // 2 - (seq_len * box_sz + (seq_len - 1) * gap) // 2
+            ay = hy + 46
+
+            for s_idx, direction in enumerate(self.hero_sequence):
+                bx = start_ax + s_idx * (box_sz + gap)
+                b_rect = pygame.Rect(bx, ay, box_sz, box_sz)
+                if s_idx < self.hero_index:
+                    pygame.draw.rect(surface, (0, 160, 100), b_rect, border_radius=4)
+                    arrow_col = (255, 255, 255)
+                elif s_idx == self.hero_index:
+                    pulse = int(180 + 75 * math.sin(pygame.time.get_ticks() * 0.02))
+                    pygame.draw.rect(surface, (220, 140, 20), b_rect, border_radius=4)
+                    pygame.draw.rect(surface, (255, pulse, 50), b_rect, 2, border_radius=4)
+                    arrow_col = (255, 255, 200)
+                else:
+                    pygame.draw.rect(surface, (25, 34, 48), b_rect, border_radius=4)
+                    pygame.draw.rect(surface, (60, 80, 105), b_rect, 1, border_radius=4)
+                    arrow_col = (130, 150, 175)
+
+                sym = arrow_symbols.get(direction, "?")
+                sym_txt = font_sub.render(sym, True, arrow_col)
+                surface.blit(sym_txt, (bx + box_sz // 2 - sym_txt.get_width() // 2, ay + box_sz // 2 - sym_txt.get_height() // 2))
 
         # 2. Objective Status Banner
         obj_y = 66
@@ -2647,7 +3024,9 @@ class GroundSupportManager:
                 st_id = self.active_loadout[idx]
                 st_data = AirStrikeType.DATA[st_id]
                 cd = self.weapon_menu.cooldowns.get(st_id, 0.0)
-                is_ready = (cd <= 0)
+                ch = self.weapon_menu.charges.get(st_id, 0)
+                max_ch = st_data.get("max_charges", 1)
+                is_ready = self.weapon_menu.is_ready(st_id)
 
                 bg_col = (28, 42, 62) if is_active else (16, 22, 32)
                 border_col = (0, 255, 200) if is_active else (st_data["border_color"] if is_ready else (45, 55, 70))
@@ -2659,28 +3038,30 @@ class GroundSupportManager:
                 tag_txt = font_small.render(f"[{idx+2}] {st_data['symbol']}", True, (255, 220, 80) if is_active else st_data["color"])
                 surface.blit(tag_txt, (sx + 4, sy + 3))
 
+                ch_col = (0, 255, 200) if ch > 0 else (255, 80, 80)
+                ch_txt = font_small.render(f"x{ch}", True, ch_col)
+                surface.blit(ch_txt, (s_rect.right - ch_txt.get_width() - 4, sy + 3))
+
                 name_short = st_data["name"][:7]
                 name_txt = font.render(name_short, True, (255, 255, 255) if is_active else (180, 195, 210))
                 surface.blit(name_txt, (sx + slot_w // 2 - name_txt.get_width() // 2, sy + 18))
 
-                if not is_ready:
-                    # Cooldown bar & timer
-                    bar_w = slot_w - 12
-                    bar_h = 3
-                    bx = sx + 6
-                    by = sy + 36
-                    pygame.draw.rect(surface, (25, 32, 45), (bx, by, bar_w, bar_h))
-                    pct = max(0.0, 1.0 - cd / st_data["cooldown"])
-                    pygame.draw.rect(surface, (255, 140, 0), (bx, by, int(bar_w * pct), bar_h))
-                    cd_txt = font_small.render(f"{cd:.1f}s", True, (255, 140, 0))
-                    surface.blit(cd_txt, (sx + slot_w // 2 - cd_txt.get_width() // 2, sy + 40))
+                if self.weapon_menu.is_rearming:
+                    stat_txt = font_small.render(f"R:{self.weapon_menu.rearm_timer:.0f}s", True, (255, 140, 40))
+                    surface.blit(stat_txt, (sx + slot_w // 2 - stat_txt.get_width() // 2, sy + 37))
+                elif cd > 0:
+                    stat_txt = font_small.render(f"CD:{cd:.1f}s", True, (255, 140, 40))
+                    surface.blit(stat_txt, (sx + slot_w // 2 - stat_txt.get_width() // 2, sy + 37))
+                elif ch == 0:
+                    stat_txt = font_small.render("EMPTY [R]", True, (255, 75, 75))
+                    surface.blit(stat_txt, (sx + slot_w // 2 - stat_txt.get_width() // 2, sy + 37))
                 else:
                     if is_active and self.aiming_active:
                         stat_txt = font_small.render("AIMING", True, (0, 255, 200))
                     elif is_active:
                         stat_txt = font_small.render("EQUIPPED", True, (0, 255, 200))
                     else:
-                        stat_txt = font_small.render("READY", True, (46, 204, 113))
+                        stat_txt = font_small.render(f"{ch}/{max_ch}", True, (46, 204, 113))
                     surface.blit(stat_txt, (sx + slot_w // 2 - stat_txt.get_width() // 2, sy + 37))
             else:
                 # Empty slot
