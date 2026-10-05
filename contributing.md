@@ -6,7 +6,7 @@ This guide explains how to set up a development environment, make changes, test 
 
 ## Code of Conduct
 
-Please be respectful, constructive, and welcoming in issues, pull requests, and discussions. Assume good intentions and focus feedback on the code and the project goals.
+All contributors and participants in the Eagle-1-64Bit community are expected to uphold our [Code of Conduct](CODE_OF_CONDUCT.md). Please be respectful, constructive, and welcoming in issues, pull requests, and discussions. For reporting concerns or Code of Conduct violations, refer to the procedures in [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) or contact [paul@schep.de](mailto:paul@schep.de).
 
 ## Getting Started
 
@@ -215,6 +215,10 @@ Before requesting review, confirm:
 - [ ] Documentation has been updated when needed.
 - [ ] No virtual environments, caches, generated files, or personal data are included.
 - [ ] The pull request description explains the change and testing performed.
+
+## Security Vulnerabilities
+
+If you suspect or have discovered a security vulnerability, please **do not** open a public issue. Review our [Security Policy](.github/SECURITY.md) for instructions on submitting a confidential report via GitHub Security Advisories or direct maintainer email.
 
 ## Reporting Bugs
 

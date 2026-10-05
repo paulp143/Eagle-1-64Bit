@@ -6,6 +6,8 @@ body:
     attributes:
       value: |
         Thanks for taking the time to report an issue!
+
+        **Security Notice:** If you believe you have discovered a security vulnerability, please do NOT file a public issue. Follow our [Security Policy](../../.github/SECURITY.md) to report it privately.
   - type: textarea
     id: problem-description
     attributes:

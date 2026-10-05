@@ -36,6 +36,7 @@ A 2D top-down space combat arcade game built in Python using Pygame. The game fe
 - [Asset Organization](#asset-organization)
 - [Configuration Explanation](#configuration-explanation)
 - [Troubleshooting](#troubleshooting)
+- [Community & Governance](#community--governance)
 - [License & Credits](#license--credits)
 
 
@@ -752,6 +753,13 @@ Root-level launcher scripts (`run_game.py`, `main.py`) and legacy wrappers (`gro
 ### 3. Highscore Does Not Save
 - **Cause:** Missing write permissions in the `data/` directory.
 - **Solution:** Verify the user account has write permissions to `data/highscore.txt`.
+
+
+## Community & Governance
+
+- **Contributing Guide:** See [contributing.md](contributing.md) for development environment setup, coding guidelines, testing workflows, and PR checklists.
+- **Code of Conduct:** We are committed to a respectful and welcoming environment for everyone. Please read our [Code of Conduct](CODE_OF_CONDUCT.md).
+- **Security Policy:** To report security vulnerabilities confidentially, please review our [Security Policy](.github/SECURITY.md).
 
 
 
