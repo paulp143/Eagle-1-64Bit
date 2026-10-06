@@ -1,0 +1,621 @@
+/* ===================================================================
+   SUPER EARTH MINISTRY OF DEFENSE // EAGLE-1: 64-BIT
+   Patriotic Aerospace Propaganda & Engineering Portal
+=================================================================== */
+
+:root {
+  --se-yellow: #ffcc00;
+  --se-yellow-bright: #ffe600;
+  --se-yellow-glow: rgba(255, 204, 0, 0.45);
+  --se-black: #06080d;
+  --se-navy: #0b111e;
+  --se-steel: #151e30;
+  --se-border: rgba(255, 204, 0, 0.25);
+  
+  --text-primary: #f0f4fc;
+  --text-muted: #9bb0cf;
+  --text-dark: #07090e;
+  
+  --hud-cyan: #00f0ff;
+  --hud-red: #ff2a2a;
+  
+  --font-display: "Impact", "Arial Black", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+}
+
+body {
+  font-family: var(--font-body);
+  background-color: var(--se-black);
+  color: var(--text-primary);
+  line-height: 1.5;
+  overflow-x: hidden;
+  position: relative;
+  min-height: 100vh;
+}
+
+/* Background grid & subtle stars */
+body::before {
+  content: "";
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-image: 
+    radial-gradient(circle at 50% 10%, rgba(255, 204, 0, 0.08) 0%, transparent 60%),
+    linear-gradient(rgba(255, 204, 0, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 204, 0, 0.03) 1px, transparent 1px);
+  background-size: 100% 100%, 48px 48px, 48px 48px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
+.container {
+  width: 92%;
+  max-width: 1100px;
+  margin: 0 auto;
+  position: relative;
+  z-index: 10;
+}
+
+/* ===================================================================
+   ESCORT FLIGHT EAGLE-1 (SCROLL-FOLLOWING COMPANION)
+=================================================================== */
+.flyby-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 990;
+}
+
+.flying-eagle {
+  position: absolute;
+  width: 72px;
+  height: 90px;
+  top: 0;
+  left: 0;
+  transform-origin: 50% 0%;
+  transform: translate3d(calc(100vw - 140px), 130px, 0) rotate(180deg);
+  will-change: transform;
+  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.6));
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  contain: layout style paint;
+}
+
+.flying-eagle img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+/* Dual jet thrusters pointing backward from nozzles - active only when engines firing */
+.flying-eagle::before,
+.flying-eagle::after {
+  content: "";
+  position: absolute;
+  bottom: -16px;
+  width: 7px;
+  height: 0px;
+  opacity: 0;
+  background: linear-gradient(to bottom, #00f0ff 0%, #ffcc00 55%, transparent 100%);
+  border-radius: 4px;
+  filter: blur(1.5px);
+  transition: opacity 0.2s ease, height 0.2s ease;
+  pointer-events: none;
+}
+
+.flying-eagle::before {
+  left: 23px;
+}
+
+.flying-eagle::after {
+  right: 23px;
+}
+
+/* Active thruster state toggled dynamically when aircraft is moving */
+.flying-eagle.engines-on::before,
+.flying-eagle.engines-on::after {
+  height: 22px;
+  opacity: 1;
+  animation: thrusterPulse 0.08s infinite alternate;
+}
+
+@keyframes thrusterPulse {
+  0% {
+    height: 18px;
+    opacity: 0.85;
+    transform: scaleX(0.85);
+  }
+  100% {
+    height: 26px;
+    opacity: 1;
+    transform: scaleX(1.15);
+  }
+}
+
+/* ===================================================================
+   HAZARD BARS & STYLING ACCENTS
+=================================================================== */
+.hazard-bar {
+  height: 6px;
+  width: 100%;
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--se-yellow),
+    var(--se-yellow) 14px,
+    #000 14px,
+    #000 28px
+  );
+  border-bottom: 1px solid rgba(0, 0, 0, 0.4);
+}
+
+/* ===================================================================
+   MILITARY HEADER & DUAL-PORTAL SWITCH
+=================================================================== */
+.header-top {
+  background: rgba(6, 8, 13, 0.94);
+  backdrop-filter: blur(12px);
+  border-bottom: 2px solid var(--se-yellow);
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+}
+
+.nav-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 0;
+}
+
+.se-logo {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.se-logo-img {
+  width: 36px;
+  height: 36px;
+  filter: drop-shadow(0 0 8px var(--se-yellow-glow));
+}
+
+.se-logo-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.se-brand {
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  letter-spacing: 0.08em;
+  color: #fff;
+  line-height: 1;
+}
+
+.se-sub {
+  font-size: 0.65rem;
+  font-family: var(--font-mono);
+  color: var(--se-yellow);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  margin-top: 2px;
+}
+
+/* Tactical Portal Toggle */
+.portal-switch {
+  display: flex;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--se-border);
+  border-radius: 4px;
+  padding: 3px;
+  gap: 4px;
+}
+
+.portal-btn {
+  font-size: 0.8rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  letter-spacing: 0.05em;
+  padding: 0.4rem 0.9rem;
+  border-radius: 3px;
+  color: var(--text-muted);
+  transition: all 0.2s;
+  text-transform: uppercase;
+}
+
+.portal-btn:hover {
+  color: #fff;
+}
+
+.portal-btn.active {
+  background: var(--se-yellow);
+  color: var(--text-dark);
+  font-weight: 900;
+  box-shadow: 0 0 12px var(--se-yellow-glow);
+}
+
+/* ===================================================================
+   HOMEPAGE: PATRIOTIC PROPAGANDA HERO
+=================================================================== */
+.propaganda-hero {
+  padding: 3.5rem 0 2.5rem;
+  text-align: center;
+}
+
+.dispatch-tag {
+  display: inline-block;
+  background: #ffcc00;
+  color: #000;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  padding: 4px 14px;
+  margin-bottom: 1.25rem;
+  text-transform: uppercase;
+  clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
+}
+
+.propaganda-title {
+  font-family: var(--font-display);
+  font-size: clamp(2.5rem, 6.5vw, 4.6rem);
+  text-transform: uppercase;
+  line-height: 0.98;
+  letter-spacing: 0.02em;
+  color: #fff;
+  margin-bottom: 1rem;
+}
+
+.propaganda-title .gold {
+  color: var(--se-yellow);
+  text-shadow: 0 0 25px var(--se-yellow-glow);
+  display: inline-block;
+}
+
+.propaganda-subtitle {
+  font-size: clamp(1.05rem, 2.2vw, 1.25rem);
+  color: var(--text-muted);
+  max-width: 780px;
+  margin: 0 auto 2.5rem;
+  line-height: 1.5;
+}
+
+.propaganda-subtitle strong {
+  color: #fff;
+}
+
+/* Call to Action Button */
+.enlist-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+  margin-bottom: 2.75rem;
+}
+
+.btn-enlist {
+  background: var(--se-yellow);
+  color: #000;
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  letter-spacing: 0.06em;
+  padding: 1.1rem 2.6rem;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.8rem;
+  box-shadow: 0 0 30px var(--se-yellow-glow), inset 0 0 0 2px #fff;
+  transition: transform 0.15s, box-shadow 0.2s, background 0.2s;
+  cursor: pointer;
+  text-transform: uppercase;
+}
+
+.btn-enlist:hover {
+  transform: scale(1.03) translateY(-2px);
+  background: var(--se-yellow-bright);
+  box-shadow: 0 0 45px rgba(255, 204, 0, 0.7), inset 0 0 0 2px #fff;
+}
+
+.btn-flyby {
+  background: transparent;
+  color: var(--se-yellow);
+  border: 1px solid var(--se-border);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 1.1rem 1.5rem;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-flyby:hover {
+  background: rgba(255, 204, 0, 0.1);
+  border-color: var(--se-yellow);
+}
+
+/* Hero Showcase Frame */
+.media-showcase {
+  position: relative;
+  background: var(--se-navy);
+  border: 2px solid var(--se-border);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.8);
+  margin-bottom: 3.5rem;
+}
+
+.media-stamp {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  background: rgba(6, 8, 13, 0.85);
+  border: 1px solid var(--se-border);
+  padding: 4px 10px;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--se-yellow);
+  letter-spacing: 0.1em;
+  z-index: 5;
+  border-radius: 2px;
+}
+
+.media-showcase img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  display: block;
+}
+
+/* ===================================================================
+   3-STEP CITIZEN DEPLOYMENT GUIDE
+=================================================================== */
+.deploy-box {
+  background: var(--se-navy);
+  border: 1px solid var(--se-border);
+  border-radius: 8px;
+  padding: 2.5rem;
+  margin-bottom: 4rem;
+}
+
+.deploy-header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.deploy-header h2 {
+  font-family: var(--font-display);
+  font-size: 2rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #fff;
+}
+
+.deploy-header p {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+
+.deploy-steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1.5rem;
+}
+
+.deploy-step {
+  background: rgba(6, 8, 13, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 1.5rem;
+  position: relative;
+  border-left: 3px solid var(--se-yellow);
+}
+
+.step-num {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: var(--se-yellow);
+  margin-bottom: 0.5rem;
+}
+
+.deploy-step h3 {
+  font-size: 1.15rem;
+  margin-bottom: 0.5rem;
+  color: #fff;
+}
+
+.deploy-step p {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.deploy-step code {
+  color: var(--se-yellow);
+  font-family: var(--font-mono);
+  background: rgba(0, 0, 0, 0.4);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+/* ===================================================================
+   DEVELOPER DOSSIER (dev.html)
+=================================================================== */
+.dev-hero {
+  padding: 3rem 0 2rem;
+}
+
+.dev-hero h1 {
+  font-family: var(--font-display);
+  font-size: clamp(2.2rem, 5vw, 3.5rem);
+  text-transform: uppercase;
+  color: #fff;
+  letter-spacing: 0.03em;
+  margin-bottom: 0.75rem;
+}
+
+.dev-hero p {
+  font-size: 1.1rem;
+  color: var(--text-muted);
+  max-width: 800px;
+}
+
+.terminal-card {
+  background: #04060a;
+  border: 1px solid rgba(255, 204, 0, 0.3);
+  border-radius: 8px;
+  padding: 1.75rem;
+  margin-bottom: 2.5rem;
+  box-shadow: 0 15px 40px rgba(0, 0, 0, 0.7);
+}
+
+.terminal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 0.75rem;
+  margin-bottom: 1.25rem;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--se-yellow);
+}
+
+.terminal-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.term-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.term-dot.red { background: #ff5f56; }
+.term-dot.yellow { background: #ffbd2e; }
+.term-dot.green { background: #27c93f; }
+
+pre.code-block {
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  color: #8be9fd;
+  background: rgba(0, 0, 0, 0.6);
+  padding: 1rem;
+  border-radius: 4px;
+  overflow-x: auto;
+  line-height: 1.6;
+}
+
+pre.code-block .comment {
+  color: #6272a4;
+}
+
+pre.code-block .cmd {
+  color: #50fa7b;
+}
+
+/* Architecture Specs Grid */
+.specs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 3.5rem;
+}
+
+.spec-item {
+  background: var(--se-navy);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 1.5rem;
+}
+
+.spec-item h3 {
+  font-size: 1.1rem;
+  color: var(--se-yellow);
+  font-family: var(--font-mono);
+  margin-bottom: 0.5rem;
+}
+
+.spec-item p {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+/* ===================================================================
+   FOOTER
+=================================================================== */
+.se-footer {
+  border-top: 2px solid var(--se-yellow);
+  background: #030407;
+  padding: 2.5rem 0;
+  margin-top: 4rem;
+  font-size: 0.85rem;
+  color: #64758f;
+}
+
+.footer-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+}
+
+.footer-inner a {
+  color: var(--se-yellow);
+}
+
+.footer-links {
+  display: flex;
+  gap: 1.5rem;
+}
+
+/* Responsive adjustments */
+@media (max-width: 650px) {
+  .nav-wrap {
+    flex-direction: column;
+    gap: 0.8rem;
+  }
+  .portal-switch {
+    width: 100%;
+    justify-content: center;
+  }
+  .enlist-actions {
+    flex-direction: column;
+    width: 100%;
+  }
+  .btn-enlist {
+    width: 100%;
+    justify-content: center;
+  }
+  .btn-flyby {
+    width: 100%;
+    justify-content: center;
+  }
+}

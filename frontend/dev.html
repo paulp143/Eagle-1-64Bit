@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Super Earth Engineering Division — Eagle-1: 64-Bit Technical Specifications, Python Setup, and Contributing Architecture.">
+  <meta name="theme-color" content="#ffcc00">
+
+  <title>EAGLE-1: 64-BIT // ENGINEERING DIVISION (R&amp;D)</title>
+  <link rel="stylesheet" href="./style.css">
+  <link rel="icon" type="image/png" href="./assets/eagle1-ship.png">
+</head>
+<body>
+
+  <!-- Top Hazard Bar -->
+  <div class="hazard-bar"></div>
+
+  <!-- Flying Eagle-1 Jet Overlay -->
+  <div class="flyby-container" aria-hidden="true">
+    <div class="flying-eagle" id="flyingEagle">
+      <img src="./assets/eagle1-ship.png" alt="Eagle-1 Combat Jet">
+    </div>
+  </div>
+
+  <!-- Command Header -->
+  <header class="header-top">
+    <div class="container nav-wrap">
+      <div class="se-logo">
+        <img src="./assets/eagle1-ship.png" alt="Super Earth Eagle Crest" class="se-logo-img">
+        <div class="se-logo-text">
+          <span class="se-brand">EAGLE-1</span>
+          <span class="se-sub">ENGINEERING DIVISION // R&amp;D</span>
+        </div>
+      </div>
+
+      <!-- Portal Switch: Citizen vs Developer -->
+      <nav class="portal-switch">
+        <a href="./index.html" class="portal-btn">Citizen Enlistment</a>
+        <a href="./dev.html" class="portal-btn active">Engineering Division (R&amp;D)</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Developer Content -->
+  <main class="container">
+    <section class="dev-hero">
+      <div class="dispatch-tag">CLASSIFIED R&amp;D // OPEN SOURCE SOURCE-CODE</div>
+      <h1>SUPER EARTH ENGINEERING TERMINAL</h1>
+      <p>
+        Full technical schematics for the Eagle-1 aerospace combat system. Built in Python 3.10+ using 
+        <code>pygame-ce</code> with procedural audio synthesis, 60 FPS physics loops, and allied squad AI.
+      </p>
+    </section>
+
+    <!-- Quick Run Terminal Card -->
+    <div class="terminal-card">
+      <div class="terminal-header">
+        <div class="terminal-title">
+          <span class="term-dot red"></span>
+          <span class="term-dot yellow"></span>
+          <span class="term-dot green"></span>
+          &nbsp; BASH / POWERSHELL SETUP
+        </div>
+        <button class="btn-copy-code" data-target="devInstallSnippet" style="background:none; border:none; cursor:pointer; font-family:var(--font-mono); color:var(--se-yellow); font-weight:700;">
+          [COPY COMMANDS]
+        </button>
+      </div>
+
+      <pre class="code-block" id="devInstallSnippet"><code><span class="comment"># 1. Clone the Super Earth Tactical Repository</span>
+<span class="cmd">git clone</span> https://github.com/paulp143/Eagle-1-64Bit.git
+<span class="cmd">cd</span> Eagle-1-64Bit
+
+<span class="comment"># 2. Initialize Virtual Environment &amp; Install Engine</span>
+<span class="cmd">python -m venv</span> .venv
+<span class="comment"># Windows: .venv\Scripts\activate | Linux/macOS: source .venv/bin/activate</span>
+<span class="cmd">pip install -r</span> requirements.txt
+
+<span class="comment"># 3. Launch Combat Simulation</span>
+<span class="cmd">python</span> run_game.py</code></pre>
+    </div>
+
+    <!-- Core Architecture Overview -->
+    <div class="deploy-header" style="text-align:left; margin-bottom:1.5rem;">
+      <h2 style="font-size:1.6rem;">TECHNICAL SPECIFICATIONS</h2>
+      <p>Subsystem architecture designed for modular expansion and deterministic combat physics.</p>
+    </div>
+
+    <div class="specs-grid">
+      <div class="spec-item">
+        <h3>01 // COORDINATE GRIDS</h3>
+        <p>Strict separation between <strong>World Space</strong> (3000&times;3000 pixel battlefield) and <strong>Screen Space</strong> (1280&times;720 clamped viewport) tracking the player aircraft.</p>
+      </div>
+
+      <div class="spec-item">
+        <h3>02 // AUDIO ARCHITECTURE</h3>
+        <p>16-channel centralized mixer. Procedural audio waveform synthesis (44.1kHz stereo PCM) generated via <code>generate_audio_assets.py</code> with real-time thruster frequency modulation.</p>
+      </div>
+
+      <div class="spec-item">
+        <h3>03 // FLIGHT &amp; BALLISTICS</h3>
+        <p>Continuous inertia flight with W/S throttle and A/D angular deflection. Predictive aiming reticle dynamically calculates bomb lead: <code>320.0 + (velocity &times; 8.0)</code>.</p>
+      </div>
+
+      <div class="spec-item">
+        <h3>04 // HELLDIVER SQUAD AI</h3>
+        <p>Autonomous ground team (Viper 1-4) with state machines for objective assault, emergency supply pod pathfinding, anti-air fire, and Pelican-1 extraction boarding.</p>
+      </div>
+
+      <div class="spec-item">
+        <h3>05 // CI/CD BUILD PIPELINE</h3>
+        <p>Automated standalone Windows binary packaging via PyInstaller in GitHub Actions, uploading releases and deploying static sites via GitHub Pages.</p>
+      </div>
+
+      <div class="spec-item">
+        <h3>06 // EXTENSIBLE ORDNANCE</h3>
+        <p>Modular stratagem system configured with independent cooldown timers, sound profiles, and blast radiuses in <code>ground_support.py</code>.</p>
+      </div>
+    </div>
+
+    <!-- Operational Terminal Screenshot -->
+    <div class="media-showcase" style="margin-top:2rem;">
+      <div class="media-stamp">
+        TACTICAL MISSION SELECT INTERFACE
+      </div>
+      <img src="./assets/screenshot-menu.png" alt="Mission Operations Menu">
+    </div>
+
+  </main>
+
+  <!-- Super Earth Footer -->
+  <footer class="se-footer">
+    <div class="container footer-inner">
+      <div>
+        <p><strong>SUPER EARTH ARMED FORCES // ENGINEERING DIVISION</strong></p>
+        <p style="margin-top: 3px;">Contributions welcomed under the MIT License.</p>
+      </div>
+      <div class="footer-links">
+        <a href="./index.html">Citizen Enlistment</a>
+        <a href="https://github.com/paulp143/Eagle-1-64Bit" target="_blank" rel="noopener">GitHub Repository</a>
+        <a href="https://github.com/paulp143/Eagle-1-64Bit/issues" target="_blank" rel="noopener">Submit Issue</a>
+      </div>
+    </div>
+  </footer>
+
+  <script src="./main.js"></script>
+</body>
+</html>
+

@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Super Earth Needs You! Pilot Eagle-1 in 64-bit close air support combat against the Automaton threat. Download free for Windows.">
+  <meta name="theme-color" content="#ffcc00">
+
+  <title>EAGLE-1: 64-BIT // ENLIST FOR SUPER EARTH</title>
+  <link rel="stylesheet" href="./style.css">
+  <link rel="icon" type="image/png" href="./assets/eagle1-ship.png">
+</head>
+<body>
+
+  <!-- Top Hazard Bar -->
+  <div class="hazard-bar"></div>
+
+  <!-- Flying Eagle-1 In-Engine Jet Overlay -->
+  <div class="flyby-container" aria-hidden="true">
+    <div class="flying-eagle" id="flyingEagle">
+      <img src="./assets/eagle1-ship.png" alt="Eagle-1 Combat Jet">
+    </div>
+  </div>
+
+  <!-- Military Command Header -->
+  <header class="header-top">
+    <div class="container nav-wrap">
+      <div class="se-logo">
+        <img src="./assets/eagle1-ship.png" alt="Super Earth Eagle Crest" class="se-logo-img">
+        <div class="se-logo-text">
+          <span class="se-brand">EAGLE-1</span>
+          <span class="se-sub">TACTICAL CLOSE AIR SUPPORT</span>
+        </div>
+      </div>
+
+      <!-- Portal Switch: Citizen vs Developer -->
+      <nav class="portal-switch">
+        <a href="./index.html" class="portal-btn active">Citizen Enlistment</a>
+        <a href="./dev.html" class="portal-btn">Engineering Division (R&amp;D)</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Main Propaganda Recruitment Hero -->
+  <main>
+    <section class="propaganda-hero">
+      <div class="container">
+        
+        <div class="dispatch-tag">
+          OFFICIAL DISPATCH &bull; MINISTRY OF DEFENSE
+        </div>
+
+        <h1 class="propaganda-title">
+          SWEET LIBERTY NEEDS YOU<br>
+          <span class="gold">IN THE COCKPIT!</span>
+        </h1>
+
+        <p class="propaganda-subtitle">
+          The Automaton menace is advancing on allied ground positions! Take flight at the controls of 
+          <strong>Eagle-1</strong>, unleash catastrophic <strong>500kg ordnance</strong>, and deliver 
+          Close Air Support for Helldiver Squad Viper across a 3000&times;3000 battlefield.
+        </p>
+
+        <!-- Big Download Call To Action -->
+        <div class="enlist-actions">
+          <a href="https://github.com/paulp143/Eagle-1-64Bit/releases/latest/download/Eagle-1-Windows.zip" 
+             class="btn-enlist" 
+             id="mainDownloadBtn">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            ENLIST &amp; DOWNLOAD (.ZIP)
+          </a>
+
+          <button class="btn-flyby" id="triggerFlybyBtn" title="Perform combat evasive maneuver">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="5 3 19 12 5 21 5 3"></polygon>
+            </svg>
+            EVASIVE MANEUVER
+          </button>
+        </div>
+
+        <!-- Gameplay Screenshot Showcase -->
+        <div class="media-showcase">
+          <div class="media-stamp">
+            LIVE COMBAT TELEMETRY // 60 FPS
+          </div>
+          <img src="./assets/screenshot-game.png" alt="Eagle-1 Close Air Support Combat In Action">
+        </div>
+
+        <!-- 3-Step Citizen Deployment Guide -->
+        <div class="deploy-box">
+          <div class="deploy-header">
+            <h2>3-Step Citizen Deployment</h2>
+            <p>Stand ready to defend democracy in under 60 seconds. Zero developer software needed.</p>
+          </div>
+
+          <div class="deploy-steps">
+            <div class="deploy-step">
+              <div class="step-num">PHASE 01</div>
+              <h3>Download Package</h3>
+              <p>Grab <code>Eagle-1-Windows.zip</code> with all game assets, synthesized sounds, and engine binaries included.</p>
+            </div>
+
+            <div class="deploy-step">
+              <div class="step-num">PHASE 02</div>
+              <h3>Extract Files</h3>
+              <p>Right-click the downloaded zip folder and select <strong>"Extract All"</strong> to any destination.</p>
+            </div>
+
+            <div class="deploy-step">
+              <div class="step-num">PHASE 03</div>
+              <h3>Launch &amp; Defend</h3>
+              <p>Double-click <strong><code>Eagle-1.exe</code></strong> to immediately enter the hangar and launch your mission!</p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+  </main>
+
+  <!-- Super Earth Footer -->
+  <footer class="se-footer">
+    <div class="container footer-inner">
+      <div>
+        <p><strong>SUPER EARTH ARMED FORCES // CAS SQUADRON EAGLE-1</strong></p>
+        <p style="margin-top: 3px;">Free and open source. Released under the MIT License.</p>
+      </div>
+      <div class="footer-links">
+        <a href="./dev.html">Engineering Division</a>
+        <a href="https://github.com/paulp143/Eagle-1-64Bit" target="_blank" rel="noopener">GitHub Repository</a>
+        <a href="https://github.com/paulp143/Eagle-1-64Bit/releases" target="_blank" rel="noopener">Mission Releases</a>
+      </div>
+    </div>
+  </footer>
+
+  <script src="./main.js"></script>
+</body>
+</html>

@@ -1,6 +1,11 @@
 # Eagle-1-64Bit
 
+[![Website](https://img.shields.io/badge/Website-paulp143.github.io%2FEagle--1--64Bit-ffbe0b?style=flat&logo=firefoxbrowser)](https://paulp143.github.io/Eagle-1-64Bit/)
+[![Download](https://img.shields.io/badge/Download-Windows%20.zip-00f0ff?style=flat&logo=windows)](https://paulp143.github.io/Eagle-1-64Bit/#download)
+
 A 2D top-down space combat arcade game built in Python using Pygame. The game features an expansive 3000×3000 scrolling arena, inertia-driven flight mechanics, quad-cannon combat, homing rockets, radar lock-on modes, a power-up system, friendly Helldiver ground squads, hostile Automaton ground forces, destructible fabricators, a stratagem air strike arsenal, a dynamic predictive aiming reticle, and a fully interactive 6-tab in-game help menu.
+
+> 🌐 **Official Website & Easy Player Download:** [paulp143.github.io/Eagle-1-64Bit](https://paulp143.github.io/Eagle-1-64Bit/)
 
 ![Eagle-1-64Bit Main Menu](images/Documentation%20images/main_menu.png)
 
