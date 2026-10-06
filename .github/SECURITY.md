@@ -19,9 +19,6 @@ If you discover a potential vulnerability in Eagle-1-64Bit, report it privately 
 
 1. **GitHub Private Vulnerability Advisory (Preferred):**
    Submit a draft security advisory via [GitHub Security Advisories](https://github.com/paulp143/Eagle-1-64Bit/security/advisories/new).
-2. **Direct Email:**
-   Send an encrypted or standard email to [paul@schep.de](mailto:paul@schep.de) with the subject line:
-   `[SECURITY] Eagle-1-64Bit Vulnerability Report`
 
 ### What Information to Include in Your Report
 
