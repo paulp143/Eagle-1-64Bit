@@ -26,6 +26,7 @@ from eagle1.ui.help_menu import HelpMenu
 from eagle1.ui.settings_menu import SettingsMenu
 from eagle1.ui.debriefing_screen import DebriefingScreen
 from eagle1.ui.enlistment_screen import EnlistmentScreen
+from eagle1.systems.academy_briefing import AcademyTutorialManager
 from eagle1.systems.hangar_cinematic import (
     PHASE_ASCENT,
     PHASE_HANGAR,
@@ -331,6 +332,7 @@ help_menu = HelpMenu(GAME_WIDTH, GAME_HEIGHT)
 settings_menu = SettingsMenu(GAME_WIDTH, GAME_HEIGHT)
 debriefing_screen = DebriefingScreen(GAME_WIDTH, GAME_HEIGHT)
 enlistment_screen = EnlistmentScreen(GAME_WIDTH, GAME_HEIGHT)
+academy_manager = AcademyTutorialManager()
 previous_game_state = "main_menu"
 
 # Mission Performance Tracking Variables
@@ -357,7 +359,7 @@ MISSION_CONFIGS = {
         "category": "TRAINING OPERATIONS",
         "desc": "Basic Flight Certification & Close Air Support Qualification under Commander Vance.",
         "difficulty": "TRAINING",
-        "has_ground": True,
+        "has_ground": False,
         "has_fabricators": False,
         "has_strider": False,
         "has_bombers": False,
@@ -1722,10 +1724,26 @@ def move():
                     audio_manager.play_sfx("hit")
                     break
 
-    # Rocket Update & Collision across all targets (aerial enemies, bombers, ground units, fabricators, strider)
+        # Check collision with Academy training targets (drones, bunker)
+        if not bullet.used and active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL:
+            for target in academy_manager.get_combat_targets():
+                if target.is_alive and bullet.colliderect(target):
+                    bullet.used = True
+                    target.take_damage(bullet_dmg)
+                    audio_manager.play_sfx("hit")
+                    if not target.is_alive:
+                        audio_manager.play_sfx("explosion_small")
+                        cx = getattr(target, 'centerx', getattr(target, 'pos_x', 0))
+                        cy = getattr(target, 'centery', getattr(target, 'pos_y', 0))
+                        explosion_group.add(Large_explosion_a(cx, cy, large_explosion_a_spritesheet.frames, speed=0.6))
+                    break
+
+    # Rocket Update & Collision across all targets (aerial enemies, bombers, ground units, fabricators, strider, academy targets)
     all_combat_targets = list(wave_manager.enemies) + list(bomber_enemies) + [g for g in ground_support_manager.enemy_ground_units if g.is_alive] + [f for f in ground_support_manager.enemy_fabricators if f.is_alive]
     if ground_support_manager.factory_strider and ground_support_manager.factory_strider.is_alive:
         all_combat_targets.append(ground_support_manager.factory_strider)
+    if active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL:
+        all_combat_targets.extend(academy_manager.get_combat_targets())
 
     for rocket in player.rockets:
         rocket.update_position(all_combat_targets, player=player)
@@ -1797,6 +1815,22 @@ def move():
                         hit_explosion = Large_explosion_a(
                             rocket.x + ROCKET_WIDTH // 2,
                             rocket.y + ROCKET_HEIGHT // 2,
+                            large_explosion_a_spritesheet.frames,
+                            speed=0.6
+                        )
+                        explosion_group.add(hit_explosion)
+                        audio_manager.play_sfx("explosion")
+                        break
+
+            if not rocket.used and active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL:
+                for target in academy_manager.get_combat_targets():
+                    if target.is_alive and rocket.colliderect(target):
+                        rocket.used = True
+                        target.take_damage(rocket.damage)
+                        cx = getattr(target, 'centerx', getattr(target, 'pos_x', 0))
+                        cy = getattr(target, 'centery', getattr(target, 'pos_y', 0))
+                        hit_explosion = Large_explosion_a(
+                            cx, cy,
                             large_explosion_a_spritesheet.frames,
                             speed=0.6
                         )
@@ -1905,8 +1939,15 @@ def move():
 
     health_drops = [d for d in health_drops if not d.used]
 
-    # Update Wave progression
-    wave_manager.update(player)
+    # Update Wave progression or Academy Tutorial
+    if active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL:
+        keys = pygame.key.get_pressed()
+        academy_manager.update(1.0 / 60.0, player, keys, ground_support_manager)
+        if academy_manager.is_completed:
+            trigger_mission_complete()
+            return
+    else:
+        wave_manager.update(player)
 
 
 def respawn(mission_config=None, selected_stratagems=None):
@@ -1941,6 +1982,10 @@ def respawn(mission_config=None, selected_stratagems=None):
     health_drops.clear()
     bomber_enemies.clear()
     wave_manager = WaveManager()
+
+    if active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL:
+        wave_manager.enemies.clear()
+        academy_manager.reset(player)
 
     if active_mission_config.get("has_base"):
         orbital_base = OrbitalBase(1500, 1500)
@@ -2030,6 +2075,10 @@ def draw(mouse_pos=None):
     else:
         # Draw ground support world entities (Helldivers, obstacles, beacon, airstrikes, supply pods)
         ground_support_manager.draw_world_entities(canvas, camera_x, camera_y, hud_small_font)
+
+        # Draw Academy Tutorial world entities (gates, drones, bunkers)
+        if active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL:
+            academy_manager.draw_world(canvas, camera_x, camera_y)
 
         # Draw Orbital Base if present
         if orbital_base and orbital_base.is_alive:
@@ -2135,7 +2184,8 @@ def draw(mouse_pos=None):
 
         # Draw dynamic gun pip & predictive air strike impact reticle
         if player.health > 0:
-            ground_support_manager.draw_reticle(canvas, camera_x, camera_y, player)
+            extra_tgts = academy_manager.get_combat_targets() if active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL else None
+            ground_support_manager.draw_reticle(canvas, camera_x, camera_y, player, extra_targets=extra_tgts)
 
         # UI elements (Screen space, fixed overlay)
         score_box.set_text(f"Score: {player.score}")
@@ -2384,9 +2434,15 @@ def draw(mouse_pos=None):
         # --- GROUND SUPPORT HUD OVERLAY & WEAPON ARSENAL ---
         ground_support_manager.draw_hud(canvas, GAME_WIDTH, GAME_HEIGHT, font, title_font, speed_font, hud_small_font, player, mouse_pos)
 
+        # --- ACADEMY TUTORIAL HUD OVERLAY ---
+        if active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL:
+            academy_manager.draw_hud(canvas, player)
+
         # --- MISSION OBJECTIVE HUD BANNER ---
         obj_text = f"OBJECTIVE: {active_mission_config['name']}"
-        if active_mission_config["id"] == MissionType.BASE_DEFENSE and orbital_base:
+        if active_mission_config["id"] == MissionType.ACADEMY_TUTORIAL:
+            obj_text = f"OBJECTIVE: {academy_manager.get_active_drill_title()}"
+        elif active_mission_config["id"] == MissionType.BASE_DEFENSE and orbital_base:
             if ground_support_manager.objective_phase == "EXTRACTION":
                 obj_text = "OBJECTIVE: BASE DEFENDED! FLY TO EXTRACTION BEACON"
             else:
@@ -2607,6 +2663,8 @@ def run_game():
                         elif event.button == 3:
                             ground_support_manager.stop_aiming()
                             targets = list(wave_manager.enemies) + [g for g in ground_support_manager.enemy_ground_units if g.is_alive] + [f for f in ground_support_manager.enemy_fabricators if f.is_alive]
+                            if active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL:
+                                targets.extend(academy_manager.get_combat_targets())
                             player.set_shoot_rocket(targets)
 
             # Button release to deploy equipped Stratagem
@@ -2923,6 +2981,8 @@ def run_game():
 
                     if (keys[pygame.K_e] or (keys[pygame.K_f] and not (keys[pygame.K_LMETA] or keys[pygame.K_RMETA])) or keys[pygame.K_LCTRL]) and not player.rocket_reloading:
                         targets = list(wave_manager.enemies) + [g for g in ground_support_manager.enemy_ground_units if g.is_alive] + [f for f in ground_support_manager.enemy_fabricators if f.is_alive]
+                        if active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL:
+                            targets.extend(academy_manager.get_combat_targets())
                         player.set_shoot_rocket(targets)
 
                     move()

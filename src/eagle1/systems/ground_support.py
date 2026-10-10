@@ -2684,7 +2684,7 @@ class GroundSupportManager:
                 txt = font.render(pop["text"], True, pop["color"])
                 surface.blit(txt, (sx - txt.get_width() // 2, sy))
 
-    def draw_reticle(self, surface, camera_x, camera_y, player):
+    def draw_reticle(self, surface, camera_x, camera_y, player, extra_targets=None):
         """Draws the predictive gun and bomb impact aiming reticle ahead of the ship."""
         ix, iy = self.reticle.calculate_strike_impact(player)
 
@@ -2706,6 +2706,14 @@ class GroundSupportManager:
         if not is_locked and self.factory_strider and self.factory_strider.is_alive:
             if math.hypot(ix - (self.factory_strider.pos_x + self.factory_strider.width / 2), iy - (self.factory_strider.pos_y + self.factory_strider.height / 2)) <= 110.0:
                 is_locked = True
+        if not is_locked and extra_targets:
+            for tgt in extra_targets:
+                if getattr(tgt, "is_alive", True):
+                    tx = getattr(tgt, "centerx", getattr(tgt, "pos_x", 0))
+                    ty = getattr(tgt, "centery", getattr(tgt, "pos_y", 0))
+                    if math.hypot(ix - tx, iy - ty) <= 90.0:
+                        is_locked = True
+                        break
 
         if self.equipped_slot == 0:
             # Slot 0: Main Gun only (cannon convergence pip)
