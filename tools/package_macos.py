@@ -10,12 +10,11 @@ Orchestrates:
 5. Distributable DMG image and ZIP archive generation
 """
 
-import os
 import plistlib
-import shutil
 import subprocess
 import sys
 from pathlib import Path
+
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DIST_DIR = PROJECT_ROOT / "dist"

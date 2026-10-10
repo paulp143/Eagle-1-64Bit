@@ -1,9 +1,9 @@
 """Tests for macOS display scaling, letterboxing, mouse coordinate mapping, and system integration."""
 
 from unittest.mock import patch
-import pygame
 
-from eagle1.app.game import get_display_scale_and_offset, get_canvas_mouse_pos, GAME_WIDTH, GAME_HEIGHT
+from eagle1.app.game import get_canvas_mouse_pos, get_display_scale_and_offset
+
 
 
 

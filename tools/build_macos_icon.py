@@ -6,11 +6,11 @@ Uses macOS built-in tools (sips & iconutil) to convert Space-Invaders-Ship.png
 into a multi-resolution Apple .icns icon bundle for macOS Finder and Dock.
 """
 
-import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SOURCE_IMAGE = PROJECT_ROOT / "images" / "Space-Invaders-Ship.png"
