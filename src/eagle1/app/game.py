@@ -25,6 +25,7 @@ from eagle1.systems.powerups import (
 from eagle1.ui.help_menu import HelpMenu
 from eagle1.ui.settings_menu import SettingsMenu
 from eagle1.ui.debriefing_screen import DebriefingScreen
+from eagle1.ui.enlistment_screen import EnlistmentScreen
 from eagle1.systems.hangar_cinematic import (
     PHASE_ASCENT,
     PHASE_HANGAR,
@@ -329,6 +330,7 @@ ground_support_manager = GroundSupportManager()
 help_menu = HelpMenu(GAME_WIDTH, GAME_HEIGHT)
 settings_menu = SettingsMenu(GAME_WIDTH, GAME_HEIGHT)
 debriefing_screen = DebriefingScreen(GAME_WIDTH, GAME_HEIGHT)
+enlistment_screen = EnlistmentScreen(GAME_WIDTH, GAME_HEIGHT)
 previous_game_state = "main_menu"
 
 # Mission Performance Tracking Variables
@@ -2485,7 +2487,9 @@ def run_game():
 
             # Mouse Wheel / Trackpad Weapon Cycling with debounce for smooth Mac scrolling
             if event.type == pygame.MOUSEWHEEL:
-                if game_state == "" and player.health > 0:
+                if game_state == "enlistment":
+                    enlistment_screen.handle_event(event, canvas_mouse_pos)
+                elif game_state == "" and player.health > 0:
                     now = pygame.time.get_ticks()
                     if now - last_wheel_time > 90:
                         if event.y > 0:
@@ -2498,6 +2502,12 @@ def run_game():
             if event.type == pygame.MOUSEMOTION:
                 if game_state == "settings_menu":
                     settings_menu.handle_event(event, canvas_mouse_pos)
+                elif game_state == "enlistment":
+                    enlistment_screen.handle_event(event, canvas_mouse_pos)
+
+            if event.type == pygame.MOUSEBUTTONUP:
+                if game_state == "enlistment":
+                    enlistment_screen.handle_event(event, canvas_mouse_pos)
 
             # Maus-Klick Interaktion für Knöpfe & Raketen-Abschuss
             if event.type == pygame.MOUSEBUTTONDOWN:
@@ -2511,8 +2521,17 @@ def run_game():
                     if action == "close":
                         game_state = previous_game_state
 
+                elif game_state == "enlistment":
+                    action = enlistment_screen.handle_event(event, canvas_mouse_pos)
+                    if action == "start_academy":
+                        respawn(mission_config=MISSION_CONFIGS[MissionType.ACADEMY_TUTORIAL])
+                        game_state = ""
+                    elif action == "back":
+                        game_state = "main_menu"
+
                 elif game_state == "main_menu":
                     if menu_new_game_box.is_clicked(event, canvas_mouse_pos):
+                        enlistment_screen.reset()
                         game_state = "enlistment"
                     elif menu_continue_box.is_clicked(event, canvas_mouse_pos):
                         if profile_manager.has_active_profile():
@@ -2631,6 +2650,7 @@ def run_game():
 
                 elif game_state == "main_menu":
                     if event.key == pygame.K_n:
+                        enlistment_screen.reset()
                         game_state = "enlistment"
                     elif event.key == pygame.K_c and profile_manager.has_active_profile():
                         active_prof = profile_manager.load_profile()
@@ -2653,13 +2673,12 @@ def run_game():
                         ground_support_manager.add_combat_popup(f"AUDIO {status_str}", player.pos_x, player.pos_y, (255, 80, 80) if is_muted else (80, 255, 120))
 
                 elif game_state == "enlistment":
-                    if event.key == pygame.K_ESCAPE:
-                        game_state = "main_menu"
-                    elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
-                        if not profile_manager.has_active_profile():
-                            profile_manager.create_profile("CADET", citizenship_grade="E")
+                    action = enlistment_screen.handle_event(event, canvas_mouse_pos)
+                    if action == "start_academy":
                         respawn(mission_config=MISSION_CONFIGS[MissionType.ACADEMY_TUTORIAL])
                         game_state = ""
+                    elif action == "back":
+                        game_state = "main_menu"
 
                 elif game_state == "mission_select":
                     action = mission_select_menu.handle_event(event, canvas_mouse_pos)
@@ -2820,13 +2839,7 @@ def run_game():
             main_menu(canvas_mouse_pos)
 
         elif game_state == "enlistment":
-            canvas.fill((10, 15, 25))
-            enlist_temp_title = title_font.render("PILOT ENLISTMENT DIVISION", True, (0, 220, 255))
-            canvas.blit(enlist_temp_title, enlist_temp_title.get_rect(center=(GAME_WIDTH // 2, 260)))
-            enlist_temp_sub = font.render("OATH OF DEMOCRACY & FLIGHT CONTRACT", True, (255, 215, 0))
-            canvas.blit(enlist_temp_sub, enlist_temp_sub.get_rect(center=(GAME_WIDTH // 2, 340)))
-            enlist_temp_hint = speed_font.render("Press ENTER to enlist and begin Academy Training, or ESC for Main Menu", True, (180, 190, 210))
-            canvas.blit(enlist_temp_hint, enlist_temp_hint.get_rect(center=(GAME_WIDTH // 2, 420)))
+            enlistment_screen.draw(canvas, canvas_mouse_pos)
 
         elif game_state == "mission_select":
             main_menu(None)

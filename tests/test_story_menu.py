@@ -93,3 +93,4 @@ def test_main_menu_active_profile_state(temp_profile_env, dummy_surface):
     hitbox = menu_continue_box.get_hitbox()
     click_event = pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=hitbox.center)
     assert menu_continue_box.is_clicked(click_event, hitbox.center) is True
+
