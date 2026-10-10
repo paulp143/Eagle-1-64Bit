@@ -157,11 +157,11 @@ class SuperDestroyerManager:
                 return
 
         try:
-            self.font_title = pygame.font.SysFont("impact", 28) or pygame.font.Font(None, 34)
-            self.font_large = pygame.font.SysFont("consolas", 22, bold=True) or pygame.font.Font(None, 28)
-            self.font_med = pygame.font.SysFont("consolas", 16, bold=True) or pygame.font.Font(None, 20)
-            self.font_small = pygame.font.SysFont("consolas", 13) or pygame.font.Font(None, 16)
-            self.font_arrow = pygame.font.SysFont("segoeuisymbol", 24, bold=True) or pygame.font.Font(None, 30)
+            self.font_title = pygame.font.SysFont("impact,arial", 28) or pygame.font.Font(None, 34)
+            self.font_large = pygame.font.SysFont("consolas,menlo,monaco,courier,arial", 22, bold=True) or pygame.font.Font(None, 28)
+            self.font_med = pygame.font.SysFont("consolas,menlo,monaco,courier,arial", 16, bold=True) or pygame.font.Font(None, 20)
+            self.font_small = pygame.font.SysFont("consolas,menlo,monaco,courier,arial", 13) or pygame.font.Font(None, 16)
+            self.font_arrow = pygame.font.SysFont("segoeuisymbol,applesymbols,arial,symbol", 24, bold=True) or pygame.font.Font(None, 30)
         except Exception:
             self.font_title = pygame.font.Font(None, 32)
             self.font_large = pygame.font.Font(None, 26)

@@ -56,11 +56,11 @@ class DebriefingScreen:
                 return
 
         try:
-            self.font_huge = pygame.font.SysFont("impact", 44) or pygame.font.Font(None, 52)
-            self.font_title = pygame.font.SysFont("impact", 28) or pygame.font.Font(None, 34)
-            self.font_large = pygame.font.SysFont("consolas", 20, bold=True) or pygame.font.Font(None, 26)
-            self.font_med = pygame.font.SysFont("consolas", 15, bold=True) or pygame.font.Font(None, 20)
-            self.font_small = pygame.font.SysFont("consolas", 13) or pygame.font.Font(None, 16)
+            self.font_huge = pygame.font.SysFont("impact,arial", 44) or pygame.font.Font(None, 52)
+            self.font_title = pygame.font.SysFont("impact,arial", 28) or pygame.font.Font(None, 34)
+            self.font_large = pygame.font.SysFont("consolas,menlo,monaco,courier,arial", 20, bold=True) or pygame.font.Font(None, 26)
+            self.font_med = pygame.font.SysFont("consolas,menlo,monaco,courier,arial", 15, bold=True) or pygame.font.Font(None, 20)
+            self.font_small = pygame.font.SysFont("consolas,menlo,monaco,courier,arial", 13) or pygame.font.Font(None, 16)
         except Exception:
             self.font_huge = pygame.font.Font(None, 48)
             self.font_title = pygame.font.Font(None, 32)

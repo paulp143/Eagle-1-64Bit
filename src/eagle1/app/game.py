@@ -595,13 +595,30 @@ pending_mission_config = None
 bomber_enemies = []
 orbital_base = None
 
-def get_canvas_mouse_pos():
-    """Skaliert die Mauskoordinaten des Fensters auf die interne Canvas-Auflösung."""
+def get_display_scale_and_offset():
+    """Berechnet Skalierungsfaktor und Zentrierungs-Offset für seitenverhältnistreue Darstellung (Letterboxing)."""
     win_w, win_h = window.get_size()
     if win_w == 0 or win_h == 0:
+        return 1.0, 0, 0, GAME_WIDTH, GAME_HEIGHT
+    scale = min(win_w / GAME_WIDTH, win_h / GAME_HEIGHT)
+    scaled_w = max(1, int(GAME_WIDTH * scale))
+    scaled_h = max(1, int(GAME_HEIGHT * scale))
+    offset_x = (win_w - scaled_w) // 2
+    offset_y = (win_h - scaled_h) // 2
+    return scale, offset_x, offset_y, scaled_w, scaled_h
+
+
+def get_canvas_mouse_pos():
+    """Skaliert die Mauskoordinaten des Fensters auf die interne Canvas-Auflösung unter Berücksichtigung von Letterboxing."""
+    scale, offset_x, offset_y, _, _ = get_display_scale_and_offset()
+    if scale <= 0:
         return pygame.mouse.get_pos()
     mx, my = pygame.mouse.get_pos()
-    return (mx * (GAME_WIDTH / win_w), my * (GAME_HEIGHT / win_h))
+    canvas_x = (mx - offset_x) / scale
+    canvas_y = (my - offset_y) / scale
+    canvas_x = max(0.0, min(float(GAME_WIDTH), canvas_x))
+    canvas_y = max(0.0, min(float(GAME_HEIGHT), canvas_y))
+    return (canvas_x, canvas_y)
 
 
 # UI TextBoxes & Buttons vorbereiten
@@ -2307,8 +2324,9 @@ explosion_group = pygame.sprite.Group()
 
 
 def run_game():
-    global game_state, light_enemy, wave_manager, health_drops, ground_support_manager, pending_mission_config
+    global window, game_state, light_enemy, wave_manager, health_drops, ground_support_manager, pending_mission_config
     running = True
+    last_wheel_time = 0
     while running:
         canvas_mouse_pos = get_canvas_mouse_pos()
 
@@ -2353,13 +2371,17 @@ def run_game():
                         player.shield = PLAYER_MAX_SHIELD
                     audio_manager.play_sfx("shield_regen", volume_scale=0.6)
 
-            # Mouse Wheel Weapon Cycling
+            # Mouse Wheel / Trackpad Weapon Cycling with debounce for smooth Mac scrolling
             if event.type == pygame.MOUSEWHEEL:
                 if game_state == "" and player.health > 0:
-                    if event.y > 0:
-                        ground_support_manager.cycle_weapon(-1)
-                    elif event.y < 0:
-                        ground_support_manager.cycle_weapon(1)
+                    now = pygame.time.get_ticks()
+                    if now - last_wheel_time > 90:
+                        if event.y > 0:
+                            ground_support_manager.cycle_weapon(-1)
+                            last_wheel_time = now
+                        elif event.y < 0:
+                            ground_support_manager.cycle_weapon(1)
+                            last_wheel_time = now
 
             if event.type == pygame.MOUSEMOTION:
                 if game_state == "settings_menu":
@@ -2460,6 +2482,22 @@ def run_game():
                         ground_support_manager.release_equipped_stratagem(player)
 
             if event.type == pygame.KEYDOWN:
+                # Universal / macOS clean exit: Cmd+Q
+                if event.key == pygame.K_q and (event.mod & (pygame.KMOD_META | pygame.KMOD_GUI)):
+                    if player.score > player.highscore:
+                        add_highscore(player.score)
+                    running = False
+                    break
+
+                # Fullscreen toggle: Cmd+F or F11
+                if (event.key == pygame.K_f and (event.mod & (pygame.KMOD_META | pygame.KMOD_GUI))) or event.key == pygame.K_F11:
+                    is_fullscreen = not bool(window.get_flags() & pygame.FULLSCREEN)
+                    if is_fullscreen:
+                        window = pygame.display.set_mode((0, 0), pygame.FULLSCREEN | pygame.RESIZABLE)
+                    else:
+                        window = pygame.display.set_mode((GAME_WIDTH, GAME_HEIGHT), pygame.RESIZABLE)
+                    continue
+
                 if game_state == "settings_menu":
                     action = settings_menu.handle_event(event, canvas_mouse_pos)
                     if action == "close":
@@ -2731,7 +2769,7 @@ def run_game():
                         if is_firing and not player.reloading:
                             player.set_shoot()
 
-                    if (keys[pygame.K_e] or keys[pygame.K_f] or keys[pygame.K_LCTRL]) and not player.rocket_reloading:
+                    if (keys[pygame.K_e] or (keys[pygame.K_f] and not (keys[pygame.K_LMETA] or keys[pygame.K_RMETA])) or keys[pygame.K_LCTRL]) and not player.rocket_reloading:
                         targets = list(wave_manager.enemies) + [g for g in ground_support_manager.enemy_ground_units if g.is_alive] + [f for f in ground_support_manager.enemy_fabricators if f.is_alive]
                         player.set_shoot_rocket(targets)
 
@@ -2771,8 +2809,15 @@ def run_game():
                 )
                 audio_manager.update_dynamic_music("intense" if is_high_threat else "normal")
 
-        scaled_surface = pygame.transform.scale(canvas, window.get_size())
-        window.blit(scaled_surface, (0, 0))
+        scale, offset_x, offset_y, scaled_w, scaled_h = get_display_scale_and_offset()
+        win_w, win_h = window.get_size()
+        if scaled_w == win_w and scaled_h == win_h:
+            scaled_surface = pygame.transform.scale(canvas, (scaled_w, scaled_h))
+            window.blit(scaled_surface, (0, 0))
+        else:
+            window.fill((0, 0, 0))
+            scaled_surface = pygame.transform.scale(canvas, (scaled_w, scaled_h))
+            window.blit(scaled_surface, (offset_x, offset_y))
 
         pygame.display.update()
         clock.tick(60)
