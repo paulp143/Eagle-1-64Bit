@@ -4,6 +4,7 @@ import random
 
 import pygame
 
+from eagle1.data.player_profile import PlayerProfileManager
 from eagle1.effects import Large_explosion_a, Spritesheet
 from eagle1.paths import PROJECT_ROOT, get_user_data_dir, image_search_dirs
 from eagle1.systems.audio_manager import get_audio_manager
@@ -196,6 +197,10 @@ class TextBox:
         border_color=None,
         hover_border_color=None,
         border_width=2,
+        enabled=True,
+        disabled_text_color=(120, 130, 145),
+        disabled_bg_color=(25, 28, 35),
+        disabled_border_color=(50, 55, 65),
         **rect_kwargs
     ):
         self.text = str(text)
@@ -208,11 +213,16 @@ class TextBox:
         self.border_color = border_color
         self.hover_border_color = hover_border_color
         self.border_width = border_width
+        self.enabled = enabled
+        self.disabled_text_color = disabled_text_color
+        self.disabled_bg_color = disabled_bg_color
+        self.disabled_border_color = disabled_border_color
         self.rect_kwargs = rect_kwargs
         self.update_surface()
 
     def update_surface(self):
-        self.text_surface = self.font.render(self.text, True, self.text_color)
+        color = self.text_color if self.enabled else self.disabled_text_color
+        self.text_surface = self.font.render(self.text, True, color)
         self.text_rect = self.text_surface.get_rect(**self.rect_kwargs)
         if self.bg_color is not None or self.border_color is not None or self.hover_bg_color is not None or self.hover_border_color is not None:
             self.bg_rect = self.text_rect.inflate(self.padding[0], self.padding[1])
@@ -225,15 +235,22 @@ class TextBox:
             self.text = new_text
             self.update_surface()
 
+    def set_enabled(self, enabled: bool):
+        if self.enabled != enabled:
+            self.enabled = enabled
+            self.update_surface()
+
     def get_hitbox(self):
         return self.bg_rect if self.bg_rect is not None else self.text_rect
 
     def is_hovered(self, mouse_pos):
-        if mouse_pos is None:
+        if not self.enabled or mouse_pos is None:
             return False
         return self.get_hitbox().collidepoint(mouse_pos)
 
     def is_clicked(self, event, mouse_pos):
+        if not self.enabled:
+            return False
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             clicked = self.is_hovered(mouse_pos)
             if clicked:
@@ -242,6 +259,14 @@ class TextBox:
         return False
 
     def draw(self, surface, mouse_pos=None):
+        if not self.enabled:
+            if self.disabled_bg_color and self.bg_rect:
+                pygame.draw.rect(surface, self.disabled_bg_color, self.bg_rect, border_radius=self.border_radius)
+            if self.disabled_border_color and self.bg_rect:
+                pygame.draw.rect(surface, self.disabled_border_color, self.bg_rect, width=self.border_width, border_radius=self.border_radius)
+            surface.blit(self.text_surface, self.text_rect)
+            return
+
         hovered = self.is_hovered(mouse_pos)
         if hovered and not getattr(self, "was_hovered", False):
             audio_manager.play_sfx("ui_hover")
@@ -279,10 +304,17 @@ try:
         pygame.mixer.set_num_channels(16)
 except Exception:
     pass
-font = pygame.font.SysFont("arial", 24, bold=True)
-title_font = pygame.font.SysFont("arial", 48, bold=True)
-speed_font = pygame.font.SysFont("arial", 18, bold=True)
-hud_small_font = pygame.font.SysFont("arial", 13, bold=True)
+def safe_font(name, size, bold=False):
+    try:
+        return pygame.font.SysFont(name, size, bold=bold)
+    except Exception:
+        return pygame.font.Font(None, size)
+
+font = safe_font("arial", 24, bold=True)
+title_font = safe_font("arial", 48, bold=True)
+speed_font = safe_font("arial", 18, bold=True)
+hud_small_font = safe_font("arial", 13, bold=True)
+profile_manager = PlayerProfileManager()
 clock = pygame.time.Clock()
 window = pygame.display.set_mode((GAME_WIDTH, GAME_HEIGHT), pygame.RESIZABLE)
 canvas = pygame.Surface((GAME_WIDTH, GAME_HEIGHT))
@@ -309,6 +341,7 @@ mission_bomber_kills = 0
 # =====================================================================
 
 class MissionType:
+    ACADEMY_TUTORIAL = "academy_tutorial"
     AIR_SUPERIORITY = "air_superiority"
     BASE_DEFENSE = "base_defense"
     STRIDER_RAID = "strider_raid"
@@ -316,6 +349,20 @@ class MissionType:
     ENDLESS_WAR = "endless_war"
 
 MISSION_CONFIGS = {
+    MissionType.ACADEMY_TUTORIAL: {
+        "id": MissionType.ACADEMY_TUTORIAL,
+        "name": "SUPER EARTH NAVAL ACADEMY",
+        "category": "TRAINING OPERATIONS",
+        "desc": "Basic Flight Certification & Close Air Support Qualification under Commander Vance.",
+        "difficulty": "TRAINING",
+        "has_ground": True,
+        "has_fabricators": False,
+        "has_strider": False,
+        "has_bombers": False,
+        "has_base": False,
+        "max_waves": 1,
+        "icon_color": (255, 215, 0),
+    },
     MissionType.AIR_SUPERIORITY: {
         "id": MissionType.AIR_SUPERIORITY,
         "name": "AIR SUPERIORITY",
@@ -625,65 +672,113 @@ def get_canvas_mouse_pos():
 
 # UI TextBoxes & Buttons vorbereiten
 title_box = TextBox(
-    "Eagle 1 64Bit",
+    "EAGLE 1: 64-BIT",
     title_font,
-    bg_color="Black",
-    padding=(40, 40),
-    border_radius=8,
-    centerx=GAME_WIDTH/2,
-    bottom=GAME_HEIGHT*0.2
+    text_color=(0, 230, 255),
+    bg_color=(10, 15, 25),
+    border_color=(0, 180, 240),
+    border_width=2,
+    padding=(50, 14),
+    border_radius=10,
+    centerx=GAME_WIDTH / 2,
+    centery=120,
 )
 
-menu_play_box = TextBox(
-    "To play press SHIFT",
-    font,
-    bg_color=(20, 25, 35),
-    hover_bg_color=(40, 60, 100),
-    border_color=(80, 100, 140),
-    hover_border_color=(0, 200, 255),
-    padding=(30, 16),
-    border_radius=8,
-    centerx=GAME_WIDTH/2,
-    bottom=GAME_HEIGHT/2+35
+subtitle_box = TextBox(
+    "SUPER EARTH NAVAL AIR DIVISION — STORY CAMPAIGN",
+    hud_small_font,
+    text_color=(255, 215, 0),
+    bg_color=(15, 20, 30),
+    border_color=(100, 85, 30),
+    padding=(24, 6),
+    border_radius=6,
+    centerx=GAME_WIDTH / 2,
+    centery=185,
 )
 
-menu_help_box = TextBox(
-    "Help & Weapons Guide: Press H",
+menu_new_game_box = TextBox(
+    "NEW GAME",
     font,
-    bg_color=(20, 25, 35),
-    hover_bg_color=(20, 70, 110),
-    border_color=(80, 100, 140),
+    text_color=(255, 255, 255),
+    bg_color=(20, 30, 45),
+    hover_bg_color=(35, 75, 120),
+    border_color=(0, 180, 240),
+    hover_border_color=(0, 240, 255),
+    padding=(60, 14),
+    border_radius=8,
+    centerx=GAME_WIDTH / 2,
+    centery=280,
+)
+
+menu_continue_box = TextBox(
+    "CONTINUE",
+    font,
+    text_color=(255, 255, 255),
+    bg_color=(20, 30, 45),
+    hover_bg_color=(30, 70, 100),
+    border_color=(80, 120, 160),
     hover_border_color=(0, 220, 255),
-    padding=(26, 14),
+    disabled_text_color=(100, 110, 125),
+    disabled_bg_color=(18, 22, 28),
+    disabled_border_color=(45, 50, 60),
+    padding=(60, 14),
     border_radius=8,
-    centerx=GAME_WIDTH/2,
-    bottom=GAME_HEIGHT/2+90
+    centerx=GAME_WIDTH / 2,
+    centery=350,
 )
 
 menu_settings_box = TextBox(
-    "Settings & Audio: Press O",
+    "SETTINGS",
     font,
+    text_color=(255, 255, 255),
     bg_color=(20, 25, 35),
-    hover_bg_color=(20, 70, 110),
+    hover_bg_color=(25, 55, 85),
     border_color=(80, 100, 140),
-    hover_border_color=(0, 220, 255),
-    padding=(26, 14),
+    hover_border_color=(0, 200, 255),
+    padding=(60, 14),
     border_radius=8,
-    centerx=GAME_WIDTH/2,
-    bottom=GAME_HEIGHT/2+145
+    centerx=GAME_WIDTH / 2,
+    centery=420,
 )
 
-menu_reset_box = TextBox(
-    "Hold L-SHIFT + R-SHIFT + R to reset Highscore",
+menu_help_box = TextBox(
+    "TACTICAL MANUAL",
     font,
+    text_color=(255, 255, 255),
     bg_color=(20, 25, 35),
-    hover_bg_color=(80, 30, 30),
+    hover_bg_color=(25, 55, 85),
     border_color=(80, 100, 140),
-    hover_border_color=(255, 80, 80),
-    padding=(24, 12),
+    hover_border_color=(0, 200, 255),
+    padding=(60, 14),
     border_radius=8,
-    centerx=GAME_WIDTH/2,
-    bottom=GAME_HEIGHT/2+200
+    centerx=GAME_WIDTH / 2,
+    centery=490,
+)
+
+menu_quit_box = TextBox(
+    "QUIT TO DESKTOP",
+    font,
+    text_color=(255, 255, 255),
+    bg_color=(25, 20, 25),
+    hover_bg_color=(80, 30, 35),
+    border_color=(120, 70, 80),
+    hover_border_color=(255, 70, 70),
+    padding=(60, 14),
+    border_radius=8,
+    centerx=GAME_WIDTH / 2,
+    centery=560,
+)
+
+menu_status_hint_box = TextBox(
+    "NO ACTIVE SERVICE RECORD — SELECT 'NEW GAME' TO ENLIST",
+    hud_small_font,
+    text_color=(220, 160, 50),
+    bg_color=(20, 20, 25),
+    border_color=(70, 50, 20),
+    padding=(18, 6),
+    border_radius=6,
+    centerx=GAME_WIDTH / 2,
+    centery=635,
 )
 
 pause_title_box = TextBox(
@@ -1862,11 +1957,26 @@ def main_menu(mouse_pos=None):
     canvas.fill((0, 0, 0))
     canvas.blit(main_menu_image, (0, 0))
 
+    has_active_save = profile_manager.has_active_profile()
+    if has_active_save:
+        active_prof = profile_manager.load_profile()
+        callsign = active_prof.username.upper()
+        menu_continue_box.set_text(f"CONTINUE : CADET {callsign}")
+        menu_continue_box.set_enabled(True)
+    else:
+        menu_continue_box.set_text("CONTINUE (NO SERVICE RECORD)")
+        menu_continue_box.set_enabled(False)
+
     title_box.draw(canvas, mouse_pos)
-    menu_play_box.draw(canvas, mouse_pos)
-    menu_help_box.draw(canvas, mouse_pos)
+    subtitle_box.draw(canvas, mouse_pos)
+    menu_new_game_box.draw(canvas, mouse_pos)
+    menu_continue_box.draw(canvas, mouse_pos)
     menu_settings_box.draw(canvas, mouse_pos)
-    menu_reset_box.draw(canvas, mouse_pos)
+    menu_help_box.draw(canvas, mouse_pos)
+    menu_quit_box.draw(canvas, mouse_pos)
+
+    if not has_active_save:
+        menu_status_hint_box.draw(canvas, mouse_pos)
 
 
 def pause_menu(mouse_pos=None):
@@ -2402,19 +2512,24 @@ def run_game():
                         game_state = previous_game_state
 
                 elif game_state == "main_menu":
-                    if menu_play_box.is_clicked(event, canvas_mouse_pos):
-                        game_state = "mission_select"
-                    elif menu_help_box.is_clicked(event, canvas_mouse_pos):
-                        previous_game_state = "main_menu"
-                        game_state = "help_menu"
+                    if menu_new_game_box.is_clicked(event, canvas_mouse_pos):
+                        game_state = "enlistment"
+                    elif menu_continue_box.is_clicked(event, canvas_mouse_pos):
+                        if profile_manager.has_active_profile():
+                            active_prof = profile_manager.load_profile()
+                            target_mission = MissionType.ACADEMY_TUTORIAL if not active_prof.academy_completed else active_prof.active_mission
+                            config = MISSION_CONFIGS.get(target_mission, MISSION_CONFIGS[MissionType.ACADEMY_TUTORIAL])
+                            respawn(mission_config=config)
+                            game_state = ""
                     elif menu_settings_box.is_clicked(event, canvas_mouse_pos):
                         previous_game_state = "main_menu"
                         settings_menu.sync_from_manager()
                         game_state = "settings_menu"
-                    elif menu_reset_box.is_clicked(event, canvas_mouse_pos):
-                        player.highscore = 0
-                        add_highscore(player.highscore)
-                        highscore_box.set_text("highscore: 0")
+                    elif menu_help_box.is_clicked(event, canvas_mouse_pos):
+                        previous_game_state = "main_menu"
+                        game_state = "help_menu"
+                    elif menu_quit_box.is_clicked(event, canvas_mouse_pos):
+                        running = False
 
                 elif game_state == "mission_select":
                     action = mission_select_menu.handle_event(event, canvas_mouse_pos)
@@ -2515,8 +2630,14 @@ def run_game():
                         ground_support_manager.add_combat_popup(f"AUDIO {status_str}", player.pos_x, player.pos_y, (255, 80, 80) if is_muted else (80, 255, 120))
 
                 elif game_state == "main_menu":
-                    if event.key in (pygame.K_LSHIFT, pygame.K_RSHIFT):
-                        game_state = "mission_select"
+                    if event.key == pygame.K_n:
+                        game_state = "enlistment"
+                    elif event.key == pygame.K_c and profile_manager.has_active_profile():
+                        active_prof = profile_manager.load_profile()
+                        target_mission = MissionType.ACADEMY_TUTORIAL if not active_prof.academy_completed else active_prof.active_mission
+                        config = MISSION_CONFIGS.get(target_mission, MISSION_CONFIGS[MissionType.ACADEMY_TUTORIAL])
+                        respawn(mission_config=config)
+                        game_state = ""
                     elif event.key == pygame.K_h:
                         previous_game_state = "main_menu"
                         game_state = "help_menu"
@@ -2524,10 +2645,21 @@ def run_game():
                         previous_game_state = "main_menu"
                         settings_menu.sync_from_manager()
                         game_state = "settings_menu"
+                    elif event.key in (pygame.K_ESCAPE, pygame.K_q):
+                        running = False
                     elif event.key == pygame.K_m:
                         is_muted = audio_manager.toggle_mute()
                         status_str = "MUTED" if is_muted else "UNMUTED"
                         ground_support_manager.add_combat_popup(f"AUDIO {status_str}", player.pos_x, player.pos_y, (255, 80, 80) if is_muted else (80, 255, 120))
+
+                elif game_state == "enlistment":
+                    if event.key == pygame.K_ESCAPE:
+                        game_state = "main_menu"
+                    elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+                        if not profile_manager.has_active_profile():
+                            profile_manager.create_profile("CADET", citizenship_grade="E")
+                        respawn(mission_config=MISSION_CONFIGS[MissionType.ACADEMY_TUTORIAL])
+                        game_state = ""
 
                 elif game_state == "mission_select":
                     action = mission_select_menu.handle_event(event, canvas_mouse_pos)
@@ -2686,10 +2818,15 @@ def run_game():
 
         if game_state == "main_menu":
             main_menu(canvas_mouse_pos)
-            if keys[pygame.K_LSHIFT] and keys[pygame.K_RSHIFT] and keys[pygame.K_r]:
-                player.highscore = 0
-                add_highscore(player.highscore)
-                highscore_box.set_text("highscore: 0")
+
+        elif game_state == "enlistment":
+            canvas.fill((10, 15, 25))
+            enlist_temp_title = title_font.render("PILOT ENLISTMENT DIVISION", True, (0, 220, 255))
+            canvas.blit(enlist_temp_title, enlist_temp_title.get_rect(center=(GAME_WIDTH // 2, 260)))
+            enlist_temp_sub = font.render("OATH OF DEMOCRACY & FLIGHT CONTRACT", True, (255, 215, 0))
+            canvas.blit(enlist_temp_sub, enlist_temp_sub.get_rect(center=(GAME_WIDTH // 2, 340)))
+            enlist_temp_hint = speed_font.render("Press ENTER to enlist and begin Academy Training, or ESC for Main Menu", True, (180, 190, 210))
+            canvas.blit(enlist_temp_hint, enlist_temp_hint.get_rect(center=(GAME_WIDTH // 2, 420)))
 
         elif game_state == "mission_select":
             main_menu(None)

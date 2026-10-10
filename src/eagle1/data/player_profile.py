@@ -176,3 +176,4 @@ class PlayerProfileManager:
         except Exception as exc:
             logger.error("Failed to delete player profile at %s: %s", path, exc)
             return False
+

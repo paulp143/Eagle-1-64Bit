@@ -3,3 +3,4 @@
 from eagle1.data.player_profile import PlayerProfile, PlayerProfileManager
 
 __all__ = ["PlayerProfile", "PlayerProfileManager"]
+

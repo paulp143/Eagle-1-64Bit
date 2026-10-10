@@ -110,3 +110,4 @@ def test_profile_progress_updates(temp_profile_dir):
     assert reloaded.active_mission == "air_superiority"
     assert reloaded.missions_cleared == 1
     assert reloaded.unlocked_stratagems == [1, 2, 3]
+
