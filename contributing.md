@@ -78,6 +78,9 @@ The project follows a standard `src/` layout with modular packages:
 - `src/eagle1/ui/help_menu.py` — in-game tactical help menu and its six information tabs.
 - `src/eagle1/ui/settings_menu.py` — tabbed settings interface.
 - `tools/generate_audio_assets.py` — standalone audio synthesis tool.
+- `tools/build_macos_icon.py` — synthesizes Apple `.icns` multi-resolution icon bundle.
+- `tools/build_macos_dmg.py` — packages `Eagle-1.app` into a drag-and-drop `.dmg` disk image.
+- `tools/package_macos.py` — complete macOS standalone packaging pipeline (.app, .dmg, .zip).
 - `tests/` — automated headless test suite running under `pytest`.
 - `images/` — sprites, backgrounds, explosions, and interface assets.
 - `data/` — runtime data such as high scores and audio settings.

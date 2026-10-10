@@ -722,11 +722,11 @@ class HelpMenu:
             ]),
             ("SYSTEMS & NAVIGATION", [
                 ("Q KEY", "Toggle Radar Mode (CONE: 300-1050px forward  <->  OMNI: 360° 0-420px)"),
+                ("CMD+Q / ESC", "Cmd+Q quits cleanly (Mac) | ESC closes menus or returns to Lobby"),
+                ("CMD+F / F11", "Toggle Fullscreen mode with automatic aspect ratio preservation"),
                 ("P KEY", "Pause Game / Open In-Game Pause Menu"),
                 ("H KEY", "Open Help & Tactical Guide (Accessible in Pause, Respawn, & Main Menu)"),
                 ("1 - 6 KEYS", "Quick-switch tabs in Help Guide  |  TAB / Arrows cycle tabs"),
-                ("WAVE HUD & MINIMAP", "Top-left HUD shows Wave & Hostiles; Radar shows Orange (patrol) & Red (agro)"),
-                ("ESC KEY", "Return to Main Menu (from Pause)  /  Close Help Menu"),
                 ("MISSION DEBRIEFING", "Post-mission AAR rank & stats. [R] Replay, [SPACE] Missions, [ESC] Menu"),
                 ("RESPAWN / HIGHSCORE", "Press R to Respawn after K.I.A.  |  L-SHIFT+R-SHIFT+R resets Highscore in Menu"),
             ]),

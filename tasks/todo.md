@@ -23,7 +23,7 @@
   - **Files likely touched:** `tests/test_asset_casing.py`, and any asset-referencing files if mismatches found.
   - **Estimated scope:** Small (1-2 files)
 
-- [ ] Task 3: Platform keybindings and input ergonomics
+- [x] Task 3: Platform keybindings and input ergonomics
   - **Description:** On macOS, users commonly expect Command (`K_LMETA`/`K_RMETA`) or Right Control alongside Left Control for primary/secondary weapon triggers. Audit input handling in `game.py` and ensure ergonomic missile/stratagem inputs across Mac and Linux keyboards.
   - **Acceptance criteria:**
     - Rocket firing checks include `K_LMETA` and `K_RMETA` (Command keys) when on macOS or universally without conflicting with existing binds.
@@ -34,14 +34,14 @@
   - **Estimated scope:** Small (2-3 files)
 
 ## Checkpoint: Foundation
-- [ ] All unit and regression tests pass (`python -m pytest tests/`).
-- [ ] Path resolution and user data directory functioning across simulated platforms.
+- [x] All unit and regression tests pass (`python -m pytest tests/`).
+- [x] Path resolution and user data directory functioning across simulated platforms.
 
 ---
 
 ## Phase 2: CI/CD Multi-OS Pipeline
 
-- [ ] Task 4: Expand CI test matrix to include macOS
+- [x] Task 4: Expand CI test matrix to include macOS
   - **Description:** Add `macos-latest` to the GitHub Actions test matrix in `.github/workflows/ci.yml`. Configure environment variables (`SDL_VIDEODRIVER: "dummy"`, `SDL_AUDIODRIVER: "dummy"`) and verify Python 3.10, 3.11, 3.12 compatibility on all three operating systems (Ubuntu, Windows, macOS).
   - **Acceptance criteria:**
     - `.github/workflows/ci.yml` matrix includes `[ubuntu-latest, windows-latest, macos-latest]`.
@@ -51,7 +51,7 @@
   - **Files likely touched:** `.github/workflows/ci.yml`
   - **Estimated scope:** Small (1 file)
 
-- [ ] Task 5: Upgrade release packaging workflow for Linux and macOS binaries
+- [x] Task 5: Upgrade release packaging workflow for Linux and macOS binaries
   - **Description:** Extend `.github/workflows/build-exe.yml` into a cross-platform release workflow matrix (`build-binaries`). Build:
     1. Windows: `Eagle-1-Windows.zip` (standalone directory executable)
     2. Linux: `Eagle-1-Linux.tar.gz` (standalone directory binary, POSIX `:` separator for PyInstaller `--add-data`)
@@ -66,14 +66,14 @@
   - **Estimated scope:** Small (1 file)
 
 ## Checkpoint: CI/CD & Build Matrix
-- [ ] CI and build workflow YAML schemas are valid.
-- [ ] All 3 platforms covered in both test runs and release packaging pipelines.
+- [x] CI and build workflow YAML schemas are valid.
+- [x] All 3 platforms covered in both test runs and release packaging pipelines.
 
 ---
 
 ## Phase 3: Documentation & Web Distribution
 
-- [ ] Task 6: Synchronize documentation and installation instructions
+- [x] Task 6: Synchronize documentation and installation instructions
   - **Description:** Update `README.md`, `contributing.md`, and in-game manuals (`help_menu.py`) with platform-specific instructions for Linux (installing system SDL2 packages `libsdl2-dev` / `libsdl2-mixer-dev` if needed) and macOS (Homebrew setup, Gatekeeper quarantine bypass `xattr -d com.apple.quarantine Eagle-1.app` for unsigned indie apps).
   - **Acceptance criteria:**
     - Clear installation and run commands for Linux, macOS, and Windows.
@@ -82,6 +82,7 @@
   - **Dependencies:** Task 5
   - **Files likely touched:** `README.md`, `contributing.md`, `src/eagle1/ui/help_menu.py`
   - **Estimated scope:** Small (3 files)
+
 
 - [ ] Task 7: Update frontend landing page with cross-platform download links
   - **Description:** Update `frontend/index.html` and `frontend/main.js` to provide download buttons for Windows (`.zip`), Linux (`.tar.gz`), and macOS (`.zip`), optionally auto-detecting the user's OS via `navigator.userAgent` or `navigator.userAgentData`.

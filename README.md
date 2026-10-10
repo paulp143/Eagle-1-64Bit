@@ -531,6 +531,24 @@ python run_game.py
 python main.py
 ```
 
+### Option 5: macOS Standalone Application (`.dmg` / `.app`)
+For players downloading standalone releases from GitHub Releases:
+1. Download `Eagle-1-macOS.dmg` from the latest release.
+2. Double-click the `.dmg` disk image and drag **`Eagle-1.app`** into your **`Applications`** folder.
+3. **First-Time Launch (Gatekeeper Notice)**:
+   Because this open-source build is distributed directly via GitHub outside the Mac App Store, macOS Gatekeeper may show a notice on first launch:
+   - **Quick Method**: Right-click (or Control-click) `Eagle-1.app` in Finder -> select **Open** -> click **Open** in the confirmation dialog.
+   - **Terminal Method**: Remove the quarantine flag:
+     ```bash
+     xattr -cr /Applications/Eagle-1.app
+     ```
+4. **macOS Features & Controls**:
+   - **User Data Storage**: Persistent high scores and settings are safely stored in `~/Library/Application Support/Eagle-1/`.
+   - **Clean Quit**: Press `Cmd + Q` from any menu or during flight to save progress and exit.
+   - **Fullscreen**: Press `Cmd + F` or `F11` to toggle fullscreen with automatic aspect-ratio preserving letterboxing.
+   - **Secondary Weapons**: Use two-finger trackpad tap or press `E` / `F` to launch homing rockets. Trackpad scroll dampening prevents erratic weapon cycling.
+
+
 
 
 ## Usage Examples

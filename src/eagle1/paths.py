@@ -8,11 +8,18 @@ import sys
 def get_base_dir() -> Path:
     """Return the base directory for bundled assets.
 
-    In a PyInstaller frozen application, assets are unpacked into sys._MEIPASS.
+    In a PyInstaller frozen application, assets are unpacked into sys._MEIPASS
+    or bundled in the macOS .app Contents/Resources folder.
     In development / source mode, assets reside at the project root.
     """
-    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-        return Path(sys._MEIPASS)
+    if getattr(sys, "frozen", False):
+        if hasattr(sys, "_MEIPASS"):
+            return Path(sys._MEIPASS)
+        exe_dir = Path(sys.executable).resolve().parent
+        app_resources = exe_dir.parent / "Resources"
+        if app_resources.is_dir():
+            return app_resources
+        return exe_dir
     # src/eagle1/paths.py -> parents[2] is project root
     return Path(__file__).resolve().parents[2]
 
@@ -36,14 +43,14 @@ def get_user_data_dir() -> Path:
     it is preferred to keep development workflows self-contained.
     """
     # Explicit override (useful for tests and headless automation)
-    env_override = os.environ.get("EAGLE1_USER_DATA_DIR")
+    env_override = os.environ.get("EAGLE1_USER_DATA_DIR") or os.environ.get("EAGLE1_DATA_DIR")
     if env_override:
         p = Path(env_override)
         p.mkdir(parents=True, exist_ok=True)
         return p
 
     # If running from source (not frozen) and local data dir exists, keep using local data dir
-    if not getattr(sys, "frozen", False):
+    if not getattr(sys, "frozen", False) and os.environ.get("EAGLE1_FORCE_USER_DATA_DIR") != "1":
         local_data = Path(__file__).resolve().parents[2] / "data"
         if local_data.exists():
             return local_data
