@@ -5,7 +5,7 @@ import random
 import pygame
 
 from eagle1.effects import Large_explosion_a, Spritesheet
-from eagle1.paths import DATA_DIR, PROJECT_ROOT, image_search_dirs
+from eagle1.paths import PROJECT_ROOT, get_user_data_dir, image_search_dirs
 from eagle1.systems.audio_manager import get_audio_manager
 from eagle1.systems.ground_support import (
     GroundSupportManager,
@@ -129,7 +129,7 @@ HEALTH_WIDTH = 16
 HEALTH_HEIGHT = 4
 
 
-HIGHSCORE_FILE = os.path.join(str(DATA_DIR), "highscore.txt")
+HIGHSCORE_FILE = os.path.join(str(get_user_data_dir()), "highscore.txt")
 
 
 def load_image(image_path, scale=None):
@@ -174,7 +174,9 @@ def load_highscore(filepath=HIGHSCORE_FILE):
 
 def add_highscore(new_highscore, filepath=HIGHSCORE_FILE):
     try:
-        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        dir_name = os.path.dirname(filepath)
+        if dir_name:
+            os.makedirs(dir_name, exist_ok=True)
         with open(filepath, "w") as file:
             file.write(str(new_highscore))
     except Exception as e:

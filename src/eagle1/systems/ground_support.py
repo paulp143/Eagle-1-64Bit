@@ -27,7 +27,7 @@ import math
 import random
 import pygame
 
-from eagle1.paths import DATA_DIR
+from eagle1.paths import get_user_data_dir
 from eagle1.systems.hangar_cinematic import (
     SuperDestroyerManager,
 )
@@ -2097,7 +2097,7 @@ class GroundSupportManager:
         self.hero_index = self.super_destroyer.hero_index
 
     def _load_hero_highscore(self):
-        hs_file = os.path.join(DATA_DIR, "stratagem_hero_highscore.txt")
+        hs_file = os.path.join(str(get_user_data_dir()), "stratagem_hero_highscore.txt")
         try:
             if os.path.exists(hs_file):
                 with open(hs_file, "r") as f:
@@ -2109,8 +2109,10 @@ class GroundSupportManager:
         return 0
 
     def _save_hero_highscore(self):
-        hs_file = os.path.join(DATA_DIR, "stratagem_hero_highscore.txt")
+        data_dir = get_user_data_dir()
+        hs_file = os.path.join(str(data_dir), "stratagem_hero_highscore.txt")
         try:
+            os.makedirs(str(data_dir), exist_ok=True)
             with open(hs_file, "w") as f:
                 f.write(str(self.hero_highscore))
         except Exception:

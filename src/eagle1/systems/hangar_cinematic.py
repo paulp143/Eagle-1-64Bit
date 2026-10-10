@@ -11,7 +11,7 @@ import os
 import random
 import pygame
 
-from eagle1.paths import DATA_DIR
+from eagle1.paths import get_user_data_dir
 
 
 # Rearm Phases
@@ -128,7 +128,7 @@ class SuperDestroyerManager:
     # =========================================================================
 
     def _load_hero_highscore(self):
-        hs_file = os.path.join(DATA_DIR, "stratagem_hero_highscore.txt")
+        hs_file = os.path.join(str(get_user_data_dir()), "stratagem_hero_highscore.txt")
         try:
             if os.path.exists(hs_file):
                 with open(hs_file, "r", encoding="utf-8") as f:
@@ -140,9 +140,10 @@ class SuperDestroyerManager:
         return 0
 
     def _save_hero_highscore(self):
-        hs_file = os.path.join(DATA_DIR, "stratagem_hero_highscore.txt")
+        data_dir = get_user_data_dir()
+        hs_file = os.path.join(str(data_dir), "stratagem_hero_highscore.txt")
         try:
-            os.makedirs(DATA_DIR, exist_ok=True)
+            os.makedirs(str(data_dir), exist_ok=True)
             with open(hs_file, "w", encoding="utf-8") as f:
                 f.write(str(self.hero_highscore))
         except Exception:

@@ -154,7 +154,7 @@ def test_combat_pause_protects_helldivers():
 def test_stratagem_hero_input_and_scoring(tmp_path, monkeypatch):
     """Verify Stratagem Hero processes arrow inputs, scores combos, and persists high score."""
     temp_hs_file = str(tmp_path / "stratagem_hero_highscore.txt")
-    monkeypatch.setattr("eagle1.systems.hangar_cinematic.DATA_DIR", tmp_path)
+    monkeypatch.setenv("EAGLE1_USER_DATA_DIR", str(tmp_path))
 
     sdm = SuperDestroyerManager()
     player = DummyPlayer()
