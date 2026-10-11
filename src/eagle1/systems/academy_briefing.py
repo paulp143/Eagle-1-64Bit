@@ -7,7 +7,7 @@ Flight Drill Instructor Commander Vance.
 
 import math
 import pygame
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 from eagle1.data.player_profile import PlayerProfileManager
 
@@ -497,6 +497,8 @@ class AcademyTutorialManager:
                     prof = prof_mgr.load_profile()
                     prof.academy_completed = True
                     prof.missions_cleared = max(1, prof.missions_cleared)
+                    if prof.active_mission in ("academy_tutorial", ""):
+                        prof.active_mission = "air_superiority"
                     if 3 not in prof.unlocked_stratagems:
                         prof.unlocked_stratagems.append(3)
                     if 4 not in prof.unlocked_stratagems:

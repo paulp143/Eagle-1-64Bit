@@ -1,24 +1,16 @@
 """Integration tests for Academy Tutorial Mission loop in game.py."""
 
 import os
-from pathlib import Path
-import tempfile
-import pygame
 import pytest
 
 from eagle1.app import game
 from eagle1.systems.academy_briefing import (
-    AcademyTutorialManager,
     DRILL_BRIEFING,
-    DRILL_STEERING,
-    DRILL_THROTTLE,
     DRILL_CANNONS,
     DRILL_RADAR_ROCKETS,
     DRILL_STRATAGEM,
     DRILL_GRADUATION,
-    DRILL_COMPLETE,
 )
-from eagle1.data.player_profile import PlayerProfileManager, PlayerProfile
 
 
 @pytest.fixture(autouse=True)

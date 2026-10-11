@@ -10,15 +10,10 @@ from eagle1.app.game import (
     TextBox,
     menu_new_game_box,
     menu_continue_box,
-    menu_settings_box,
-    menu_help_box,
-    menu_quit_box,
-    menu_status_hint_box,
     main_menu,
     safe_font,
     profile_manager,
 )
-from eagle1.data.player_profile import PlayerProfile
 
 
 @pytest.fixture

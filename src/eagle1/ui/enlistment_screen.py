@@ -5,7 +5,6 @@ Super Earth Armed Forces Contract of Employment, callsign/username entry,
 and patriotic oath signing before deployment to the Naval Academy.
 """
 
-import math
 import pygame
 from typing import List, Optional, Tuple
 

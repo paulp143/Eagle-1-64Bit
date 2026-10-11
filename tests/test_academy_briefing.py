@@ -197,6 +197,7 @@ def test_graduation_ceremony_and_badge_draw(dummy_surface, tmp_path, monkeypatch
     # Profile updated
     reloaded = prof_mgr.load_profile()
     assert reloaded.academy_completed is True
+    assert reloaded.active_mission == "air_superiority"
     assert reloaded.missions_cleared >= 1
     assert 3 in reloaded.unlocked_stratagems
     assert 4 in reloaded.unlocked_stratagems
