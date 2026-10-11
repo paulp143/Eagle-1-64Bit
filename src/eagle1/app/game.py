@@ -135,7 +135,7 @@ HEALTH_HEIGHT = 4
 HIGHSCORE_FILE = os.path.join(str(get_user_data_dir()), "highscore.txt")
 
 
-def load_image(image_path, scale=None):
+def load_image(image_path, scale=None, colorkey=None):
     if os.path.isabs(image_path) and os.path.exists(image_path):
         image = pygame.image.load(image_path)
     else:
@@ -162,8 +162,15 @@ def load_image(image_path, scale=None):
             raise FileNotFoundError(f"Image not found: {image_path}")
         image = pygame.image.load(found)
 
+    if colorkey is not None:
+        image.set_colorkey(colorkey)
     if scale is not None:
         image = pygame.transform.scale(image, scale)
+    if pygame.display.get_surface() is not None:
+        if colorkey is not None or (len(image.get_masks()) >= 4 and image.get_masks()[3] != 0):
+            image = image.convert_alpha()
+        else:
+            image = image.convert()
     return image
 
 
@@ -288,14 +295,14 @@ class TextBox:
 player_image = load_image(os.path.join("images", "Space-Invaders-Ship.png"), (PLAYER_WIDTH, PLAYER_HEIGHT))
 bullet_image = load_image(os.path.join("images", "bullet.png"), (BULLET_WIDTH, BULLET_HEIGHT))
 rocket_image = load_image(os.path.join("images", "bullet.png"), (ROCKET_WIDTH, ROCKET_HEIGHT))
-light_enemy_image = load_image(os.path.join("images", "enemy1.png"), (LIGHT_ENEMY_WIDTH, LIGHT_ENEMY_HEIGHT))
+light_enemy_image = load_image(os.path.join("images", "enemy1.png"), (LIGHT_ENEMY_WIDTH, LIGHT_ENEMY_HEIGHT), colorkey=(255, 255, 255))
 enemy_bullet_image = load_image(os.path.join("images", "enemy_bullet.png"), (BULLET_WIDTH, BULLET_HEIGHT))
 main_menu_image = load_image(os.path.join("images", "20260820_085135933_iOS.webp"), (GAME_WIDTH, GAME_HEIGHT))
 backround_image = load_image(os.path.join("images", "newbackround.png"), (GAME_WIDTH, GAME_HEIGHT))
 
 minimap_bg_image = pygame.transform.scale(backround_image, (MINIMAP_BG_WIDTH, MINIMAP_BG_HEIGHT))
 light_enemy_explosion_image = load_image(os.path.join("images", "light_enemy_explosion.png"), (LIGHT_ENEMY_WIDTH, LIGHT_ENEMY_HEIGHT))
-health_image = load_image(os.path.join("images", "health.png"), (HEALTH_WIDTH, HEALTH_HEIGHT))
+health_image = load_image(os.path.join("images", "health.png"), (HEALTH_WIDTH, HEALTH_HEIGHT), colorkey=(0, 0, 0))
 bullet_ui_image = load_image(os.path.join("images", "bullet_ui.png"), (BULLET_UI_WIDTH, BULLET_UI_HEIGHT))
 large_explosion_a_spritesheet = Spritesheet(load_image(os.path.join("images", "LargeExplosionA_spritesheet.png")), 23)
 
@@ -318,8 +325,49 @@ speed_font = safe_font("arial", 18, bold=True)
 hud_small_font = safe_font("arial", 13, bold=True)
 profile_manager = PlayerProfileManager()
 clock = pygame.time.Clock()
-window = pygame.display.set_mode((GAME_WIDTH, GAME_HEIGHT), pygame.RESIZABLE)
-canvas = pygame.Surface((GAME_WIDTH, GAME_HEIGHT))
+
+try:
+    window = pygame.display.set_mode((GAME_WIDTH, GAME_HEIGHT), pygame.RESIZABLE, vsync=1)
+except Exception:
+    window = pygame.display.set_mode((GAME_WIDTH, GAME_HEIGHT), pygame.RESIZABLE)
+
+canvas = pygame.Surface((GAME_WIDTH, GAME_HEIGHT)).convert()
+
+
+def convert_all_game_assets():
+    """Converts all textures to matching display pixel format with clean per-pixel alpha."""
+    global player_image, bullet_image, rocket_image, light_enemy_image
+    global enemy_bullet_image, main_menu_image, backround_image
+    global minimap_bg_image, light_enemy_explosion_image, health_image
+    global bullet_ui_image, large_explosion_a_spritesheet
+
+    if pygame.display.get_surface() is None:
+        return
+
+    player_image = player_image.convert_alpha()
+    bullet_image = bullet_image.convert_alpha()
+    rocket_image = rocket_image.convert_alpha()
+
+    light_enemy_image.set_colorkey((255, 255, 255))
+    light_enemy_image = light_enemy_image.convert_alpha()
+
+    enemy_bullet_image = enemy_bullet_image.convert_alpha()
+    main_menu_image = main_menu_image.convert()
+    backround_image = backround_image.convert()
+    minimap_bg_image = minimap_bg_image.convert()
+    light_enemy_explosion_image = light_enemy_explosion_image.convert_alpha()
+
+    health_image.set_colorkey((0, 0, 0))
+    health_image = health_image.convert_alpha()
+
+    bullet_ui_image = bullet_ui_image.convert_alpha()
+
+    if hasattr(large_explosion_a_spritesheet, "frames"):
+        large_explosion_a_spritesheet.frames = [f.convert_alpha() for f in large_explosion_a_spritesheet.frames]
+
+
+convert_all_game_assets()
+
 frame_number = 23
 frame_width = large_explosion_a_spritesheet.sheet.get_width() / 23
 frame_height = large_explosion_a_spritesheet.sheet.get_height()
@@ -2054,6 +2102,10 @@ def draw(mouse_pos=None):
         camera_x = max(0, min(MAP_WIDTH - GAME_WIDTH, player.pos_x + PLAYER_WIDTH / 2 - GAME_WIDTH / 2))
         camera_y = max(0, min(MAP_HEIGHT - GAME_HEIGHT, player.pos_y + PLAYER_HEIGHT / 2 - GAME_HEIGHT / 2))
 
+    # Snap camera to integer pixels to prevent sub-pixel tile shimmer and seam wave artifacts
+    camera_x = int(round(camera_x))
+    camera_y = int(round(camera_y))
+
     # Seamless background tiling inside map boundaries
     bg_w, bg_h = backround_image.get_size()
     start_col = max(0, int(camera_x // bg_w))
@@ -2093,37 +2145,58 @@ def draw(mouse_pos=None):
             bomber.draw(canvas, camera_x, camera_y)
 
         # Player rendered relative to camera
-        screen_player_x = player.x - camera_x
-        screen_player_y = player.y - camera_y
+        screen_player_x = player.pos_x - camera_x
+        screen_player_y = player.pos_y - camera_y
         rotated_player_image = pygame.transform.rotate(player.original_image, player.angle)
-        player_rect = rotated_player_image.get_rect(center=(screen_player_x + PLAYER_WIDTH // 2, screen_player_y + PLAYER_HEIGHT // 2))
+        player_rect = rotated_player_image.get_rect(
+            center=(
+                int(round(screen_player_x + PLAYER_WIDTH / 2)),
+                int(round(screen_player_y + PLAYER_HEIGHT / 2)),
+            )
+        )
         canvas.blit(rotated_player_image, player_rect.topleft)
 
         # Draw player bullets with camera offset
         for bullet in player.bullets:
-            b_screen_x = bullet.x - camera_x
-            b_screen_y = bullet.y - camera_y
-            bullet_rect = bullet.image.get_rect(center=(b_screen_x + BULLET_WIDTH // 2, b_screen_y + BULLET_HEIGHT // 2))
+            b_screen_x = bullet.pos_x - camera_x
+            b_screen_y = bullet.pos_y - camera_y
+            bullet_rect = bullet.image.get_rect(
+                center=(
+                    int(round(b_screen_x + BULLET_WIDTH / 2)),
+                    int(round(b_screen_y + BULLET_HEIGHT / 2)),
+                )
+            )
             canvas.blit(bullet.image, bullet_rect.topleft)
             # Subtle visual aura when Damage Multiplier is active
             if powerup_manager.is_active("damage_boost"):
-                pygame.draw.circle(canvas, (255, 140, 0), (int(b_screen_x + BULLET_WIDTH // 2), int(b_screen_y + BULLET_HEIGHT // 2)), 6, 1)
+                pygame.draw.circle(
+                    canvas,
+                    (255, 140, 0),
+                    (int(round(b_screen_x + BULLET_WIDTH / 2)), int(round(b_screen_y + BULLET_HEIGHT / 2))),
+                    6,
+                    1,
+                )
 
         # Draw power-up world drops, escort drone, and swarm micro-missiles
         powerup_manager.draw_world_entities(canvas, camera_x, camera_y, player)
 
         # Draw player rockets with camera offset
         for rocket in player.rockets:
-            r_screen_x = rocket.x - camera_x
-            r_screen_y = rocket.y - camera_y
-            rocket_rect = rocket.image.get_rect(center=(r_screen_x + ROCKET_WIDTH // 2, r_screen_y + ROCKET_HEIGHT // 2))
+            r_screen_x = rocket.pos_x - camera_x
+            r_screen_y = rocket.pos_y - camera_y
+            rocket_rect = rocket.image.get_rect(
+                center=(
+                    int(round(r_screen_x + ROCKET_WIDTH / 2)),
+                    int(round(r_screen_y + ROCKET_HEIGHT / 2)),
+                )
+            )
             canvas.blit(rocket.image, rocket_rect.topleft)
 
         # Draw health drops
         for drop in health_drops:
             if not drop.used:
-                hx = drop.x - camera_x
-                hy = drop.y - camera_y
+                hx = int(round(drop.pos_x - camera_x))
+                hy = int(round(drop.pos_y - camera_y))
                 canvas.blit(drop.image, (hx, hy))
                 pulse_r = int(14 + 3 * math.sin(pygame.time.get_ticks() * 0.008))
                 pygame.draw.circle(canvas, (50, 255, 100), (hx + 12, hy + 12), pulse_r, 1)
@@ -2131,18 +2204,28 @@ def draw(mouse_pos=None):
         # Draw enemy bullets with camera offset across all wave enemies
         for enemy in wave_manager.enemies:
             for bullet in enemy.bullets:
-                b_screen_x = bullet.x - camera_x
-                b_screen_y = bullet.y - camera_y
-                bullet_rect = bullet.image.get_rect(center=(b_screen_x + BULLET_WIDTH // 2, b_screen_y + BULLET_HEIGHT // 2))
+                b_screen_x = bullet.pos_x - camera_x
+                b_screen_y = bullet.pos_y - camera_y
+                bullet_rect = bullet.image.get_rect(
+                    center=(
+                        int(round(b_screen_x + BULLET_WIDTH / 2)),
+                        int(round(b_screen_y + BULLET_HEIGHT / 2)),
+                    )
+                )
                 canvas.blit(bullet.image, bullet_rect.topleft)
 
         # Draw all wave enemies with camera offset & Lock-on Reticles
         primary_enemy = wave_manager.get_closest_enemy(player)
         for enemy in wave_manager.enemies:
             if not enemy.exploding:
-                enemy_screen_x = enemy.x - camera_x
-                enemy_screen_y = enemy.y - camera_y
-                enemy_rect = enemy.image.get_rect(center=(enemy_screen_x + LIGHT_ENEMY_WIDTH // 2, enemy_screen_y + LIGHT_ENEMY_HEIGHT // 2))
+                enemy_screen_x = enemy.pos_x - camera_x
+                enemy_screen_y = enemy.pos_y - camera_y
+                enemy_rect = enemy.image.get_rect(
+                    center=(
+                        int(round(enemy_screen_x + LIGHT_ENEMY_WIDTH / 2)),
+                        int(round(enemy_screen_y + LIGHT_ENEMY_HEIGHT / 2)),
+                    )
+                )
                 canvas.blit(enemy.image, enemy_rect.topleft)
 
                 # Frost / Freeze visual overlay
@@ -2695,9 +2778,15 @@ def run_game():
                 if (event.key == pygame.K_f and (event.mod & (pygame.KMOD_META | pygame.KMOD_GUI))) or event.key == pygame.K_F11:
                     is_fullscreen = not bool(window.get_flags() & pygame.FULLSCREEN)
                     if is_fullscreen:
-                        window = pygame.display.set_mode((0, 0), pygame.FULLSCREEN | pygame.RESIZABLE)
+                        try:
+                            window = pygame.display.set_mode((0, 0), pygame.FULLSCREEN | pygame.RESIZABLE, vsync=1)
+                        except Exception:
+                            window = pygame.display.set_mode((0, 0), pygame.FULLSCREEN | pygame.RESIZABLE)
                     else:
-                        window = pygame.display.set_mode((GAME_WIDTH, GAME_HEIGHT), pygame.RESIZABLE)
+                        try:
+                            window = pygame.display.set_mode((GAME_WIDTH, GAME_HEIGHT), pygame.RESIZABLE, vsync=1)
+                        except Exception:
+                            window = pygame.display.set_mode((GAME_WIDTH, GAME_HEIGHT), pygame.RESIZABLE)
                     continue
 
                 if game_state == "settings_menu":
