@@ -61,6 +61,10 @@ SOUND_CHANNELS = {
     "hangar_ambience": [CH_TACTICAL],
     "rearm_crane": [CH_IMPACTS],
     "reentry_burn": [CH_TACTICAL],
+    "radio_chatter": [CH_TACTICAL],
+    "gate_pass": [CH_PICKUPS],
+    "drill_complete": [CH_TACTICAL],
+    "ceremony_fanfare": [CH_TACTICAL],
 }
 
 # Minimum cooldown interval (in ms) to prevent ear-piercing volume stacking / clipping
@@ -80,6 +84,10 @@ SOUND_MIN_INTERVALS = {
     "rocket_lock": 150,
     "rearm_crane": 200,
     "reentry_burn": 500,
+    "radio_chatter": 100,
+    "gate_pass": 80,
+    "drill_complete": 200,
+    "ceremony_fanfare": 500,
 }
 
 

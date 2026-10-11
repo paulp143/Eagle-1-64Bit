@@ -155,3 +155,79 @@ def test_headless_world_and_hud_draw(dummy_surface):
 
     manager.draw_world(dummy_surface, camera_x=0, camera_y=0)
     manager.draw_hud(dummy_surface, player=player)
+
+
+def test_celebration_particle_mechanics():
+    """Verify celebration particles decay and update positions cleanly."""
+    from eagle1.systems.academy_briefing import AcademyCelebrationParticle
+    p = AcademyCelebrationParticle(500.0, 300.0)
+    assert p.is_alive is True
+    init_life = p.lifetime
+
+    p.update(0.1)
+    assert p.lifetime < init_life
+    assert p.is_alive is True
+
+    # Advance until expiration
+    p.update(3.0)
+    assert p.is_alive is False
+
+
+def test_graduation_ceremony_and_badge_draw(dummy_surface, tmp_path, monkeypatch):
+    """Verify graduation ceremony triggers celebration, profile progression, and badge rendering."""
+    from eagle1.data.player_profile import PlayerProfileManager
+    monkeypatch.setenv("EAGLE1_USER_DATA_DIR", str(tmp_path))
+
+    # Pre-create profile
+    prof_mgr = PlayerProfileManager()
+    prof = prof_mgr.create_profile("TEST-CADET", "E")
+    assert prof.academy_completed is False
+
+    manager = AcademyTutorialManager()
+    player = MockPlayer()
+
+    # Advance to graduation drill
+    manager.state = DRILL_STRATAGEM
+    manager.advance_drill(player)
+
+    assert manager.state == DRILL_GRADUATION
+    assert manager.graduated is True
+    assert len(manager.celebration_particles) > 0
+
+    # Profile updated
+    reloaded = prof_mgr.load_profile()
+    assert reloaded.academy_completed is True
+    assert reloaded.missions_cleared >= 1
+    assert 3 in reloaded.unlocked_stratagems
+    assert 4 in reloaded.unlocked_stratagems
+
+    # Render HUD with graduation badge
+    manager.draw_hud(dummy_surface, player=player)
+
+
+def test_vance_comms_typewriter_and_audio():
+    """Verify CommsHUDBox typewriter pacing and message setting."""
+    box = CommsHUDBox()
+    box.set_message("Test transmission for Cadet.", sfx_cue="radio_chatter")
+    assert box.displayed_chars == 0
+    assert box.is_finished is False
+
+    box.update(0.5)
+    assert box.displayed_chars > 0
+    assert box.displayed_chars < len(box.full_text)
+
+    # Complete text
+    box.update(2.0)
+    assert box.is_finished is True
+    assert box.displayed_chars == len(box.full_text)
+
+
+def test_academy_audio_assets_exist():
+    """Verify that procedural audio generator produces required Phase 5 WAV files."""
+    from eagle1.paths import PROJECT_ROOT
+    audio_sfx_dir = PROJECT_ROOT / "audio" / "sfx"
+    required = ["radio_chatter.wav", "gate_pass.wav", "drill_complete.wav", "ceremony_fanfare.wav"]
+    for fname in required:
+        assert (audio_sfx_dir / fname).is_file(), f"Missing audio asset {fname}"
+
+

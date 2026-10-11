@@ -269,6 +269,49 @@ def generate_sfx(output_dir):
     reentry = rumble + sub
     save_wav(os.path.join(output_dir, "reentry_burn.wav"), reentry * 0.8)
 
+    # 23. Radio Chatter / Squelch & Telemetry Beep (Commander Vance Comms)
+    dur = 0.28
+    t = np.linspace(0, dur, int(SAMPLE_RATE * dur), False)
+    squelch_len = int(SAMPLE_RATE * 0.05)
+    squelch = np.random.uniform(-0.6, 0.6, squelch_len) * np.linspace(1, 0.2, squelch_len)
+    beep_t = t[squelch_len:]
+    beep = (0.4 * np.sin(2 * np.pi * 1400 * beep_t) + 0.3 * np.sin(2 * np.pi * 2100 * beep_t)) * np.exp(-(beep_t - beep_t[0]) * 18)
+    radio = np.concatenate([squelch, beep])
+    save_wav(os.path.join(output_dir, "radio_chatter.wav"), radio * 0.75)
+
+    # 24. Gate Pass (Holographic Energy Chime)
+    dur = 0.25
+    t = np.linspace(0, dur, int(SAMPLE_RATE * dur), False)
+    sweep = np.geomspace(660, 1320, len(t))
+    phase = 2 * np.pi * np.cumsum(sweep) / SAMPLE_RATE
+    carrier = 0.6 * np.sin(phase) + 0.3 * np.sin(phase * 2)
+    env = (1.0 - np.exp(-t * 80)) * np.exp(-t * 12)
+    gate_pass = carrier * env * 0.7
+    save_wav(os.path.join(output_dir, "gate_pass.wav"), gate_pass)
+
+    # 25. Drill Complete (Tactical Success Stinger)
+    dur = 0.38
+    t = np.linspace(0, dur, int(SAMPLE_RATE * dur), False)
+    part_len = len(t) // 3
+    tones = []
+    for f in [587.33, 880.0, 1174.66]:
+        sub_t = t[:part_len]
+        note = (0.5 * np.sin(2 * np.pi * f * sub_t) + 0.25 * np.sin(2 * np.pi * f * 2 * sub_t)) * np.exp(-sub_t * 12)
+        tones.append(note)
+    drill_complete = np.concatenate(tones) * 0.75
+    save_wav(os.path.join(output_dir, "drill_complete.wav"), drill_complete)
+
+    # 26. Ceremony Fanfare (Super Earth Wings of Liberty Celebration)
+    dur = 1.2
+    t = np.linspace(0, dur, int(SAMPLE_RATE * dur), False)
+    fanfare = (
+        0.35 * np.sin(2 * np.pi * 523.25 * t) * np.exp(-t * 2.2) +
+        0.30 * np.sin(2 * np.pi * 659.25 * t) * (t >= 0.15) * np.exp(-(t - 0.15) * 2.0) +
+        0.30 * np.sin(2 * np.pi * 783.99 * t) * (t >= 0.30) * np.exp(-(t - 0.30) * 1.8) +
+        0.45 * np.sin(2 * np.pi * 1046.50 * t) * (t >= 0.45) * np.exp(-(t - 0.45) * 1.5)
+    )
+    save_wav(os.path.join(output_dir, "ceremony_fanfare.wav"), fanfare * 0.8)
+
     print("All SFX generated successfully.")
 
 
