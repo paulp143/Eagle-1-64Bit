@@ -95,7 +95,7 @@ A custom 2D camera tracks the player ship across the map, clamping to world bord
 - **Dual Defense System (Shield + Health):** Energy shields absorb incoming damage before hull health is impacted.
 - **Autonomous Enemy Aircraft:** Hostile `Light_Enemy` units spawn in coordinated squadrons with flocking and combat AI.
 - **In-Game Help Menu (6 Tabs):** Multi-tab help overlay providing weapons, abilities, radar, controls, wave combat, and Helldiver support guidance.
-- **Automated Headless Test Suite:** 98 automated pytest tests covering mission configs, ground combat, fabricators, stratagems, flight physics, player profiles, enlistment, academy drills, and regression suites.
+- **Automated Headless Test Suite:** 99 automated pytest tests covering mission configs, ground combat, fabricators, stratagems, flight physics, player profiles, enlistment, academy drills, and regression suites.
 
 
 
@@ -390,7 +390,7 @@ Or run `pytest` directly with detailed test reporting:
 pytest -v
 ```
 
-### Test Coverage Summary (98 Tests)
+### Test Coverage Summary (99 Tests)
 
 - **`tests/test_enlistment_and_profile.py` (7 tests):**
   - Player profile schema initialization, serialization, and username validation.
@@ -404,13 +404,14 @@ pytest -v
   - TextBox enabled/disabled UI state and click rejection.
   - Main menu first-time state (CONTINUE disabled with tooltip).
   - Main menu active profile state (CONTINUE displays pilot callsign).
-- **`tests/test_academy_briefing.py` (11 tests):**
+- **`tests/test_academy_briefing.py` (12 tests):**
   - Academy tutorial manager initial state and drill state sequence.
   - Waypoint gate collision and vector alignment checks.
   - Target dummy drones and bunker destruction.
   - Throttle accumulator holding and boundary turnaround.
   - Commander Vance comms typewriter and procedural audio cues.
   - Wings of Liberty graduation badge and celebration particle mechanics.
+  - Minimap target, waypoint, hazard perimeter, and objective rendering.
 - **`tests/test_academy_integration.py` (8 tests):**
   - Academy tutorial initialization via `respawn()`.
   - Cannon and rocket damage against training drones during gameplay loop.

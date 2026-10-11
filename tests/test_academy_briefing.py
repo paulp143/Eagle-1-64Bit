@@ -1,10 +1,6 @@
 """Tests for AcademyTutorialManager, waypoint gates, drill progression, and Commander Vance comms."""
 
-import os
-from pathlib import Path
-import tempfile
 import pygame
-import pytest
 
 from eagle1.systems.academy_briefing import (
     AcademyTutorialManager,
@@ -131,18 +127,19 @@ def test_throttle_drill_evaluation():
 
     # Simulate fast throttle (v = 7.0)
     player.velocity_y = 7.0
-    keys = {pygame.K_w: True, pygame.K_s: False}
+    keys_high = {pygame.K_w: True, pygame.K_s: False}
 
     # Step for 2.1 seconds at 60 FPS
     for _ in range(130):
-        manager.update_throttle_drill(dt=1.0 / 60.0, player=player)
+        manager.update_throttle_drill(dt=1.0 / 60.0, player=player, keys=keys_high)
 
     assert manager.throttle_high_completed is True
 
     # Simulate air brakes / slow throttle (v = 2.0)
     player.velocity_y = 2.0
+    keys_low = {pygame.K_w: False, pygame.K_s: True}
     for _ in range(130):
-        manager.update_throttle_drill(dt=1.0 / 60.0, player=player)
+        manager.update_throttle_drill(dt=1.0 / 60.0, player=player, keys=keys_low)
 
     assert manager.throttle_low_completed is True
 
@@ -230,5 +227,38 @@ def test_academy_audio_assets_exist():
     required = ["radio_chatter.wav", "gate_pass.wav", "drill_complete.wav", "ceremony_fanfare.wav"]
     for fname in required:
         assert (audio_sfx_dir / fname).is_file(), f"Missing audio asset {fname}"
+
+
+def test_academy_minimap_rendering(dummy_surface):
+    """Verify minimap drawing renders waypoints, boundary buffer, drones, and bunkers cleanly."""
+    manager = AcademyTutorialManager()
+    player = MockPlayer()
+    manager.reset(player)
+
+    # 1. Test steering waypoints
+    manager.state = DRILL_STEERING
+    mm_surf = pygame.Surface((170, 170), pygame.SRCALPHA)
+    manager.draw_minimap(mm_surf, scale=170.0 / 3000.0)
+
+    # 2. Test border safety boundary
+    manager.state = DRILL_BORDER_SAFETY
+    manager.draw_minimap(mm_surf, scale=170.0 / 3000.0)
+
+    # 3. Test target drones
+    manager.state = DRILL_CANNONS
+    manager.target_drones = [
+        AcademyTargetDrone(1400.0, 1200.0, max_health=40.0),
+        AcademyTargetDrone(1600.0, 1200.0, max_health=40.0),
+    ]
+    manager.draw_minimap(mm_surf, scale=170.0 / 3000.0)
+
+    # 4. Test target bunker
+    manager.state = DRILL_STRATAGEM
+    manager.target_bunker = AcademyTargetBunker(1500.0, 1100.0, max_health=100.0)
+    manager.draw_minimap(mm_surf, scale=170.0 / 3000.0)
+
+    # 5. Test graduation beacon
+    manager.state = DRILL_GRADUATION
+    manager.draw_minimap(mm_surf, scale=170.0 / 3000.0)
 
 

@@ -7,6 +7,7 @@ import pytest
 from eagle1.app import game
 from eagle1.systems.academy_briefing import (
     DRILL_BRIEFING,
+    DRILL_STEERING,
     DRILL_THROTTLE,
     DRILL_BORDER_SAFETY,
     DRILL_CANNONS,
@@ -131,11 +132,20 @@ def test_academy_completion_triggers_debriefing():
 
 
 def test_academy_draw_world_and_hud(dummy_surface):
-    """Verify headless drawing of Academy world and HUD overlay."""
+    """Verify headless drawing of Academy world, HUD overlay, and minimap across drills."""
     config = game.MISSION_CONFIGS[game.MissionType.ACADEMY_TUTORIAL]
     game.respawn(mission_config=config)
 
-    # Run draw without exception
+    # Steering drill (waypoint gates on minimap)
+    game.academy_manager.state = DRILL_STEERING
+    game.draw(mouse_pos=(640, 360))
+
+    # Cannons drill (target drones on minimap)
+    game.academy_manager.state = DRILL_CANNONS
+    game.draw(mouse_pos=(640, 360))
+
+    # Stratagem drill (bunker on minimap)
+    game.academy_manager.state = DRILL_STRATAGEM
     game.draw(mouse_pos=(640, 360))
 
 

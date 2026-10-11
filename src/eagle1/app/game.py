@@ -2403,6 +2403,10 @@ def draw(mouse_pos=None):
         # Helldiver squad and beacon blips on minimap
         ground_support_manager.draw_minimap(minimap_surface, MINIMAP_SCALE)
 
+        # Academy tutorial training targets and objectives on minimap
+        if active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL:
+            academy_manager.draw_minimap(minimap_surface, MINIMAP_SCALE)
+
         # Player dot (Grün)
         pygame.draw.circle(minimap_surface, (0, 255, 100), (int(player_mm_x), int(player_mm_y)), 4)
 

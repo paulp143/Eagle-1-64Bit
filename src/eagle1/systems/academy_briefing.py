@@ -825,3 +825,71 @@ class AcademyTutorialManager:
         # Graduation ceremony badge overlay
         if self.state == DRILL_GRADUATION:
             self._draw_graduation_badge(surface)
+
+    def draw_minimap(self, surface: pygame.Surface, scale: float):
+        """Render academy training waypoints, target drones, and objective beacons on the minimap."""
+        ticks = pygame.time.get_ticks()
+        mm_w, mm_h = surface.get_size()
+
+        # 1. Waypoint Gates (Alpha, Bravo, Charlie)
+        if self.state in (DRILL_BRIEFING, DRILL_STEERING):
+            for i, gate in enumerate(self.waypoint_gates):
+                gx = max(0, min(mm_w - 1, int(gate.x * scale)))
+                gy = max(0, min(mm_h - 1, int(gate.y * scale)))
+
+                if gate.cleared:
+                    # Cleared waypoint (subtle green check dot)
+                    pygame.draw.circle(surface, (46, 204, 113), (gx, gy), 2)
+                elif i == self.current_gate_idx and self.state == DRILL_STEERING:
+                    # Active navigation gate (pulsing cyan / gold radar ring)
+                    pulse_r = int(5 + 2 * math.sin(ticks * 0.015))
+                    pygame.draw.circle(surface, (0, 240, 255), (gx, gy), pulse_r, 1)
+                    pygame.draw.circle(surface, (255, 215, 0), (gx, gy), 3)
+                else:
+                    # Upcoming waypoint (cyan ring)
+                    pygame.draw.circle(surface, (0, 160, 220), (gx, gy), 3, 1)
+
+        # 2. Hazard Perimeter Boundary Line (Drill 3)
+        if self.state == DRILL_BORDER_SAFETY:
+            inset = int(400.0 * scale)
+            pulse_alpha = int(160 + 80 * math.sin(ticks * 0.01))
+            border_col = (pulse_alpha, 40, 40)
+            pygame.draw.rect(
+                surface,
+                border_col,
+                (inset, inset, max(1, mm_w - 2 * inset), max(1, mm_h - 2 * inset)),
+                1,
+            )
+
+        # 3. Training Drone Dummies (Drill 4 & 5)
+        if self.state in (DRILL_CANNONS, DRILL_RADAR_ROCKETS):
+            for drone in self.target_drones:
+                if drone.is_alive:
+                    dx = max(0, min(mm_w - 1, int(drone.x * scale)))
+                    dy = max(0, min(mm_h - 1, int(drone.y * scale)))
+
+                    # Bright red / gold target blip with pulsing radar ping
+                    pulse_r = int(4 + 1.5 * math.sin(ticks * 0.02 + dx * 0.1))
+                    pygame.draw.circle(surface, (255, 140, 40), (dx, dy), pulse_r, 1)
+                    pygame.draw.circle(surface, (255, 50, 50), (dx, dy), 3)
+                    pygame.draw.circle(surface, (255, 230, 100), (dx, dy), 1)
+
+        # 4. Target Foundry Bunker (Drill 6)
+        if self.state == DRILL_STRATAGEM and self.target_bunker and self.target_bunker.is_alive:
+            bx = max(0, min(mm_w - 1, int(self.target_bunker.x * scale)))
+            by = max(0, min(mm_h - 1, int(self.target_bunker.y * scale)))
+
+            # Pulsing golden CAS strike beacon
+            pulse_r = int(6 + 3 * math.sin(ticks * 0.02))
+            pygame.draw.circle(surface, (255, 215, 0), (bx, by), pulse_r, 1)
+            # Red bunker structure marker
+            pygame.draw.rect(surface, (255, 40, 40), (bx - 3, by - 3, 6, 6))
+            pygame.draw.rect(surface, (255, 255, 180), (bx - 3, by - 3, 6, 6), 1)
+
+        # 5. Graduation Ceremony Beacon
+        if self.state == DRILL_GRADUATION:
+            cx = max(0, min(mm_w - 1, int(1500.0 * scale)))
+            cy = max(0, min(mm_h - 1, int(1500.0 * scale)))
+            pulse_r = int(7 + 4 * math.sin(ticks * 0.015))
+            pygame.draw.circle(surface, (255, 215, 0), (cx, cy), pulse_r, 1)
+            pygame.draw.circle(surface, (0, 255, 180), (cx, cy), 3)
