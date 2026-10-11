@@ -511,29 +511,64 @@ class AcademyTutorialManager:
             self.state = DRILL_COMPLETE
             self.is_completed = True
 
-    def update_throttle_drill(self, dt: float, player):
+    def update_throttle_drill(self, dt: float, player, keys=None):
         """Accumulate hold duration at max and min speed thresholds."""
         if not player:
             return
 
-        speed = player.get_forward_speed() if hasattr(player, "get_forward_speed") else 4.0
+        # Safely determine current flight speed across Player and Mock implementations
+        if hasattr(player, "get_forward_speed"):
+            speed = player.get_forward_speed()
+        elif hasattr(player, "velocity_x"):
+            speed = float(player.velocity_x)
+        elif hasattr(player, "velocity_y"):
+            speed = float(player.velocity_y)
+        elif hasattr(player, "speed"):
+            speed = float(player.speed)
+        else:
+            speed = 4.0
 
+        # Inspect key presses if provided
+        pressing_w = False
+        pressing_s = False
+        if keys is not None:
+            try:
+                if isinstance(keys, dict):
+                    pressing_w = bool(keys.get(pygame.K_w, False) or keys.get(pygame.K_UP, False))
+                    pressing_s = bool(keys.get(pygame.K_s, False) or keys.get(pygame.K_DOWN, False))
+                else:
+                    pressing_w = bool(keys[pygame.K_w] or keys[pygame.K_UP])
+                    pressing_s = bool(keys[pygame.K_s] or keys[pygame.K_DOWN])
+            except Exception:
+                pass
+
+        target_time = 1.2
+
+        # 1. High Speed / Afterburner check (either W held or speed >= 5.8)
         if not self.throttle_high_completed:
-            if speed >= 6.4:
+            if speed >= 5.8 or (pressing_w and speed >= 4.8):
                 self.throttle_high_time += dt
-                if self.throttle_high_time >= 2.0:
+                if self.throttle_high_time >= target_time:
                     self.throttle_high_completed = True
-                    self.comms_box.set_message("Afterburner confirmed! Now hit [S] to engage air brakes down to minimum speed.", sfx_cue="radio_chatter")
+                    if self.audio:
+                        self.audio.play_sfx("gate_pass")
+                    if not self.throttle_low_completed:
+                        self.comms_box.set_message("Afterburner confirmed! Now hit [S] to engage air brakes down to minimum speed.", sfx_cue="radio_chatter")
             else:
-                self.throttle_high_time = max(0.0, self.throttle_high_time - dt * 0.5)
+                self.throttle_high_time = max(0.0, self.throttle_high_time - dt * 0.4)
 
-        elif not self.throttle_low_completed:
-            if speed <= 2.6:
+        # 2. Low Speed / Air Brakes check (either S held or speed <= 3.0)
+        if not self.throttle_low_completed:
+            if speed <= 3.0 or (pressing_s and speed <= 3.8):
                 self.throttle_low_time += dt
-                if self.throttle_low_time >= 2.0:
+                if self.throttle_low_time >= target_time:
                     self.throttle_low_completed = True
+                    if self.audio:
+                        self.audio.play_sfx("gate_pass")
+                    if not self.throttle_high_completed:
+                        self.comms_box.set_message("Air brakes confirmed! Now hit [W] to kick in maximum afterburners.", sfx_cue="radio_chatter")
             else:
-                self.throttle_low_time = max(0.0, self.throttle_low_time - dt * 0.5)
+                self.throttle_low_time = max(0.0, self.throttle_low_time - dt * 0.4)
 
     def update(self, dt: float, player=None, keys=None, ground_support=None):
         """Main update tick driving drill triggers and state transitions."""
@@ -574,7 +609,7 @@ class AcademyTutorialManager:
 
         # 2. THROTTLE DRILL
         elif self.state == DRILL_THROTTLE:
-            self.update_throttle_drill(dt, player)
+            self.update_throttle_drill(dt, player, keys)
             if self.throttle_high_completed and self.throttle_low_completed:
                 self.advance_drill(player)
 
@@ -767,9 +802,10 @@ class AcademyTutorialManager:
         if self.state == DRILL_STEERING:
             sub_text = f"Waypoint Rings Cleared: [{self.current_gate_idx} / {len(self.waypoint_gates)}]"
         elif self.state == DRILL_THROTTLE:
-            h_stat = "DONE" if self.throttle_high_completed else f"{int((self.throttle_high_time / 2.0) * 100)}%"
-            l_stat = "DONE" if self.throttle_low_completed else f"{int((self.throttle_low_time / 2.0) * 100)}%"
-            sub_text = f"Max Thrust: [{h_stat}] | Air Brakes: [{l_stat}]"
+            target_t = 1.2
+            h_stat = "DONE" if self.throttle_high_completed else f"{int(min(1.0, self.throttle_high_time / target_t) * 100)}%"
+            l_stat = "DONE" if self.throttle_low_completed else f"{int(min(1.0, self.throttle_low_time / target_t) * 100)}%"
+            sub_text = f"Max Thrust [W]: [{h_stat}] | Air Brakes [S]: [{l_stat}]"
         elif self.state == DRILL_BORDER_SAFETY:
             sub_text = "STATUS: Perform 180° turnaround back to safe airspace."
         elif self.state == DRILL_CANNONS:

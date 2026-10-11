@@ -1081,6 +1081,10 @@ class Player(pygame.Rect):
         self.velocity_x = float(PLAYER_MOVEMENT_SPEED_X)
         self.boundaries = False
 
+    def get_forward_speed(self):
+        """Returns the scalar forward movement speed of the ship."""
+        return float(self.velocity_x)
+
     def toggle_radar_mode(self):
         """Wechselt zwischen CONE (Geradeaus-Fernbereich) und OMNI (360°-Nahbereich)."""
         if self.radar_mode == "CONE":

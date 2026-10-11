@@ -1,11 +1,14 @@
 """Integration tests for Academy Tutorial Mission loop in game.py."""
 
 import os
+import pygame
 import pytest
 
 from eagle1.app import game
 from eagle1.systems.academy_briefing import (
     DRILL_BRIEFING,
+    DRILL_THROTTLE,
+    DRILL_BORDER_SAFETY,
     DRILL_CANNONS,
     DRILL_RADAR_ROCKETS,
     DRILL_STRATAGEM,
@@ -134,3 +137,65 @@ def test_academy_draw_world_and_hud(dummy_surface):
 
     # Run draw without exception
     game.draw(mouse_pos=(640, 360))
+
+
+def test_real_player_throttle_drill_progression():
+    """Verify that using the real game.player accelerates and brakes through DRILL_THROTTLE."""
+    config = game.MISSION_CONFIGS[game.MissionType.ACADEMY_TUTORIAL]
+    game.respawn(mission_config=config)
+    game.academy_manager.state = DRILL_THROTTLE
+    game.academy_manager.throttle_high_completed = False
+    game.academy_manager.throttle_low_completed = False
+
+    # Simulate player holding W / maximum throttle (velocity reaches 7.0)
+    game.player.velocity_x = 7.0
+    game.player.velocity_y = 7.0
+    keys = {pygame.K_w: True, pygame.K_s: False, pygame.K_UP: False, pygame.K_DOWN: False}
+
+    for _ in range(90):  # 1.5s at 60 FPS
+        game.academy_manager.update(1.0 / 60.0, game.player, keys)
+
+    assert game.academy_manager.throttle_high_completed is True
+
+    # Simulate player holding S / air brakes (velocity reaches 2.0)
+    game.player.velocity_x = 2.0
+    game.player.velocity_y = 2.0
+    keys_brake = {pygame.K_w: False, pygame.K_s: True, pygame.K_UP: False, pygame.K_DOWN: False}
+
+    for _ in range(90):
+        game.academy_manager.update(1.0 / 60.0, game.player, keys_brake)
+
+    assert game.academy_manager.throttle_low_completed is True
+    # Drill must have advanced to DRILL_BORDER_SAFETY
+    assert game.academy_manager.state == DRILL_BORDER_SAFETY
+
+
+def test_real_player_throttle_drill_brake_first():
+    """Verify that braking first before accelerating also successfully completes the drill."""
+    config = game.MISSION_CONFIGS[game.MissionType.ACADEMY_TUTORIAL]
+    game.respawn(mission_config=config)
+    game.academy_manager.state = DRILL_THROTTLE
+    game.academy_manager.throttle_high_completed = False
+    game.academy_manager.throttle_low_completed = False
+
+    # Simulate player holding S / air brakes first (velocity reaches 2.0)
+    game.player.velocity_x = 2.0
+    game.player.velocity_y = 2.0
+    keys_brake = {pygame.K_w: False, pygame.K_s: True, pygame.K_UP: False, pygame.K_DOWN: False}
+
+    for _ in range(90):
+        game.academy_manager.update(1.0 / 60.0, game.player, keys_brake)
+
+    assert game.academy_manager.throttle_low_completed is True
+    assert game.academy_manager.throttle_high_completed is False
+
+    # Simulate player holding W / afterburner second (velocity reaches 7.0)
+    game.player.velocity_x = 7.0
+    game.player.velocity_y = 7.0
+    keys_throttle = {pygame.K_w: True, pygame.K_s: False, pygame.K_UP: False, pygame.K_DOWN: False}
+
+    for _ in range(90):
+        game.academy_manager.update(1.0 / 60.0, game.player, keys_throttle)
+
+    assert game.academy_manager.throttle_high_completed is True
+    assert game.academy_manager.state == DRILL_BORDER_SAFETY
