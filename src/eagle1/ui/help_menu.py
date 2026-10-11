@@ -728,7 +728,7 @@ class HelpMenu:
                 ("H KEY", "Open Help & Tactical Guide (Accessible in Pause, Respawn, & Main Menu)"),
                 ("1 - 6 KEYS", "Quick-switch tabs in Help Guide  |  TAB / Arrows cycle tabs"),
                 ("MISSION DEBRIEFING", "Post-mission AAR rank & stats. [R] Replay, [SPACE] Missions, [ESC] Menu"),
-                ("RESPAWN / HIGHSCORE", "Press R to Respawn after K.I.A.  |  L-SHIFT+R-SHIFT+R resets Highscore in Menu"),
+                ("RESPAWN", "Press R to Respawn after K.I.A. or return to Lobby"),
             ]),
         ]
 
