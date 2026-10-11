@@ -1493,8 +1493,12 @@ class WaveManager:
         self.enemies = []
         self.state = "ACTIVE"  # "ACTIVE", "INTERMISSION"
         self.intermission_timer = 0
-        self.wave_announcement = "WAVE 1"
-        self.announcement_timer = 180
+        if active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL:
+            self.wave_announcement = ""
+            self.announcement_timer = 0
+        else:
+            self.wave_announcement = "WAVE 1"
+            self.announcement_timer = 180
         self.spawn_wave(1)
 
     def spawn_wave(self, wave_num):
@@ -1502,6 +1506,12 @@ class WaveManager:
         self.wave = min(wave_num, max_w)
         self.enemies.clear()
         self.state = "ACTIVE"
+
+        if active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL:
+            self.wave_announcement = ""
+            self.announcement_timer = 0
+            return
+
         self.wave_announcement = f"WAVE {self.wave}"
         self.announcement_timer = 150
 
@@ -2037,6 +2047,8 @@ def respawn(mission_config=None, selected_stratagems=None):
 
     if active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL:
         wave_manager.enemies.clear()
+        wave_manager.announcement_timer = 0
+        wave_manager.wave_announcement = ""
         academy_manager.reset(player)
 
     if active_mission_config.get("has_base"):
@@ -2308,31 +2320,40 @@ def draw(mouse_pos=None):
         canvas.blit(hp_lbl, (gauge_x + gauge_w // 2 - hp_lbl.get_width() // 2, hull_y - 1))
 
         # Wave Counter HUD Box (Adjacent to Gauges at x=248)
-        living_count = len([e for e in wave_manager.enemies if not getattr(e, 'exploding', False)])
-        wave_box_w = 165
-        wave_box_h = 42
-        wave_box_x = 248
-        wave_box_y = 16
-        pygame.draw.rect(canvas, (18, 24, 36), (wave_box_x, wave_box_y, wave_box_w, wave_box_h), border_radius=6)
-        pygame.draw.rect(canvas, (60, 90, 130), (wave_box_x, wave_box_y, wave_box_w, wave_box_h), 1, border_radius=6)
+        if active_mission_config.get("id") != MissionType.ACADEMY_TUTORIAL:
+            living_count = len([e for e in wave_manager.enemies if not getattr(e, 'exploding', False)])
+            wave_box_w = 165
+            wave_box_h = 42
+            wave_box_x = 248
+            wave_box_y = 16
+            pygame.draw.rect(canvas, (18, 24, 36), (wave_box_x, wave_box_y, wave_box_w, wave_box_h), border_radius=6)
+            pygame.draw.rect(canvas, (60, 90, 130), (wave_box_x, wave_box_y, wave_box_w, wave_box_h), 1, border_radius=6)
 
-        wave_label = font.render(f"WAVE {wave_manager.wave}/{MAX_WAVE_LEVEL}", True, (255, 215, 0))
-        canvas.blit(wave_label, (wave_box_x + 8, wave_box_y + 3))
+            wave_label = font.render(f"WAVE {wave_manager.wave}/{MAX_WAVE_LEVEL}", True, (255, 215, 0))
+            canvas.blit(wave_label, (wave_box_x + 8, wave_box_y + 3))
 
-        hostiles_label = hud_small_font.render(f"HOSTILES: {living_count}", True, (255, 100, 100) if living_count > 0 else (100, 255, 100))
-        canvas.blit(hostiles_label, (wave_box_x + 8, wave_box_y + 24))
+            hostiles_label = hud_small_font.render(f"HOSTILES: {living_count}", True, (255, 100, 100) if living_count > 0 else (100, 255, 100))
+            canvas.blit(hostiles_label, (wave_box_x + 8, wave_box_y + 24))
 
         # Adrenaline Overdrive HUD indicator (displayed when player is at critical HP)
         if 0 < player.health <= ADRENALINE_HEALTH_THRESHOLD:
             adren_pulse = int(180 + 75 * math.sin(pygame.time.get_ticks() * 0.01))
             adren_surf = hud_small_font.render("! ADRENALINE OVERDRIVE !", True, (255, adren_pulse, 50))
-            adren_bg = pygame.Rect(wave_box_x, wave_box_y + wave_box_h + 6, wave_box_w, 20)
+            if active_mission_config.get("id") != MissionType.ACADEMY_TUTORIAL:
+                adren_x = 248
+                adren_y = 16 + 42 + 6
+                adren_w = 165
+            else:
+                adren_x = gauge_x
+                adren_y = hull_y + gauge_h + 6
+                adren_w = gauge_w
+            adren_bg = pygame.Rect(adren_x, adren_y, adren_w, 20)
             pygame.draw.rect(canvas, (60, 15, 15), adren_bg, border_radius=4)
             pygame.draw.rect(canvas, (255, 80, 50), adren_bg, 1, border_radius=4)
-            canvas.blit(adren_surf, (wave_box_x + wave_box_w // 2 - adren_surf.get_width() // 2, wave_box_y + wave_box_h + 9))
+            canvas.blit(adren_surf, (adren_x + adren_w // 2 - adren_surf.get_width() // 2, adren_y + 3))
 
         # Wave announcement banner (centered in upper third of canvas)
-        if wave_manager.announcement_timer > 0:
+        if wave_manager.announcement_timer > 0 and active_mission_config.get("id") != MissionType.ACADEMY_TUTORIAL:
             banner_surf = title_font.render(wave_manager.wave_announcement, True, (255, 230, 80))
             banner_bg = banner_surf.get_rect(center=(GAME_WIDTH // 2, GAME_HEIGHT // 3))
             pad_x, pad_y = 30, 15

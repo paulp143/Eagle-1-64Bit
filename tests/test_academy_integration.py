@@ -44,6 +44,8 @@ def test_academy_respawn_initialization():
 
     assert game.active_mission_config["id"] == game.MissionType.ACADEMY_TUTORIAL
     assert len(game.wave_manager.enemies) == 0
+    assert game.wave_manager.announcement_timer == 0
+    assert game.wave_manager.wave_announcement == ""
     assert game.academy_manager.state == DRILL_BRIEFING
     assert game.academy_manager.is_completed is False
     assert len(game.academy_manager.waypoint_gates) == 3
@@ -209,3 +211,29 @@ def test_real_player_throttle_drill_brake_first():
 
     assert game.academy_manager.throttle_high_completed is True
     assert game.academy_manager.state == DRILL_BORDER_SAFETY
+
+
+def test_academy_tutorial_suppresses_wave_hud_and_banner(dummy_surface):
+    """Verify that Academy Tutorial suppresses wave counters and announcements, and normal missions keep them."""
+    # 1. Academy Tutorial mode
+    config_tutorial = game.MISSION_CONFIGS[game.MissionType.ACADEMY_TUTORIAL]
+    game.respawn(mission_config=config_tutorial)
+
+    assert game.wave_manager.announcement_timer == 0
+    assert game.wave_manager.wave_announcement == ""
+    assert len(game.wave_manager.enemies) == 0
+
+    # Test draw with normal health and critical health (Adrenaline Overdrive repositioned)
+    game.draw(mouse_pos=(640, 360))
+    game.player.health = 1
+    game.draw(mouse_pos=(640, 360))
+
+    # 2. Standard mission mode restores wave HUD and announcement
+    config_air = game.MISSION_CONFIGS[game.MissionType.AIR_SUPERIORITY]
+    game.respawn(mission_config=config_air)
+
+    assert game.wave_manager.announcement_timer > 0
+    assert "WAVE" in game.wave_manager.wave_announcement
+    assert len(game.wave_manager.enemies) > 0
+    game.draw(mouse_pos=(640, 360))
+
