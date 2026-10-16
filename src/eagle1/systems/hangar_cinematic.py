@@ -198,7 +198,7 @@ class SuperDestroyerManager:
 
     def _init_cached_surfaces(self):
         """Pre-renders static hangar background and transparent overlays."""
-        bg = pygame.Surface((self.screen_w, self.screen_h))
+        bg = pygame.Surface((self.screen_w, self.screen_h), 0, 32, (0x00FF0000, 0x0000FF00, 0x000000FF, 0))
         bg.fill((8, 11, 18))
 
         # Planet Horizon curvature (drawn in upper orbital aperture)
