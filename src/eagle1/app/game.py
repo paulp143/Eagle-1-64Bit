@@ -6,7 +6,7 @@ import pygame
 
 from eagle1.data.player_profile import PlayerProfileManager
 from eagle1.effects import Large_explosion_a, Spritesheet
-from eagle1.paths import PROJECT_ROOT, get_user_data_dir, image_search_dirs
+from eagle1.paths import PROJECT_ROOT, get_user_data_dir, image_search_dirs, verify_path_exact_casing
 from eagle1.systems.audio_manager import get_audio_manager
 from eagle1.systems.ground_support import (
     GroundSupportManager,
@@ -137,6 +137,8 @@ HIGHSCORE_FILE = os.path.join(str(get_user_data_dir()), "highscore.txt")
 
 def load_image(image_path, scale=None, colorkey=None):
     if os.path.isabs(image_path) and os.path.exists(image_path):
+        if not verify_path_exact_casing(image_path):
+            raise FileNotFoundError(f"Image case mismatch for: {image_path}")
         image = pygame.image.load(image_path)
     else:
         basename = os.path.basename(image_path)
@@ -157,7 +159,7 @@ def load_image(image_path, scale=None, colorkey=None):
                 os.path.join(str(image_dir), basename),
             ])
 
-        found = next((path for path in candidates if os.path.exists(path)), None)
+        found = next((path for path in candidates if os.path.exists(path) and verify_path_exact_casing(path)), None)
         if found is None:
             raise FileNotFoundError(f"Image not found: {image_path}")
         image = pygame.image.load(found)

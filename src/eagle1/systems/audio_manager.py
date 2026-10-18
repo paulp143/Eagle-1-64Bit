@@ -11,7 +11,7 @@ import json
 import time
 import pygame
 
-from eagle1.paths import DATA_DIR, audio_search_dirs, get_user_data_dir
+from eagle1.paths import DATA_DIR, audio_search_dirs, get_user_data_dir, verify_path_exact_casing
 
 # Default Audio Configuration
 DEFAULT_SETTINGS = {
@@ -432,11 +432,11 @@ class AudioManager:
 
         filename = f"{track_name}.wav"
         full_path = os.path.join(self.music_dir, filename)
-        if not os.path.exists(full_path):
+        if not (os.path.exists(full_path) and verify_path_exact_casing(full_path)):
             # Try ogg or mp3 fallback
             for ext in [".ogg", ".mp3"]:
                 alt_path = os.path.join(self.music_dir, f"{track_name}{ext}")
-                if os.path.exists(alt_path):
+                if os.path.exists(alt_path) and verify_path_exact_casing(alt_path):
                     full_path = alt_path
                     break
             else:

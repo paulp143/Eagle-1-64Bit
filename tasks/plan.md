@@ -25,26 +25,26 @@ Enable full first-class cross-platform support for **Eagle-1-64Bit** across Linu
 
 ### Phase 1: Foundation & Portability
 - [x] Task 1: Refactor `src/eagle1/paths.py` for PyInstaller bundle awareness and platform-standard user data directory.
-- [ ] Task 2: Verify and audit case-sensitivity across all asset references against physical files on disk.
-- [ ] Task 3: macOS keybindings and platform input ergonomics (support `K_RMETA`/`K_LMETA`/`K_RCTRL` in secondary rocket triggers).
+- [x] Task 2: Verify and audit case-sensitivity across all asset references against physical files on disk.
+- [x] Task 3: macOS keybindings and platform input ergonomics (support `K_RMETA`/`K_LMETA`/`K_RCTRL` in secondary rocket triggers).
 
 ### Checkpoint: Foundation
-- [ ] `pytest tests/` passes with all existing and newly added path/platform tests.
-- [ ] User data and asset resolution verified in both normal and simulated frozen environments.
+- [x] `pytest tests/` passes with all existing and newly added path/platform tests.
+- [x] User data and asset resolution verified in both normal and simulated frozen environments.
 
 ### Phase 2: CI/CD Multi-OS Pipeline
-- [ ] Task 4: Expand `.github/workflows/ci.yml` to include `macos-latest` in test matrix with required environment configuration.
-- [ ] Task 5: Upgrade release build workflow (`.github/workflows/build-exe.yml`) to multi-OS matrix (Windows, Linux, macOS).
+- [x] Task 4: Expand `.github/workflows/ci.yml` to include `macos-latest` in test matrix with required environment configuration.
+- [x] Task 5: Upgrade release build workflow (`.github/workflows/build-exe.yml`) to multi-OS matrix (Windows, Linux, macOS).
 
 ### Checkpoint: CI/CD & Build Matrix
-- [ ] Workflow YAML files syntax-validated and conform to GitHub Actions best practices.
-- [ ] Automated headless test suite passes across platforms.
+- [x] Workflow YAML files syntax-validated and conform to GitHub Actions best practices.
+- [x] Automated headless test suite passes across platforms.
 
 ### Phase 3: Documentation & Distribution
-- [ ] Task 6: Update `README.md`, `contributing.md`, and `help_menu.py` with Linux and macOS prerequisites and controls.
-- [ ] Task 7: Update frontend landing page (`frontend/index.html` & `frontend/main.js`) with download options for Linux and macOS.
+- [x] Task 6: Update `README.md`, `contributing.md`, and `help_menu.py` with Linux and macOS prerequisites and controls.
+- [x] Task 7: Update frontend landing page (`frontend/index.html` & `frontend/main.js`) with download options for Linux and macOS.
 
 ### Checkpoint: Complete
-- [ ] All cross-platform compatibility criteria verified.
-- [ ] Clean git status and ready for review.
+- [x] All cross-platform compatibility criteria verified.
+- [x] Clean git status and ready for review.
 

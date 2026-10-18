@@ -13,7 +13,7 @@
   - **Files likely touched:** `src/eagle1/paths.py`, `src/eagle1/app/game.py`, `src/eagle1/systems/audio_manager.py`, `src/eagle1/systems/ground_support.py`, `src/eagle1/systems/hangar_cinematic.py`, `tests/test_paths.py`
   - **Estimated scope:** Medium (3-5 files)
 
-- [ ] Task 2: Audit and enforce case sensitivity for all asset loading
+- [x] Task 2: Audit and enforce case sensitivity for all asset loading
   - **Description:** On case-sensitive Linux filesystems (ext4/btrfs), mismatched asset filenames fail silently or crash. Scan all asset filenames under `images/` and `audio/` and verify all string literals in code (`.png`, `.wav`) match exact disk casing. Add an automated test that asserts all loaded asset filenames exist with exact case.
   - **Acceptance criteria:**
     - Zero case discrepancies between code asset references and filesystem entries.
@@ -84,7 +84,7 @@
   - **Estimated scope:** Small (3 files)
 
 
-- [ ] Task 7: Update frontend landing page with cross-platform download links
+- [x] Task 7: Update frontend landing page with cross-platform download links
   - **Description:** Update `frontend/index.html` and `frontend/main.js` to provide download buttons for Windows (`.zip`), Linux (`.tar.gz`), and macOS (`.zip`), optionally auto-detecting the user's OS via `navigator.userAgent` or `navigator.userAgentData`.
   - **Acceptance criteria:**
     - Landing page displays download options for Windows, macOS, and Linux.
@@ -95,7 +95,8 @@
   - **Estimated scope:** Small (2-3 files)
 
 ## Checkpoint: Complete
-- [ ] Full regression test suite passes.
-- [ ] Cross-platform implementation fully specified and tracked.
-- [ ] Ready for execution.
+- [x] Full regression test suite passes.
+- [x] Cross-platform implementation fully specified and tracked.
+- [x] Ready for execution.
+
 
