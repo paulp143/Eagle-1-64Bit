@@ -10,44 +10,77 @@ FRAME_SPEED = 0.4
 
 
 class ScreenShake:
-    """Lightweight camera shake controller for weapon recoil, missile blasts, and collisions."""
+    """Non-linear trauma spring camera shake controller.
+
+    Implements a GDC-style quadratic trauma model with dual-frequency harmonic spring
+    oscillations. Replaces jarring 60Hz white-noise jitter with physical camera judder,
+    directional impulse recoil, and smooth non-linear attenuation.
+    """
+
+    MAX_OFFSET_PIXELS = 24.0
 
     def __init__(self):
         self.intensity = 0.0
         self.remaining_frames = 0
         self.total_frames = 1
+        self.phase = 0.0
+        self.frequency = 0.85
+        self.angle_seed = 0.0
 
     def trigger(self, intensity: float, duration_frames: int = 6):
-        """Trigger or amplify screen shake if new intensity is >= current active shake."""
-        current_effective = self.intensity * (
+        """Trigger or amplify camera shake if new intensity exceeds active shake."""
+        trauma = (
             self.remaining_frames / max(1, self.total_frames)
+            if self.remaining_frames > 0
+            else 0.0
         )
+        current_effective = self.intensity * (trauma**2)
         if intensity >= current_effective or self.remaining_frames <= 0:
-            self.intensity = float(intensity)
+            self.intensity = min(self.MAX_OFFSET_PIXELS, float(intensity))
             self.remaining_frames = max(1, int(duration_frames))
             self.total_frames = self.remaining_frames
+            self.angle_seed = random.uniform(0.0, math.tau)
+            self.phase = 0.0
 
     def update(self):
-        """Advance shake decay by one frame."""
+        """Advance shake decay and harmonic phase by one frame."""
         if self.remaining_frames > 0:
             self.remaining_frames -= 1
+            self.phase += self.frequency
             if self.remaining_frames <= 0:
                 self.intensity = 0.0
+                self.phase = 0.0
 
     def get_offset(self) -> tuple[int, int]:
-        """Return integer pixel offset (dx, dy) for the current frame."""
+        """Return integer pixel offset (dx, dy) for the current frame.
+
+        Uses trauma^2 for snappy impact response and dual harmonic sine waves for
+        organic spring dampening rather than white noise.
+        """
         if self.remaining_frames <= 0 or self.intensity <= 0.0:
             return (0, 0)
-        decay = self.remaining_frames / max(1, self.total_frames)
-        mag = self.intensity * decay
-        ox = int(round(random.uniform(-mag, mag)))
-        oy = int(round(random.uniform(-mag, mag)))
+        trauma = self.remaining_frames / max(1, self.total_frames)
+        power = trauma * trauma
+
+        p = self.phase + self.angle_seed
+        wave_x = 0.72 * math.sin(p) + 0.28 * math.sin(p * 2.31 + 1.2)
+        wave_y = 0.72 * math.cos(p * 1.15 + 0.8) + 0.28 * math.sin(p * 2.73 + 2.1)
+
+        if trauma > 0.60:
+            jitter = (trauma - 0.60) * 0.20
+            wave_x += random.uniform(-jitter, jitter)
+            wave_y += random.uniform(-jitter, jitter)
+
+        ox = int(round(self.intensity * power * wave_x))
+        oy = int(round(self.intensity * power * wave_y))
         return (ox, oy)
 
     def reset(self):
         self.intensity = 0.0
         self.remaining_frames = 0
         self.total_frames = 1
+        self.phase = 0.0
+        self.angle_seed = 0.0
 
 
 class CombatJuiceManager:

@@ -105,3 +105,29 @@ def test_combat_juice_headless_render_succeeds():
     juice.update()
     assert len(juice.contrails) > 0
     assert len(juice.sparks) > 0
+
+
+def test_screen_shake_clamps_extreme_intensity():
+    """Shake intensity should clamp safely to MAX_OFFSET_PIXELS to prevent camera disorientation."""
+    shake = ScreenShake()
+    shake.trigger(intensity=999.0, duration_frames=10)
+    assert shake.intensity == ScreenShake.MAX_OFFSET_PIXELS
+    ox, oy = shake.get_offset()
+    assert abs(ox) <= ScreenShake.MAX_OFFSET_PIXELS * 1.2
+    assert abs(oy) <= ScreenShake.MAX_OFFSET_PIXELS * 1.2
+
+
+def test_screen_shake_phase_advancement_and_reset():
+    """Harmonic phase advances every update and clears on reset."""
+    shake = ScreenShake()
+    shake.trigger(intensity=10.0, duration_frames=8)
+    initial_phase = shake.phase
+    shake.update()
+    assert shake.phase == initial_phase + shake.frequency
+
+    shake.reset()
+    assert shake.phase == 0.0
+    assert shake.intensity == 0.0
+    assert shake.remaining_frames == 0
+    assert shake.get_offset() == (0, 0)
+
