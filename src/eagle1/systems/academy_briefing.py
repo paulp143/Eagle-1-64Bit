@@ -53,14 +53,80 @@ DRILL_SEQUENCE = [
     DRILL_COMPLETE,
 ]
 
+MAP_WIDTH = 3000
+MAP_HEIGHT = 3000
+ACADEMY_MAP_MARGIN = 350.0
+
+
+def compute_safe_drill_spawn(
+    player,
+    forward_dist: float,
+    right_offset: float = 0.0,
+    margin: float = ACADEMY_MAP_MARGIN,
+) -> tuple:
+    """Compute safe world coordinates for academy training targets.
+
+    Calculates placement based on player's position and flight heading angle.
+    If projecting forward exceeds safe map margins (e.g. player is flying
+    towards the sector perimeter), targets are dynamically re-routed towards
+    the center of the map (1500, 1500) and clamped strictly within safe bounds.
+    """
+    px = float(getattr(player, "pos_x", 1500.0) if player else 1500.0)
+    py = float(getattr(player, "pos_y", 1500.0) if player else 1500.0)
+    angle = float(getattr(player, "angle", 0.0) if player else 0.0)
+
+    rad = math.radians(angle)
+    fwd_x = -math.sin(rad)
+    fwd_y = -math.cos(rad)
+    right_x = -fwd_y
+    right_y = fwd_x
+
+    # Candidate position using flight heading
+    cand_x = px + fwd_x * forward_dist + right_x * right_offset
+    cand_y = py + fwd_y * forward_dist + right_y * right_offset
+
+    # Check if candidate position stays inside safe playable boundaries
+    min_x, max_x = margin, MAP_WIDTH - margin
+    min_y, max_y = margin, MAP_HEIGHT - margin
+
+    if min_x <= cand_x <= max_x and min_y <= cand_y <= max_y:
+        return cand_x, cand_y
+
+    # If heading into border or outside bounds, direct towards sector center
+    center_x = MAP_WIDTH / 2.0
+    center_y = MAP_HEIGHT / 2.0
+    dx = center_x - px
+    dy = center_y - py
+    dist_to_center = math.hypot(dx, dy)
+
+    if dist_to_center > 10.0:
+        c_fwd_x = dx / dist_to_center
+        c_fwd_y = dy / dist_to_center
+        c_right_x = -c_fwd_y
+        c_right_y = c_fwd_x
+        # Place forward towards center
+        target_fwd_dist = min(forward_dist, max(250.0, dist_to_center * 0.75))
+        cand_x = px + c_fwd_x * target_fwd_dist + c_right_x * right_offset
+        cand_y = py + c_fwd_y * target_fwd_dist + c_right_y * right_offset
+    else:
+        # Player is already at map center; offset along center axis
+        cand_x = center_x + right_offset
+        cand_y = center_y - forward_dist
+
+    # Strict clamping
+    safe_x = max(min_x, min(max_x, cand_x))
+    safe_y = max(min_y, min(max_y, cand_y))
+    return safe_x, safe_y
+
 
 class AcademyWaypointGate:
     """Holographic energy gate requiring player navigation alignment."""
 
     def __init__(self, x: float, y: float, radius: float = 85.0, label: str = "ALPHA"):
-        self.x = float(x)
-        self.y = float(y)
-        self.radius = float(radius)
+        safe_radius = float(radius)
+        self.radius = safe_radius
+        self.x = max(safe_radius, min(MAP_WIDTH - safe_radius, float(x)))
+        self.y = max(safe_radius, min(MAP_HEIGHT - safe_radius, float(y)))
         self.label = label
         self.cleared = False
         self.pulse_phase = 0.0
@@ -100,9 +166,11 @@ class AcademyTargetDrone(pygame.Rect):
     """Automaton training target drone for Quad-Cannon and Missile drills."""
 
     def __init__(self, x: float, y: float, max_health: float = 50.0, label: str = "DRONE-1", is_mobile: bool = False):
-        super().__init__(int(x - 24), int(y - 24), 48, 48)
-        self.pos_x = float(x)
-        self.pos_y = float(y)
+        safe_x = max(50.0, min(MAP_WIDTH - 50.0, float(x)))
+        safe_y = max(50.0, min(MAP_HEIGHT - 50.0, float(y)))
+        super().__init__(int(safe_x - 24), int(safe_y - 24), 48, 48)
+        self.pos_x = safe_x
+        self.pos_y = safe_y
         self.max_health = float(max_health)
         self.health = float(max_health)
         self.label = label
@@ -131,6 +199,9 @@ class AcademyTargetDrone(pygame.Rect):
             self.move_angle = (self.move_angle + 1.2 * dt) % (2 * math.pi)
             self.pos_x += math.cos(self.move_angle) * 1.5
             self.pos_y += math.sin(self.move_angle) * 1.5
+            # Clamp inside map bounds so drifting drones never leave the map
+            self.pos_x = max(50.0, min(MAP_WIDTH - 50.0, self.pos_x))
+            self.pos_y = max(50.0, min(MAP_HEIGHT - 50.0, self.pos_y))
             self.x = int(self.pos_x - 24)
             self.y = int(self.pos_y - 24)
 
@@ -168,9 +239,11 @@ class AcademyTargetBunker(pygame.Rect):
     """Automaton simulated training foundry bunker for Stratagem Air Strike drill."""
 
     def __init__(self, x: float, y: float, max_health: float = 100.0, label: str = "TRAINING FOUNDRY"):
-        super().__init__(int(x - 50), int(y - 50), 100, 100)
-        self.pos_x = float(x)
-        self.pos_y = float(y)
+        safe_x = max(80.0, min(MAP_WIDTH - 80.0, float(x)))
+        safe_y = max(80.0, min(MAP_HEIGHT - 80.0, float(y)))
+        super().__init__(int(safe_x - 50), int(safe_y - 50), 100, 100)
+        self.pos_x = safe_x
+        self.pos_y = safe_y
         self.max_health = float(max_health)
         self.health = float(max_health)
         self.label = label
@@ -389,14 +462,14 @@ class AcademyTutorialManager:
         self.border_cleared = False
         self.celebration_particles = []
 
-        px = player.pos_x if player else 1500.0
-        py = player.pos_y if player else 1500.0
-
-        # Create slalom gates Alpha, Bravo, Charlie
+        # Create slalom gates Alpha, Bravo, Charlie with safe bounds
+        g1_x, g1_y = compute_safe_drill_spawn(player, forward_dist=320.0, right_offset=0.0, margin=200.0)
+        g2_x, g2_y = compute_safe_drill_spawn(player, forward_dist=600.0, right_offset=-280.0, margin=200.0)
+        g3_x, g3_y = compute_safe_drill_spawn(player, forward_dist=880.0, right_offset=240.0, margin=200.0)
         self.waypoint_gates = [
-            AcademyWaypointGate(px, py - 320.0, radius=85.0, label="ALPHA"),
-            AcademyWaypointGate(px - 280.0, py - 600.0, radius=85.0, label="BRAVO"),
-            AcademyWaypointGate(px + 240.0, py - 880.0, radius=85.0, label="CHARLIE"),
+            AcademyWaypointGate(g1_x, g1_y, radius=85.0, label="ALPHA"),
+            AcademyWaypointGate(g2_x, g2_y, radius=85.0, label="BRAVO"),
+            AcademyWaypointGate(g3_x, g3_y, radius=85.0, label="CHARLIE"),
         ]
 
         # Reset target entities
@@ -443,12 +516,13 @@ class AcademyTutorialManager:
 
         elif self.state == DRILL_BORDER_SAFETY:
             self.state = DRILL_CANNONS
-            px = player.pos_x if player else 1500.0
-            py = player.pos_y if player else 1500.0
+            d1_x, d1_y = compute_safe_drill_spawn(player, forward_dist=420.0, right_offset=-140.0)
+            d2_x, d2_y = compute_safe_drill_spawn(player, forward_dist=520.0, right_offset=0.0)
+            d3_x, d3_y = compute_safe_drill_spawn(player, forward_dist=420.0, right_offset=140.0)
             self.target_drones = [
-                AcademyTargetDrone(px - 140.0, py - 420.0, max_health=40.0, label="DRONE-1"),
-                AcademyTargetDrone(px, py - 520.0, max_health=40.0, label="DRONE-2"),
-                AcademyTargetDrone(px + 140.0, py - 420.0, max_health=40.0, label="DRONE-3"),
+                AcademyTargetDrone(d1_x, d1_y, max_health=40.0, label="DRONE-1"),
+                AcademyTargetDrone(d2_x, d2_y, max_health=40.0, label="DRONE-2"),
+                AcademyTargetDrone(d3_x, d3_y, max_health=40.0, label="DRONE-3"),
             ]
             if self.audio:
                 self.audio.play_sfx("drill_complete")
@@ -456,11 +530,11 @@ class AcademyTutorialManager:
 
         elif self.state == DRILL_CANNONS:
             self.state = DRILL_RADAR_ROCKETS
-            px = player.pos_x if player else 1500.0
-            py = player.pos_y if player else 1500.0
+            ia_x, ia_y = compute_safe_drill_spawn(player, forward_dist=480.0, right_offset=-180.0)
+            ib_x, ib_y = compute_safe_drill_spawn(player, forward_dist=480.0, right_offset=180.0)
             self.target_drones = [
-                AcademyTargetDrone(px - 180.0, py - 480.0, max_health=60.0, label="INTERCEPTOR-A", is_mobile=True),
-                AcademyTargetDrone(px + 180.0, py - 480.0, max_health=60.0, label="INTERCEPTOR-B", is_mobile=True),
+                AcademyTargetDrone(ia_x, ia_y, max_health=60.0, label="INTERCEPTOR-A", is_mobile=True),
+                AcademyTargetDrone(ib_x, ib_y, max_health=60.0, label="INTERCEPTOR-B", is_mobile=True),
             ]
             if self.audio:
                 self.audio.play_sfx("drill_complete")
@@ -468,9 +542,8 @@ class AcademyTutorialManager:
 
         elif self.state == DRILL_RADAR_ROCKETS:
             self.state = DRILL_STRATAGEM
-            px = player.pos_x if player else 1500.0
-            py = player.pos_y if player else 1500.0
-            self.target_bunker = AcademyTargetBunker(px, py - 550.0, max_health=100.0, label="TRAINING FOUNDRY")
+            bk_x, bk_y = compute_safe_drill_spawn(player, forward_dist=550.0, right_offset=0.0)
+            self.target_bunker = AcademyTargetBunker(bk_x, bk_y, max_health=100.0, label="TRAINING FOUNDRY")
             if self.audio:
                 self.audio.play_sfx("drill_complete")
             self.comms_box.set_message("Final exam: Close Air Support! Select your 500kg Bomb with [2], align the predictive reticle, and drop with [C]!", sfx_cue="radio_chatter")

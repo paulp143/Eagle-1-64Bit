@@ -262,3 +262,159 @@ def test_academy_minimap_rendering(dummy_surface):
     manager.draw_minimap(mm_surf, scale=170.0 / 3000.0)
 
 
+def test_compute_safe_drill_spawn_within_bounds():
+    """Verify compute_safe_drill_spawn projects correctly when within map bounds."""
+    from eagle1.systems.academy_briefing import compute_safe_drill_spawn, MAP_WIDTH, MAP_HEIGHT
+
+    player = MockPlayer(1500.0, 1500.0)
+    player.angle = 0.0  # North
+
+    sx, sy = compute_safe_drill_spawn(player, forward_dist=500.0, right_offset=100.0)
+    assert 0 < sx < MAP_WIDTH
+    assert 0 < sy < MAP_HEIGHT
+    assert sx == 1600.0
+    assert sy == 1000.0
+
+
+def test_compute_safe_drill_spawn_reroutes_from_borders():
+    """Verify targets never spawn outside the map when player is near or facing borders."""
+    from eagle1.systems.academy_briefing import compute_safe_drill_spawn, MAP_WIDTH, MAP_HEIGHT, ACADEMY_MAP_MARGIN
+
+    # 1. Player near North border, facing North
+    p_north = MockPlayer(1500.0, 100.0)
+    p_north.angle = 0.0
+    sx, sy = compute_safe_drill_spawn(p_north, forward_dist=500.0)
+    assert ACADEMY_MAP_MARGIN <= sx <= MAP_WIDTH - ACADEMY_MAP_MARGIN
+    assert ACADEMY_MAP_MARGIN <= sy <= MAP_HEIGHT - ACADEMY_MAP_MARGIN
+
+    # 2. Player near South border, facing South
+    p_south = MockPlayer(1500.0, 2900.0)
+    p_south.angle = 180.0
+    sx, sy = compute_safe_drill_spawn(p_south, forward_dist=500.0)
+    assert ACADEMY_MAP_MARGIN <= sx <= MAP_WIDTH - ACADEMY_MAP_MARGIN
+    assert ACADEMY_MAP_MARGIN <= sy <= MAP_HEIGHT - ACADEMY_MAP_MARGIN
+
+    # 3. Player near West border, facing West
+    p_west = MockPlayer(80.0, 1500.0)
+    p_west.angle = 90.0
+    sx, sy = compute_safe_drill_spawn(p_west, forward_dist=500.0)
+    assert ACADEMY_MAP_MARGIN <= sx <= MAP_WIDTH - ACADEMY_MAP_MARGIN
+    assert ACADEMY_MAP_MARGIN <= sy <= MAP_HEIGHT - ACADEMY_MAP_MARGIN
+
+    # 4. Player near East border, facing East
+    p_east = MockPlayer(2920.0, 1500.0)
+    p_east.angle = 270.0
+    sx, sy = compute_safe_drill_spawn(p_east, forward_dist=500.0)
+    assert ACADEMY_MAP_MARGIN <= sx <= MAP_WIDTH - ACADEMY_MAP_MARGIN
+    assert ACADEMY_MAP_MARGIN <= sy <= MAP_HEIGHT - ACADEMY_MAP_MARGIN
+
+
+def test_academy_advance_drill_never_spawns_off_map():
+    """Verify that advancing drills when near borders places all enemies and bunkers inside the map."""
+    from eagle1.systems.academy_briefing import MAP_WIDTH, MAP_HEIGHT
+
+    manager = AcademyTutorialManager()
+    player = MockPlayer(1500.0, 120.0)  # Near top border
+    player.angle = 0.0  # Flying North
+
+    # Advance to Cannons drill
+    manager.state = DRILL_BORDER_SAFETY
+    manager.advance_drill(player)
+    assert manager.state == DRILL_CANNONS
+    assert len(manager.target_drones) == 3
+    for drone in manager.target_drones:
+        assert 0 <= drone.pos_x <= MAP_WIDTH
+        assert 0 <= drone.pos_y <= MAP_HEIGHT
+        assert 0 <= drone.x <= MAP_WIDTH
+        assert 0 <= drone.y <= MAP_HEIGHT
+
+    # Advance to Radar Rockets drill
+    manager.advance_drill(player)
+    assert manager.state == DRILL_RADAR_ROCKETS
+    assert len(manager.target_drones) == 2
+    for drone in manager.target_drones:
+        assert 0 <= drone.pos_x <= MAP_WIDTH
+        assert 0 <= drone.pos_y <= MAP_HEIGHT
+        assert 0 <= drone.x <= MAP_WIDTH
+        assert 0 <= drone.y <= MAP_HEIGHT
+
+    # Advance to Stratagem drill
+    manager.advance_drill(player)
+    assert manager.state == DRILL_STRATAGEM
+    assert manager.target_bunker is not None
+    assert 0 <= manager.target_bunker.pos_x <= MAP_WIDTH
+    assert 0 <= manager.target_bunker.pos_y <= MAP_HEIGHT
+    assert 0 <= manager.target_bunker.x <= MAP_WIDTH
+    assert 0 <= manager.target_bunker.y <= MAP_HEIGHT
+
+
+def test_academy_waypoint_gates_clamp_on_reset():
+    """Verify reset() clamps waypoint gates when player is near edge."""
+    from eagle1.systems.academy_briefing import MAP_WIDTH, MAP_HEIGHT
+
+    manager = AcademyTutorialManager()
+    player = MockPlayer(1500.0, 100.0)
+    manager.reset(player)
+
+    assert len(manager.waypoint_gates) == 3
+    for gate in manager.waypoint_gates:
+        assert 0 <= gate.x <= MAP_WIDTH
+        assert 0 <= gate.y <= MAP_HEIGHT
+
+
+def test_entity_out_of_bounds_clamping():
+    """Verify entities created with out-of-bounds coordinates clamp automatically."""
+    from eagle1.systems.academy_briefing import (
+        AcademyWaypointGate,
+        AcademyTargetDrone,
+        AcademyTargetBunker,
+        MAP_WIDTH,
+        MAP_HEIGHT,
+    )
+
+    # Negative coordinates
+    gate = AcademyWaypointGate(-500.0, -200.0, radius=85.0)
+    assert gate.x >= gate.radius
+    assert gate.y >= gate.radius
+
+    drone = AcademyTargetDrone(-100.0, -100.0)
+    assert drone.pos_x >= 50.0
+    assert drone.pos_y >= 50.0
+    assert drone.x >= 0
+    assert drone.y >= 0
+
+    bunker = AcademyTargetBunker(-50.0, -50.0)
+    assert bunker.pos_x >= 80.0
+    assert bunker.pos_y >= 80.0
+    assert bunker.x >= 0
+    assert bunker.y >= 0
+
+    # Oversized coordinates (> 3000)
+    gate_over = AcademyWaypointGate(5000.0, 5000.0, radius=85.0)
+    assert gate_over.x <= MAP_WIDTH - gate_over.radius
+    assert gate_over.y <= MAP_HEIGHT - gate_over.radius
+
+    drone_over = AcademyTargetDrone(4000.0, 4000.0)
+    assert drone_over.pos_x <= MAP_WIDTH - 50.0
+    assert drone_over.pos_y <= MAP_HEIGHT - 50.0
+
+    bunker_over = AcademyTargetBunker(4000.0, 4000.0)
+    assert bunker_over.pos_x <= MAP_WIDTH - 80.0
+    assert bunker_over.pos_y <= MAP_HEIGHT - 80.0
+
+
+def test_mobile_drone_stays_in_bounds():
+    """Verify mobile drone movement updates do not drift outside map boundaries."""
+    from eagle1.systems.academy_briefing import AcademyTargetDrone, MAP_WIDTH, MAP_HEIGHT
+
+    # Place drone at edge and simulate movement
+    drone = AcademyTargetDrone(52.0, 52.0, is_mobile=True)
+    for _ in range(500):
+        drone.update(0.1)
+        assert 0 <= drone.pos_x <= MAP_WIDTH
+        assert 0 <= drone.pos_y <= MAP_HEIGHT
+        assert 0 <= drone.x <= MAP_WIDTH
+        assert 0 <= drone.y <= MAP_HEIGHT
+
+
+
