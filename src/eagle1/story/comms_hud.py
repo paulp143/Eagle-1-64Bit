@@ -223,8 +223,10 @@ class CommsHUD:
         self.typewriter_chars = 0.0
         self.response_timer = 0.0
 
-        # Squelch audio
-        if self.audio and hasattr(self.audio, "play_radio_squelch"):
+        # Play choice confirmation tone
+        if self.audio and hasattr(self.audio, "play_radio_beep"):
+            self.audio.play_radio_beep()
+        elif self.audio and hasattr(self.audio, "play_radio_squelch"):
             self.audio.play_radio_squelch()
 
     def dismiss(self) -> None:

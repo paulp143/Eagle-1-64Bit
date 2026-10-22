@@ -312,6 +312,24 @@ def generate_sfx(output_dir):
     )
     save_wav(os.path.join(output_dir, "ceremony_fanfare.wav"), fanfare * 0.8)
 
+    # 27. Dedicated Military RF Radio Squelch Burst
+    dur = 0.22
+    t = np.linspace(0, dur, int(SAMPLE_RATE * dur), False)
+    burst_len = int(SAMPLE_RATE * 0.08)
+    noise_burst = np.random.uniform(-0.7, 0.7, burst_len) * np.linspace(1.0, 0.1, burst_len)
+    tail_t = t[burst_len:]
+    tail = 0.15 * np.sin(2 * np.pi * 950.0 * tail_t) * np.exp(-(tail_t - tail_t[0]) * 35.0)
+    radio_squelch = np.concatenate([noise_burst, tail])
+    save_wav(os.path.join(output_dir, "radio_squelch.wav"), radio_squelch * 0.7)
+
+    # 28. Tactical Radio Choice Confirmation Beep (DTMF-inspired chirp)
+    dur = 0.12
+    t = np.linspace(0, dur, int(SAMPLE_RATE * dur), False)
+    tone1 = 0.4 * np.sin(2 * np.pi * 1209.0 * t)
+    tone2 = 0.35 * np.sin(2 * np.pi * 697.0 * t)
+    radio_beep = (tone1 + tone2) * np.exp(-t * 28.0)
+    save_wav(os.path.join(output_dir, "radio_beep.wav"), radio_beep * 0.75)
+
     print("All SFX generated successfully.")
 
 
