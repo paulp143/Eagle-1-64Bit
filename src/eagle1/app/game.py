@@ -32,6 +32,7 @@ from eagle1.systems.hangar_cinematic import (
     PHASE_HANGAR,
     PHASE_DESCENT,
 )
+from eagle1.story import CommsHUD, StoryManager
 
 BASE_DIR = str(PROJECT_ROOT)
 audio_manager = get_audio_manager()
@@ -1926,12 +1927,14 @@ def move():
     primary_enemy = wave_manager.get_closest_enemy(player)
     light_enemy = primary_enemy
 
+    comms_scale = comms_hud.get_time_dilation() if comms_hud else 1.0
+
     # Update power-up subsystem (buff timers, drops, drone, micro-missiles, popups)
-    powerup_manager.update(1.0 / 60.0, player, primary_enemy)
+    powerup_manager.update(1.0 / 60.0 * comms_scale, player, primary_enemy)
 
     # Update ground support subsystem (Helldivers, airstrikes, supply drops, danger alerts)
     all_air_targets = list(wave_manager.enemies) + list(bomber_enemies)
-    ground_support_manager.update(1.0 / 60.0, player, all_air_targets, explosion_group, large_explosion_a_spritesheet.frames)
+    ground_support_manager.update(1.0 / 60.0 * comms_scale, player, all_air_targets, explosion_group, large_explosion_a_spritesheet.frames)
 
     if ground_support_manager.objective_phase == "COMPLETE":
         trigger_mission_complete()
@@ -1942,7 +1945,7 @@ def move():
         target_pt = (orbital_base.pos_x + 60, orbital_base.pos_y + 60) if (orbital_base and orbital_base.is_alive) else (player.pos_x, player.pos_y)
         for bomber in list(bomber_enemies):
             if not bomber.exploding:
-                b_speed_mult = SLOW_MO_TIME_SCALE if ground_support_manager.is_slow_mo else 1.0
+                b_speed_mult = (SLOW_MO_TIME_SCALE if ground_support_manager.is_slow_mo else 1.0) * comms_scale
                 bomber.update(target_pt, speed_factor=b_speed_mult)
                 if orbital_base and orbital_base.is_alive and math.hypot((bomber.pos_x + 32) - target_pt[0], (bomber.pos_y + 26) - target_pt[1]) <= 65.0:
                     orbital_base.take_damage(bomber.bullet_damage)
@@ -2214,8 +2217,8 @@ def move():
     player.rockets = [rocket for rocket in player.rockets if not rocket.used \
                     and 0 <= rocket.x <= MAP_WIDTH and 0 <= rocket.y <= MAP_HEIGHT]
 
-    # Enemy and enemy bullet movement affected by Time Slow, Frost/Freeze, and Stratagem Aiming Slow-Mo
-    slow_mo_mult = SLOW_MO_TIME_SCALE if ground_support_manager.is_slow_mo else 1.0
+    # Enemy and enemy bullet movement affected by Time Slow, Frost/Freeze, Stratagem Aiming, and Comms Dialogue
+    slow_mo_mult = (SLOW_MO_TIME_SCALE if ground_support_manager.is_slow_mo else 1.0) * comms_scale
     speed_factor = powerup_manager.modify_enemy_speed(1.0) * slow_mo_mult
     bullet_speed_factor = powerup_manager.modify_enemy_bullet_speed(1.0) * slow_mo_mult
 
@@ -2848,12 +2851,19 @@ def draw(mouse_pos=None):
             pygame.draw.rect(vignette_surf, (0, 150, 220, 20), (8, 8, GAME_WIDTH - 16, GAME_HEIGHT - 16), 8)
             canvas.blit(vignette_surf, (0, 0))
 
+        # In-Flight Radio Transceiver Overlay
+        if comms_hud.is_active:
+            comms_hud.render(canvas)
+
 
 player = Player()
 wave_manager = WaveManager()
 health_drops = []
 ground_support_manager = GroundSupportManager()
 combat_juice = CombatJuiceManager()
+story_manager = StoryManager(audio_manager=audio_manager)
+comms_hud = CommsHUD(story_manager=story_manager, audio_manager=audio_manager, screen_width=GAME_WIDTH, screen_height=GAME_HEIGHT)
+ground_support_manager.set_story_manager(story_manager)
 light_enemy = wave_manager.enemies[0] if wave_manager.enemies else Light_Enemy()
 player.bullets = []
 player.rockets = []
@@ -2873,6 +2883,9 @@ def run_game():
                     add_highscore(player.score)
                 running = False
                 break
+            if comms_hud.is_active and event.type == pygame.KEYDOWN:
+                if comms_hud.handle_event(event):
+                    continue
             if event.type == SHOOTING_END:
                 player.shooting = False
             if event.type == ROCKET_SHOOTING_END:
@@ -3264,6 +3277,7 @@ def run_game():
         if not running:
             break
 
+        comms_hud.update(1.0 / 60.0)
         keys = pygame.key.get_pressed()
 
         if game_state == "main_menu":
@@ -3353,7 +3367,7 @@ def run_game():
                         player.velocity_x = max(player.min_speed, player.velocity_x - player.acceleration)
                         player.velocity_y = max(player.min_speed, player.velocity_y - player.acceleration)
 
-                    steering_factor = PLAYER_STEERING_SLOW_MO_FACTOR if ground_support_manager.is_slow_mo else 1.0
+                    steering_factor = (PLAYER_STEERING_SLOW_MO_FACTOR if ground_support_manager.is_slow_mo else 1.0) * comms_hud.get_time_dilation()
                     player.pos_x += dx * player.velocity_x * steering_factor
                     player.pos_y += dy * player.velocity_y * steering_factor
 

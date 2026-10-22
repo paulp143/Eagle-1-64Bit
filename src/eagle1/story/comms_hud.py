@@ -147,9 +147,11 @@ class CommsHUD:
             self.typewriter_chars += self.typewriter_speed * dt
             if self.typewriter_chars >= total_len:
                 self.typewriter_chars = float(total_len)
-                if not self.selected_stance and self.current_node and self.current_node.options:
-                    self.is_waiting_for_choice = True
-                    self.target_time_dilation = 0.4
+
+        if not self.is_waiting_for_choice and not self.selected_stance and self.current_node and self.current_node.options:
+            if self.typewriter_chars >= total_len:
+                self.is_waiting_for_choice = True
+                self.target_time_dilation = 0.4
 
         # Response dismissal timer
         if self.selected_stance is not None:

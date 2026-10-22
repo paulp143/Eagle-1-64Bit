@@ -10,6 +10,8 @@ Verifies:
 """
 
 import os
+from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import MagicMock
 
@@ -22,6 +24,7 @@ import pygame
 pygame.init()
 pygame.display.set_mode((1280, 720))
 
+from eagle1.story.campaign_save import CampaignSaveManager
 from eagle1.story.comms_hud import CommsHUD
 from eagle1.story.story_manager import StoryManager
 
@@ -31,8 +34,13 @@ class TestCommsHUD(unittest.TestCase):
 
     def setUp(self):
         self.mock_audio = MagicMock()
-        self.story_manager = StoryManager(audio_manager=self.mock_audio)
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.save_manager = CampaignSaveManager(data_dir=Path(self.tmpdir.name))
+        self.story_manager = StoryManager(audio_manager=self.mock_audio, save_manager=self.save_manager)
         self.hud = CommsHUD(story_manager=self.story_manager, audio_manager=self.mock_audio)
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
 
     def test_initial_state(self):
         """HUD should initialize inactive with nominal 1.0 time dilation."""

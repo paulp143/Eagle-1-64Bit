@@ -2058,6 +2058,11 @@ class GroundSupportManager:
         self.destroyed_fabs_count = 0
         self.strider_destroyed = False
 
+        # Story Campaign Manager & Casualty Tracking
+        self.story_manager = None
+        self._downed_unit_ids = set()
+        self._squad_wipe_reported = False
+
         # Stratagem Loadout & 5-Slot Weapon System
         self.active_loadout = [
             AirStrikeType.STRAFE,
@@ -2088,6 +2093,10 @@ class GroundSupportManager:
     @property
     def is_combat_paused(self):
         return self.super_destroyer.is_combat_paused
+
+    def set_story_manager(self, story_manager):
+        """Bind StoryManager to receive real-time casualty and squad wipe events."""
+        self.story_manager = story_manager
 
     def _sync_hero_from_super_destroyer(self):
         self.hero_score = self.super_destroyer.hero_score
@@ -2225,6 +2234,8 @@ class GroundSupportManager:
         self.enemy_fabricators.clear()
         self.enemy_ground_units.clear()
         self.factory_strider = None
+        self._downed_unit_ids.clear()
+        self._squad_wipe_reported = False
 
         if mission_config and not mission_config.get("has_ground", True):
             # Pure aerial combat mission: disable ground forces & fabricators
@@ -2293,6 +2304,11 @@ class GroundSupportManager:
         self.survivors_count = HELLDIVER_COUNT
         self.destroyed_fabs_count = 0
         self.strider_destroyed = False
+
+        # Story Campaign Manager & Casualty Tracking
+        self.story_manager = None
+        self._downed_unit_ids = set()
+        self._squad_wipe_reported = False
         self.beacon = ExtractionBeacon(self.outpost_center[0], self.outpost_center[1])
         self.weapon_menu = AirStrikeWeaponMenu(1280, 720)
         self.super_destroyer = SuperDestroyerManager()
@@ -2374,6 +2390,18 @@ class GroundSupportManager:
 
         living_units = [u for u in self.units if u.is_alive]
         self.survivors_count = len([u for u in self.units if u.health > 0 and u.state != "DOWNED"])
+
+        # Notify StoryManager on Helldiver casualties and squad wipe
+        for u in self.units:
+            if (u.state == "DOWNED" or u.health <= 0) and u.index not in self._downed_unit_ids:
+                self._downed_unit_ids.add(u.index)
+                if self.story_manager:
+                    self.story_manager.on_helldiver_death(u.index)
+
+        if self.units and self.survivors_count == 0 and not self._squad_wipe_reported:
+            self._squad_wipe_reported = True
+            if self.story_manager:
+                self.story_manager.on_squad_wipe()
 
         if living_units:
             squad_cx = sum(u.pos_x for u in living_units) / len(living_units)
