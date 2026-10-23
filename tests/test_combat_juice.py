@@ -131,3 +131,25 @@ def test_screen_shake_phase_advancement_and_reset():
     assert shake.remaining_frames == 0
     assert shake.get_offset() == (0, 0)
 
+
+def test_screen_shake_decay_is_monotonic_no_flicker():
+    """ScreenShake offset must decay monotonically along its kick vector without sign flips or 60Hz jitter."""
+    shake = ScreenShake()
+    # Trigger pure horizontal shockwave to the right (direction_rad = 0.0)
+    shake.trigger(intensity=8.0, duration_frames=6, direction_rad=0.0)
+
+    offsets = []
+    for _ in range(6):
+        offsets.append(shake.get_offset())
+        shake.update()
+
+    x_offsets = [ox for ox, oy in offsets]
+    # Verify all offsets are >= 0 (strictly no negative sign flip / vibration)
+    assert all(ox >= 0 for ox in x_offsets)
+    # Verify offsets decrease monotonically to zero
+    for i in range(len(x_offsets) - 1):
+        assert x_offsets[i] >= x_offsets[i + 1]
+    # Final state is cleanly zero
+    assert shake.get_offset() == (0, 0)
+
+

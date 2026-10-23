@@ -1315,8 +1315,6 @@ class Player(pygame.Rect):
                 audio_manager.play_sfx("laser_rapid")
             else:
                 audio_manager.play_sfx("laser_player")
-            if "combat_juice" in globals():
-                combat_juice.trigger_shake(1.8, 3)
 
             bullet_offsets = [
                 (0, 27),
@@ -1359,8 +1357,6 @@ class Player(pygame.Rect):
             self.rocket_shooting = True
             self.used_rockets += 1
             audio_manager.play_sfx("rocket_launch")
-            if "combat_juice" in globals():
-                combat_juice.trigger_shake(3.0, 5)
 
             wing_offset_x = 18 if (self.used_rockets % 2 == 1) else -18
             wing_offset_y = 10
@@ -2062,7 +2058,7 @@ def move():
                     enemy.health -= rocket.damage
                     enemy.trigger_agro(wave_manager.enemies)
                     if "combat_juice" in globals():
-                        combat_juice.trigger_shake(7.5, 10)
+                        combat_juice.trigger_shake(4.5, 6)
                         combat_juice.spawn_hit_sparks(
                             rocket.x + ROCKET_WIDTH // 2,
                             rocket.y + ROCKET_HEIGHT // 2,
@@ -2148,7 +2144,7 @@ def move():
     for enemy in wave_manager.enemies:
         if not enemy.exploding and player.colliderect(enemy):
             if resolve_aerial_collision(player, enemy) and "combat_juice" in globals():
-                combat_juice.trigger_shake(9.5, 12)
+                combat_juice.trigger_shake(5.5, 8)
                 combat_juice.spawn_hit_sparks(
                     (player.pos_x + enemy.pos_x) * 0.5 + PLAYER_WIDTH * 0.5,
                     (player.pos_y + enemy.pos_y) * 0.5 + PLAYER_HEIGHT * 0.5,
@@ -2365,8 +2361,11 @@ def draw(mouse_pos=None):
         camera_x = max(0, min(MAP_WIDTH - GAME_WIDTH, player.pos_x + PLAYER_WIDTH / 2 - GAME_WIDTH / 2))
         camera_y = max(0, min(MAP_HEIGHT - GAME_HEIGHT, player.pos_y + PLAYER_HEIGHT / 2 - GAME_HEIGHT / 2))
 
-    # Snap camera to integer pixels to prevent sub-pixel tile shimmer and seam wave artifacts
-    shake_ox, shake_oy = combat_juice.get_camera_offset()
+    # Snap camera to integer pixels; apply screen shake only if enabled in Settings
+    if "settings_menu" in globals() and not settings_menu.toggle_screen_shake.state:
+        shake_ox, shake_oy = 0, 0
+    else:
+        shake_ox, shake_oy = combat_juice.get_camera_offset()
     camera_x = int(round(camera_x)) + shake_ox
     camera_y = int(round(camera_y)) + shake_oy
     camera_x = max(0, min(MAP_WIDTH - GAME_WIDTH, camera_x))

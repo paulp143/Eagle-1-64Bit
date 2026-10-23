@@ -10,14 +10,14 @@ FRAME_SPEED = 0.4
 
 
 class ScreenShake:
-    """Non-linear trauma spring camera shake controller.
+    """Directional impulse camera shake with smooth exponential critically-damped spring recoil.
 
-    Implements a GDC-style quadratic trauma model with dual-frequency harmonic spring
-    oscillations. Replaces jarring 60Hz white-noise jitter with physical camera judder,
-    directional impulse recoil, and smooth non-linear attenuation.
+    Eliminates 60Hz alternating sign jitter, flickering, and tile-tearing artifacts.
+    Produces a single crisp physical shockwave kick in the impact direction that
+    smoothly eases back to center.
     """
 
-    MAX_OFFSET_PIXELS = 24.0
+    MAX_OFFSET_PIXELS = 16.0
 
     def __init__(self):
         self.intensity = 0.0
@@ -26,53 +26,59 @@ class ScreenShake:
         self.phase = 0.0
         self.frequency = 0.85
         self.angle_seed = 0.0
+        self.kick_x = 0.0
+        self.kick_y = 0.0
 
-    def trigger(self, intensity: float, duration_frames: int = 6):
-        """Trigger or amplify camera shake if new intensity exceeds active shake."""
-        trauma = (
-            self.remaining_frames / max(1, self.total_frames)
+    def trigger(self, intensity: float, duration_frames: int = 6, direction_rad: float | None = None):
+        """Trigger camera shockwave impulse.
+
+        Args:
+            intensity: Maximum pixel displacement (clamped to MAX_OFFSET_PIXELS).
+            duration_frames: Number of frames to ease out.
+            direction_rad: Optional angle of the impulse kick. If None, picks a randomized vector.
+        """
+        current_effective = (
+            self.intensity * ((self.remaining_frames / max(1, self.total_frames)) ** 2)
             if self.remaining_frames > 0
             else 0.0
         )
-        current_effective = self.intensity * (trauma**2)
+
         if intensity >= current_effective or self.remaining_frames <= 0:
             self.intensity = min(self.MAX_OFFSET_PIXELS, float(intensity))
             self.remaining_frames = max(1, int(duration_frames))
             self.total_frames = self.remaining_frames
-            self.angle_seed = random.uniform(0.0, math.tau)
+            angle = direction_rad if direction_rad is not None else random.uniform(0.0, math.tau)
+            self.angle_seed = angle
+            self.kick_x = math.cos(angle)
+            self.kick_y = math.sin(angle)
             self.phase = 0.0
 
     def update(self):
-        """Advance shake decay and harmonic phase by one frame."""
+        """Advance shake decay and phase by one frame."""
         if self.remaining_frames > 0:
             self.remaining_frames -= 1
             self.phase += self.frequency
             if self.remaining_frames <= 0:
                 self.intensity = 0.0
                 self.phase = 0.0
+                self.kick_x = 0.0
+                self.kick_y = 0.0
 
     def get_offset(self) -> tuple[int, int]:
         """Return integer pixel offset (dx, dy) for the current frame.
 
-        Uses trauma^2 for snappy impact response and dual harmonic sine waves for
-        organic spring dampening rather than white noise.
+        Uses smooth quadratic ease-out along the impulse vector without high-frequency
+        sign flips, preventing screen tearing, micro-stutter, and flickering illusions.
         """
         if self.remaining_frames <= 0 or self.intensity <= 0.0:
             return (0, 0)
-        trauma = self.remaining_frames / max(1, self.total_frames)
-        power = trauma * trauma
 
-        p = self.phase + self.angle_seed
-        wave_x = 0.72 * math.sin(p) + 0.28 * math.sin(p * 2.31 + 1.2)
-        wave_y = 0.72 * math.cos(p * 1.15 + 0.8) + 0.28 * math.sin(p * 2.73 + 2.1)
+        # Monotonic quadratic ease-out: starts at 1.0, smoothly drops to 0.0
+        progress = 1.0 - (self.remaining_frames / max(1, self.total_frames))
+        damping = (1.0 - progress) ** 2
 
-        if trauma > 0.60:
-            jitter = (trauma - 0.60) * 0.20
-            wave_x += random.uniform(-jitter, jitter)
-            wave_y += random.uniform(-jitter, jitter)
-
-        ox = int(round(self.intensity * power * wave_x))
-        oy = int(round(self.intensity * power * wave_y))
+        ox = int(round(self.intensity * damping * self.kick_x))
+        oy = int(round(self.intensity * damping * self.kick_y))
         return (ox, oy)
 
     def reset(self):
@@ -81,6 +87,8 @@ class ScreenShake:
         self.total_frames = 1
         self.phase = 0.0
         self.angle_seed = 0.0
+        self.kick_x = 0.0
+        self.kick_y = 0.0
 
 
 class CombatJuiceManager:
