@@ -1,6 +1,7 @@
 """Campaign Story and Interactive Dialogue System for Eagle-1-64Bit."""
 
 from eagle1.story.campaign_save import CampaignSaveManager, CampaignSaveState
+from eagle1.story.comms_hud import CommsHUD
 from eagle1.story.dialogue_db import (
     DIALOGUE_DATABASE,
     DialogueNode,
@@ -14,6 +15,7 @@ from eagle1.story.story_manager import StoryManager
 __all__ = [
     "CampaignSaveManager",
     "CampaignSaveState",
+    "CommsHUD",
     "DIALOGUE_DATABASE",
     "DialogueNode",
     "DialogueOption",

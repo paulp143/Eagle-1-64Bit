@@ -5,7 +5,7 @@ import random
 import pygame
 
 from eagle1.data.player_profile import PlayerProfileManager
-from eagle1.effects import Large_explosion_a, Spritesheet
+from eagle1.effects import CombatJuiceManager, Large_explosion_a, Spritesheet
 from eagle1.paths import PROJECT_ROOT, get_user_data_dir, image_search_dirs, verify_path_exact_casing
 from eagle1.systems.audio_manager import get_audio_manager
 from eagle1.systems.ground_support import (
@@ -32,6 +32,7 @@ from eagle1.systems.hangar_cinematic import (
     PHASE_HANGAR,
     PHASE_DESCENT,
 )
+from eagle1.story import CommsHUD, StoryManager
 
 BASE_DIR = str(PROJECT_ROOT)
 audio_manager = get_audio_manager()
@@ -49,20 +50,126 @@ PLAYER_HEIGHT = 61
 PLAYER_MAX_HEALTH = 5
 PLAYER_MAX_BULLETS = 200
 PLAYER_RELOAD_TIME = 5000
-PLAYER_ATTACK_DAMAGE_KAMIKAZE = 4
+PLAYER_ATTACK_DAMAGE_KAMIKAZE = 6
 PLAYER_INVINCIBLE_TIME = 1000
 PLAYER_MAX_SHIELD = 20
 PLAYER_MIN_SPEED = 2.0
 PLAYER_MAX_SPEED = 7.0
+CORNER_SPEED = 4.5
+TURN_RATE_STALL_MULT = 0.80
+TURN_RATE_CORNER_MULT = 1.35
+TURN_RATE_MAX_SPEED_MULT = 0.75
 PLAYER_MOVEMENT_SPEED_Y = PLAYER_MAX_SPEED / 2
 PLAYER_MOVEMENT_SPEED_X = PLAYER_MAX_SPEED / 2
 PLAYER_ACCELERATION = 0.15
-PLAYER_TURN_RATE = 3
+PLAYER_TURN_RATE = 3.2
 PLAYER_BULLET_DAMAGE = 1
+
+
+def calculate_turn_rate(speed: float, base_turn_rate: float) -> float:
+    """Compute effective angular turn rate using a Corner Speed aerodynamic curve.
+
+    - At stall speed (<= PLAYER_MIN_SPEED = 2.0): multiplier is 0.80 (sluggish authority).
+    - At corner speed (CORNER_SPEED = 4.5): multiplier peaks at 1.35 (maximum bite).
+    - At max speed (>= PLAYER_MAX_SPEED = 7.0): multiplier drops to 0.75 (high-G wide radius).
+    """
+    spd = float(speed)
+    if spd <= PLAYER_MIN_SPEED:
+        mult = TURN_RATE_STALL_MULT
+    elif spd <= CORNER_SPEED:
+        t = (spd - PLAYER_MIN_SPEED) / (CORNER_SPEED - PLAYER_MIN_SPEED)
+        mult = TURN_RATE_STALL_MULT + t * (TURN_RATE_CORNER_MULT - TURN_RATE_STALL_MULT)
+    elif spd <= PLAYER_MAX_SPEED:
+        t = (spd - CORNER_SPEED) / (PLAYER_MAX_SPEED - CORNER_SPEED)
+        mult = TURN_RATE_CORNER_MULT - t * (TURN_RATE_CORNER_MULT - TURN_RATE_MAX_SPEED_MULT)
+    else:
+        over_t = min(1.0, (spd - PLAYER_MAX_SPEED) / 3.0)
+        mult = TURN_RATE_MAX_SPEED_MULT - over_t * 0.10
+    return float(base_turn_rate) * mult
+
+
+COLLISION_COOLDOWN_MS = 500
+COLLISION_SEPARATION_DIST = 48.0
+
+
+def calculate_directional_gun_damage(
+    base_damage: float,
+    bullet_dx: float,
+    bullet_dy: float,
+    enemy_angle: float,
+) -> float:
+    """Calculate aspect-angle gun damage against an aerial fighter.
+
+    Enemy forward unit vector is (sin(rad), cos(rad)).
+    - Dot product >= +0.35 (rear ~140° tail cone / engines): 1.50x critical damage.
+    - Dot product <= -0.50 (frontal 120° nose armor): 0.65x deflected damage.
+    - Side / beam aspect (-0.50 < dot < +0.35): 1.15x fuselage damage.
+    """
+    b_mag = math.hypot(bullet_dx, bullet_dy)
+    if b_mag < 1e-6:
+        return float(base_damage)
+    bx = bullet_dx / b_mag
+    by = bullet_dy / b_mag
+
+    rad = math.radians(enemy_angle)
+    ex = math.sin(rad)
+    ey = math.cos(rad)
+
+    dot = bx * ex + by * ey
+    if dot >= 0.35:
+        return float(base_damage) * 1.50
+    elif dot <= -0.50:
+        return float(base_damage) * 0.50
+    else:
+        return float(base_damage) * 1.15
+
+
+def resolve_aerial_collision(player_obj, enemy_obj, current_time_ms=None):
+    """Resolve mid-air collision with physical bounce-back, momentum loss, and hull trauma.
+
+    Prevents instant kamikaze kills and stops multi-frame overlap damage grinding during
+    player invulnerability frames.
+    """
+    now = current_time_ms if current_time_ms is not None else pygame.time.get_ticks()
+    last_hit = getattr(enemy_obj, "last_collision_time", -99999)
+
+    p_cx = player_obj.pos_x + PLAYER_WIDTH / 2
+    p_cy = player_obj.pos_y + PLAYER_HEIGHT / 2
+    e_cx = enemy_obj.pos_x + LIGHT_ENEMY_WIDTH / 2
+    e_cy = enemy_obj.pos_y + LIGHT_ENEMY_HEIGHT / 2
+
+    dx = p_cx - e_cx
+    dy = p_cy - e_cy
+    dist = math.hypot(dx, dy)
+    if dist < 0.001:
+        rad = math.radians(player_obj.angle)
+        nx, ny = math.sin(rad), math.cos(rad)
+    else:
+        nx, ny = dx / dist, dy / dist
+
+    push_half = COLLISION_SEPARATION_DIST / 2.0
+    player_obj.pos_x = max(0.0, min(float(MAP_WIDTH - PLAYER_WIDTH), player_obj.pos_x + nx * push_half))
+    player_obj.pos_y = max(0.0, min(float(MAP_HEIGHT - PLAYER_HEIGHT), player_obj.pos_y + ny * push_half))
+    player_obj.x = int(player_obj.pos_x)
+    player_obj.y = int(player_obj.pos_y)
+
+    enemy_obj.pos_x = max(50.0, min(float(MAP_WIDTH - LIGHT_ENEMY_WIDTH - 50.0), enemy_obj.pos_x - nx * push_half))
+    enemy_obj.pos_y = max(50.0, min(float(MAP_HEIGHT - LIGHT_ENEMY_HEIGHT - 50.0), enemy_obj.pos_y - ny * push_half))
+    enemy_obj.x = int(enemy_obj.pos_x)
+    enemy_obj.y = int(enemy_obj.pos_y)
+
+    player_obj.velocity_x = max(player_obj.min_speed, player_obj.velocity_x * 0.55)
+    player_obj.velocity_y = max(player_obj.min_speed, player_obj.velocity_y * 0.55)
+
+    if now - last_hit >= COLLISION_COOLDOWN_MS:
+        enemy_obj.last_collision_time = now
+        enemy_obj.health -= getattr(player_obj, "kamikaze_attack_damage", PLAYER_ATTACK_DAMAGE_KAMIKAZE)
+        player_obj.take_damage(16.0)
 
 BULLET_WIDTH = 9
 BULLET_HEIGHT = 12
-BULLET_VELOCITY_Y = 8
+BULLET_VELOCITY_Y = 9.5
+BULLET_MAX_RANGE = 460.0
 BULLET_UI_WIDTH = BULLET_WIDTH / 2  # 4 px
 BULLET_UI_HEIGHT = BULLET_HEIGHT / 2
 BULLET_SHOOTING_TIMER = 100
@@ -70,8 +177,8 @@ BULLET_SHOOTING_TIMER = 100
 # Raketen-Parameter (Homing Rocket System)
 ROCKET_WIDTH = 12
 ROCKET_HEIGHT = 16
-ROCKET_VELOCITY = 7.0
-ROCKET_TURN_RATE = 2.0         
+ROCKET_VELOCITY = 11.5
+ROCKET_TURN_RATE = 5.5
 ROCKET_DAMAGE = 20
 ROCKET_SHOOTING_TIMER = 350
 ROCKET_MAX_FLIGHT_TIME = 2500  
@@ -84,7 +191,27 @@ RADAR_CONE_MIN_RANGE = 300
 RADAR_OMNI_RANGE = 420
 
 PLAYER_MAX_ROCKETS = 4
-PLAYER_ROCKET_RELOAD_TIME = 25000
+PLAYER_ROCKET_RELOAD_TIME = 12000
+
+
+def calculate_missile_intercept_point(rx: float, ry: float, r_speed: float, target) -> tuple:
+    """Compute predicted lead-intercept point for a homing missile against a moving target."""
+    tx = float(getattr(target, "pos_x", getattr(target, "x", 0.0))) + getattr(target, "width", LIGHT_ENEMY_WIDTH) / 2.0
+    ty = float(getattr(target, "pos_y", getattr(target, "y", 0.0))) + getattr(target, "height", LIGHT_ENEMY_HEIGHT) / 2.0
+
+    dist = math.hypot(tx - rx, ty - ry)
+    t_intercept = min(35.0, dist / max(1.0, float(r_speed)))
+
+    t_speed = float(getattr(target, "speed", 0.0))
+    if t_speed > 0.0 and hasattr(target, "angle"):
+        t_rad = math.radians(float(target.angle))
+        v_tx = math.sin(t_rad) * t_speed
+        v_ty = math.cos(t_rad) * t_speed
+    else:
+        v_tx = 0.0
+        v_ty = 0.0
+
+    return (tx + v_tx * t_intercept, ty + v_ty * t_intercept)
 
 SHIELD_UI_WIDTH = 12
 SHIELD_UI_HEIGHT = 8
@@ -94,7 +221,7 @@ BORDER_TICK_DAMAGE = 0.1
 
 LIGHT_ENEMY_WIDTH = 50
 LIGHT_ENEMY_HEIGHT = 46
-LIGHT_ENEMY_HEALTH = 4
+LIGHT_ENEMY_HEALTH = 20
 LIGHT_ENEMY_EXPLOSION_DAMAGE = 5
 LIGHT_ENEMY_EXPLOSION_WIDTH = 50
 LIGHT_ENEMY_EXPLOSION_HEIGHT = 46
@@ -103,7 +230,7 @@ LIGHT_ENEMY_BULLET_VELOCITY_Y = 5
 LIGHT_ENEMY_BULLET_SPEED = 5.0
 LIGHT_ENEMY_BULLET_DAMAGE = 1
 LIGHT_ENEMY_SPEED = 2.5
-LIGHT_ENEMY_TURN_RATE = 2.0
+LIGHT_ENEMY_TURN_RATE = 1.55
 LIGHT_ENEMY_ALIGNMENT_THRESHOLD = 15.0
 LIGHT_ENEMY_VELOCITY_X = 2
 LIGHT_ENEMY_VELOCITY_Y = 2
@@ -970,6 +1097,8 @@ class Player(pygame.Rect):
             self.image = pygame.transform.rotate(bullet_image, angle)
             self.used = False
             self.speed = BULLET_VELOCITY_Y
+            self.max_range = float(BULLET_MAX_RANGE)
+            self.distance_traveled = 0.0
             rad = math.radians(angle)
             self.dx = -math.sin(rad) * self.speed
             self.dy = -math.cos(rad) * self.speed
@@ -979,6 +1108,9 @@ class Player(pygame.Rect):
             self.pos_y += self.dy
             self.x = int(self.pos_x)
             self.y = int(self.pos_y)
+            self.distance_traveled += self.speed
+            if self.distance_traveled >= self.max_range:
+                self.used = True
 
     class Rocket(pygame.Rect):
         """Zielsuchende Rakete mit sanfter Drehphysik (turn_rate=2.0) und maximaler Flugzeit."""
@@ -1059,13 +1191,12 @@ class Player(pygame.Rect):
                     self.lock_on(targets, player=player)
 
             if self.target and not getattr(self.target, 'exploding', False) and getattr(self.target, 'health', 0) > 0:
-                tx = self.target.x + getattr(self.target, 'width', LIGHT_ENEMY_WIDTH) / 2
-                ty = self.target.y + getattr(self.target, 'height', LIGHT_ENEMY_HEIGHT) / 2
                 cx = self.pos_x + ROCKET_WIDTH / 2
                 cy = self.pos_y + ROCKET_HEIGHT / 2
+                lead_x, lead_y = calculate_missile_intercept_point(cx, cy, self.speed, self.target)
 
-                diff_x = tx - cx
-                diff_y = ty - cy
+                diff_x = lead_x - cx
+                diff_y = lead_y - cy
 
                 desired_angle = math.degrees(math.atan2(-diff_x, -diff_y)) % 360
                 angle_diff = (desired_angle - self.angle + 180) % 360 - 180
@@ -1134,6 +1265,10 @@ class Player(pygame.Rect):
     def get_forward_speed(self):
         """Returns the scalar forward movement speed of the ship."""
         return float(self.velocity_x)
+
+    def get_effective_turn_rate(self):
+        """Returns the speed-dependent angular turn rate peaking at CORNER_SPEED."""
+        return calculate_turn_rate(self.get_forward_speed(), self.turn_rate)
 
     def toggle_radar_mode(self):
         """Wechselt zwischen CONE (Geradeaus-Fernbereich) und OMNI (360°-Nahbereich)."""
@@ -1324,11 +1459,13 @@ class Light_Enemy(pygame.Rect):
                 x = random.randrange(100, MAP_WIDTH - LIGHT_ENEMY_WIDTH - 100, LIGHT_ENEMY_WIDTH * 2)
             if y is None:
                 y = random.randrange(100, 400)
-        pygame.Rect.__init__(self, int(x), int(y), LIGHT_ENEMY_WIDTH, LIGHT_ENEMY_HEIGHT)
-        self.pos_x = float(x)
-        self.pos_y = float(y)
-        self.x = int(x)
-        self.y = int(y)
+        safe_x = max(50.0, min(float(MAP_WIDTH - LIGHT_ENEMY_WIDTH - 50.0), float(x)))
+        safe_y = max(50.0, min(float(MAP_HEIGHT - LIGHT_ENEMY_HEIGHT - 50.0), float(y)))
+        pygame.Rect.__init__(self, int(safe_x), int(safe_y), LIGHT_ENEMY_WIDTH, LIGHT_ENEMY_HEIGHT)
+        self.pos_x = float(safe_x)
+        self.pos_y = float(safe_y)
+        self.x = int(safe_x)
+        self.y = int(safe_y)
         self.original_image = light_enemy_image
         self.image = light_enemy_image
         self.angle = 0.0
@@ -1347,10 +1484,18 @@ class Light_Enemy(pygame.Rect):
         # Squadron & AI State
         self.squadron_id = squadron_id
         self.state = "PATROL"  # "PATROL" or "AGRO"
+        self.bfm_mode = "PATROL"
+        self.bfm_commit_timer = 0
+        self.jink_cooldown_timer = 0
+        self.target_heading = 0.0
         self.orbit_direction = orbit_direction
         self.orbit_radius = orbit_radius
         self.formation_offset = formation_offset
         self.orbit_angle = math.degrees(math.atan2(self.pos_x - MAP_WIDTH / 2, self.pos_y - MAP_HEIGHT / 2))
+
+    def get_effective_turn_rate(self):
+        """Returns the speed-dependent angular turn rate peaking at CORNER_SPEED."""
+        return calculate_turn_rate(self.speed, self.turn_rate)
 
     def trigger_agro(self, enemies=None):
         self.state = "AGRO"
@@ -1388,19 +1533,79 @@ class Light_Enemy(pygame.Rect):
                 if dist_to_player > ENEMY_DEAGRO_RADIUS:
                     self.state = "PATROL"
 
-            # Determine target angle & speed by state
+            # Determine target angle & speed by state (BFM Pursuit Geometry)
             if self.state == "AGRO":
                 dx = pcx - cx
                 dy = pcy - cy
-                if dist_to_player < 180.0:
-                    # Break-away evasive flight: strafe pass rather than head-on suicide ramming
-                    evade_sign = getattr(self, "orbit_direction", 1)
-                    target_angle = (math.degrees(math.atan2(dx, dy)) + evade_sign * 75.0) % 360
-                    self.speed = ENEMY_AGRO_SPEED * 1.2
+                safe_dist = max(0.001, dist_to_player)
+                los_x = dx / safe_dist
+                los_y = dy / safe_dist
+
+                p_rad = math.radians(getattr(target, "angle", 0.0))
+                p_fx = -math.sin(p_rad)
+                p_fy = -math.cos(p_rad)
+
+                e_rad = math.radians(self.angle)
+                e_fx = math.sin(e_rad)
+                e_fy = math.cos(e_rad)
+
+                # +1.0 = pointing directly at opponent; -1.0 = pointing directly away
+                enemy_closing_dot = e_fx * los_x + e_fy * los_y
+                player_closing_dot = -(p_fx * los_x + p_fy * los_y)
+                evade_sign = 1 if getattr(self, "orbit_direction", 1) >= 0 else -1
+
+                if self.jink_cooldown_timer > 0:
+                    self.jink_cooldown_timer -= 1
+
+                if self.bfm_commit_timer > 0:
+                    # Stay committed to current break heading so enemy passes through the merge
+                    # instead of orbiting in a tiny circle
+                    self.bfm_commit_timer -= 1
+                    target_angle = self.target_heading
+                elif dist_to_player < 280.0 and enemy_closing_dot > 0.35 and player_closing_dot > 0.35:
+                    # 1. MERGE_BREAK: True head-on merge -> commit to a lateral pass-through slice
+                    self.bfm_mode = "MERGE_BREAK"
+                    self.bfm_commit_timer = 32
+                    los_angle = math.degrees(math.atan2(dx, dy))
+                    if self.squadron_id % 2 == 0:
+                        # 1-Circle Radius Fighter: brake to Corner Speed and cut inside the turn
+                        self.speed = CORNER_SPEED
+                        target_angle = (los_angle + evade_sign * 50.0) % 360
+                    else:
+                        # 2-Circle Rate Fighter: extend through merge at high speed for rate flow
+                        self.speed = CORNER_SPEED * 1.15
+                        target_angle = (los_angle + evade_sign * 70.0) % 360
+                elif (
+                    dist_to_player < 380.0
+                    and enemy_closing_dot < -0.30
+                    and player_closing_dot > 0.70
+                    and self.jink_cooldown_timer <= 0
+                ):
+                    # 2. EVASIVE_JINK: Brief defensive jink when player first lines up on enemy's six,
+                    # followed by a cooldown window so the player can track and finish the kill
+                    self.bfm_mode = "EVASIVE_JINK"
+                    self.bfm_commit_timer = 20
+                    self.jink_cooldown_timer = 150
+                    self.speed = CORNER_SPEED
+                    away_angle = math.degrees(math.atan2(-dx, -dy))
+                    target_angle = (away_angle + evade_sign * 65.0) % 360
+                elif dist_to_player < 420.0 and player_closing_dot < -0.35:
+                    # 3. WEZ_ATTACK: Slotted behind player's tail -> pull lead pursuit for gun burst
+                    self.bfm_mode = "WEZ_ATTACK"
+                    self.speed = CORNER_SPEED
+                    lead_x = pcx + p_fx * 40.0
+                    lead_y = pcy + p_fy * 40.0
+                    target_angle = math.degrees(math.atan2(lead_x - cx, lead_y - cy))
                 else:
-                    self.speed = ENEMY_AGRO_SPEED
-                    target_angle = math.degrees(math.atan2(dx, dy))
+                    # 4. TAIL_STALK: Lag pursuit aiming behind player's tail (scales down at close range)
+                    self.bfm_mode = "TAIL_STALK"
+                    self.speed = CORNER_SPEED if dist_to_player < 550.0 else ENEMY_AGRO_SPEED * 1.35
+                    lag_offset = min(140.0, dist_to_player * 0.30)
+                    tail_x = pcx - p_fx * lag_offset
+                    tail_y = pcy - p_fy * lag_offset
+                    target_angle = math.degrees(math.atan2(tail_x - cx, tail_y - cy))
             else:
+                self.bfm_mode = "PATROL"
                 self.speed = ENEMY_PATROL_SPEED
                 angular_speed = (self.speed / max(100.0, self.orbit_radius)) * (180.0 / math.pi) * self.orbit_direction * speed_factor
                 self.orbit_angle = (self.orbit_angle + angular_speed) % 360
@@ -1415,9 +1620,12 @@ class Light_Enemy(pygame.Rect):
                 dy = waypoint_y - cy
                 target_angle = math.degrees(math.atan2(dx, dy))
 
+            self.target_heading = (target_angle + 180) % 360 - 180
+
             # Rotate enemy sprite so it turns to face heading
+            prev_angle = self.angle
             angle_diff = (target_angle - self.angle + 180) % 360 - 180
-            effective_turn_rate = self.turn_rate * speed_factor
+            effective_turn_rate = self.get_effective_turn_rate() * speed_factor
             if abs(angle_diff) <= effective_turn_rate:
                 self.angle = target_angle
             elif angle_diff > 0:
@@ -1425,6 +1633,18 @@ class Light_Enemy(pygame.Rect):
             else:
                 self.angle -= effective_turn_rate
             self.angle = (self.angle + 180) % 360 - 180
+            turned_delta = (self.angle - prev_angle + 180) % 360 - 180
+            if "combat_juice" in globals():
+                combat_juice.emit_wingtip_contrails(
+                    cx=cx,
+                    cy=cy,
+                    angle_deg=self.angle,
+                    speed=self.speed,
+                    angular_delta=turned_delta,
+                    wing_span=16.0,
+                    tail_offset=10.0,
+                    is_enemy=True,
+                )
 
         self.image = pygame.transform.rotate(self.original_image, self.angle)
 
@@ -1703,12 +1923,14 @@ def move():
     primary_enemy = wave_manager.get_closest_enemy(player)
     light_enemy = primary_enemy
 
+    comms_scale = comms_hud.get_time_dilation() if comms_hud else 1.0
+
     # Update power-up subsystem (buff timers, drops, drone, micro-missiles, popups)
-    powerup_manager.update(1.0 / 60.0, player, primary_enemy)
+    powerup_manager.update(1.0 / 60.0 * comms_scale, player, primary_enemy)
 
     # Update ground support subsystem (Helldivers, airstrikes, supply drops, danger alerts)
     all_air_targets = list(wave_manager.enemies) + list(bomber_enemies)
-    ground_support_manager.update(1.0 / 60.0, player, all_air_targets, explosion_group, large_explosion_a_spritesheet.frames)
+    ground_support_manager.update(1.0 / 60.0 * comms_scale, player, all_air_targets, explosion_group, large_explosion_a_spritesheet.frames)
 
     if ground_support_manager.objective_phase == "COMPLETE":
         trigger_mission_complete()
@@ -1719,7 +1941,7 @@ def move():
         target_pt = (orbital_base.pos_x + 60, orbital_base.pos_y + 60) if (orbital_base and orbital_base.is_alive) else (player.pos_x, player.pos_y)
         for bomber in list(bomber_enemies):
             if not bomber.exploding:
-                b_speed_mult = SLOW_MO_TIME_SCALE if ground_support_manager.is_slow_mo else 1.0
+                b_speed_mult = (SLOW_MO_TIME_SCALE if ground_support_manager.is_slow_mo else 1.0) * comms_scale
                 bomber.update(target_pt, speed_factor=b_speed_mult)
                 if orbital_base and orbital_base.is_alive and math.hypot((bomber.pos_x + 32) - target_pt[0], (bomber.pos_y + 26) - target_pt[1]) <= 65.0:
                     orbital_base.take_damage(bomber.bullet_damage)
@@ -1751,7 +1973,16 @@ def move():
         for enemy in wave_manager.enemies:
             if bullet.colliderect(enemy) and not enemy.exploding:
                 bullet.used = True
-                enemy.health -= bullet_dmg
+                dir_dmg = calculate_directional_gun_damage(
+                    bullet_dmg, bullet.dx, bullet.dy, enemy.angle
+                )
+                enemy.health -= dir_dmg
+                if "combat_juice" in globals():
+                    combat_juice.spawn_hit_sparks(
+                        bullet.pos_x + BULLET_WIDTH / 2,
+                        bullet.pos_y + BULLET_HEIGHT / 2,
+                        damage_ratio=dir_dmg / max(0.01, bullet_dmg),
+                    )
                 powerup_manager.on_bullet_hit_enemy(enemy)
                 enemy.trigger_agro(wave_manager.enemies)
                 audio_manager.play_sfx("hit")
@@ -1826,6 +2057,13 @@ def move():
                     rocket.used = True
                     enemy.health -= rocket.damage
                     enemy.trigger_agro(wave_manager.enemies)
+                    if "combat_juice" in globals():
+                        combat_juice.trigger_shake(4.5, 6)
+                        combat_juice.spawn_hit_sparks(
+                            rocket.x + ROCKET_WIDTH // 2,
+                            rocket.y + ROCKET_HEIGHT // 2,
+                            damage_ratio=1.25,
+                        )
                     hit_explosion = Large_explosion_a(
                         rocket.x + ROCKET_WIDTH // 2,
                         rocket.y + ROCKET_HEIGHT // 2,
@@ -1902,11 +2140,16 @@ def move():
                         audio_manager.play_sfx("explosion")
                         break
 
-    # Player Kamikaze Collision (Absorbed by Shields first, with separation recoil)
+    # Player Aerial Collision (Physical bounce-back, speed loss, and mutual hull trauma)
     for enemy in wave_manager.enemies:
         if not enemy.exploding and player.colliderect(enemy):
-            enemy.health -= player.kamikaze_attack_damage
-            player.take_damage(12.0)
+            if resolve_aerial_collision(player, enemy) and "combat_juice" in globals():
+                combat_juice.trigger_shake(5.5, 8)
+                combat_juice.spawn_hit_sparks(
+                    (player.pos_x + enemy.pos_x) * 0.5 + PLAYER_WIDTH * 0.5,
+                    (player.pos_y + enemy.pos_y) * 0.5 + PLAYER_HEIGHT * 0.5,
+                    damage_ratio=1.25,
+                )
             enemy.trigger_agro(wave_manager.enemies)
             
 
@@ -1970,8 +2213,8 @@ def move():
     player.rockets = [rocket for rocket in player.rockets if not rocket.used \
                     and 0 <= rocket.x <= MAP_WIDTH and 0 <= rocket.y <= MAP_HEIGHT]
 
-    # Enemy and enemy bullet movement affected by Time Slow, Frost/Freeze, and Stratagem Aiming Slow-Mo
-    slow_mo_mult = SLOW_MO_TIME_SCALE if ground_support_manager.is_slow_mo else 1.0
+    # Enemy and enemy bullet movement affected by Time Slow, Frost/Freeze, Stratagem Aiming, and Comms Dialogue
+    slow_mo_mult = (SLOW_MO_TIME_SCALE if ground_support_manager.is_slow_mo else 1.0) * comms_scale
     speed_factor = powerup_manager.modify_enemy_speed(1.0) * slow_mo_mult
     bullet_speed_factor = powerup_manager.modify_enemy_bullet_speed(1.0) * slow_mo_mult
 
@@ -2002,6 +2245,7 @@ def move():
                 drop.used = True
 
     health_drops = [d for d in health_drops if not d.used]
+    combat_juice.update()
 
     # Update Wave progression or Academy Tutorial
     if active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL:
@@ -2061,6 +2305,7 @@ def respawn(mission_config=None, selected_stratagems=None):
     light_enemy = wave_manager.enemies[0] if wave_manager.enemies else None
     player.shield = PLAYER_MAX_SHIELD
     explosion_group.empty()
+    combat_juice.reset()
     powerup_manager.reset(player)
     ground_support_manager.reset(active_mission_config, selected_stratagems=selected_stratagems)
     audio_manager.play_music("gameplay_normal")
@@ -2116,9 +2361,15 @@ def draw(mouse_pos=None):
         camera_x = max(0, min(MAP_WIDTH - GAME_WIDTH, player.pos_x + PLAYER_WIDTH / 2 - GAME_WIDTH / 2))
         camera_y = max(0, min(MAP_HEIGHT - GAME_HEIGHT, player.pos_y + PLAYER_HEIGHT / 2 - GAME_HEIGHT / 2))
 
-    # Snap camera to integer pixels to prevent sub-pixel tile shimmer and seam wave artifacts
-    camera_x = int(round(camera_x))
-    camera_y = int(round(camera_y))
+    # Snap camera to integer pixels; apply screen shake only if enabled in Settings
+    if "settings_menu" in globals() and not settings_menu.toggle_screen_shake.state:
+        shake_ox, shake_oy = 0, 0
+    else:
+        shake_ox, shake_oy = combat_juice.get_camera_offset()
+    camera_x = int(round(camera_x)) + shake_ox
+    camera_y = int(round(camera_y)) + shake_oy
+    camera_x = max(0, min(MAP_WIDTH - GAME_WIDTH, camera_x))
+    camera_y = max(0, min(MAP_HEIGHT - GAME_HEIGHT, camera_y))
 
     # Seamless background tiling inside map boundaries
     bg_w, bg_h = backround_image.get_size()
@@ -2157,6 +2408,9 @@ def draw(mouse_pos=None):
         # Draw Bomber Enemies
         for bomber in bomber_enemies:
             bomber.draw(canvas, camera_x, camera_y)
+
+        # Draw high-G wingtip vapor contrails and directional hit sparks
+        combat_juice.draw(canvas, camera_x, camera_y)
 
         # Player rendered relative to camera
         screen_player_x = player.pos_x - camera_x
@@ -2596,11 +2850,19 @@ def draw(mouse_pos=None):
             pygame.draw.rect(vignette_surf, (0, 150, 220, 20), (8, 8, GAME_WIDTH - 16, GAME_HEIGHT - 16), 8)
             canvas.blit(vignette_surf, (0, 0))
 
+        # In-Flight Radio Transceiver Overlay
+        if comms_hud.is_active:
+            comms_hud.render(canvas)
+
 
 player = Player()
 wave_manager = WaveManager()
 health_drops = []
 ground_support_manager = GroundSupportManager()
+combat_juice = CombatJuiceManager()
+story_manager = StoryManager(audio_manager=audio_manager)
+comms_hud = CommsHUD(story_manager=story_manager, audio_manager=audio_manager, screen_width=GAME_WIDTH, screen_height=GAME_HEIGHT)
+ground_support_manager.set_story_manager(story_manager)
 light_enemy = wave_manager.enemies[0] if wave_manager.enemies else Light_Enemy()
 player.bullets = []
 player.rockets = []
@@ -2620,6 +2882,9 @@ def run_game():
                     add_highscore(player.score)
                 running = False
                 break
+            if comms_hud.is_active and event.type == pygame.KEYDOWN:
+                if comms_hud.handle_event(event):
+                    continue
             if event.type == SHOOTING_END:
                 player.shooting = False
             if event.type == ROCKET_SHOOTING_END:
@@ -3011,6 +3276,7 @@ def run_game():
         if not running:
             break
 
+        comms_hud.update(1.0 / 60.0)
         keys = pygame.key.get_pressed()
 
         if game_state == "main_menu":
@@ -3069,11 +3335,25 @@ def run_game():
                         draw(canvas_mouse_pos)
                         sdm.draw(canvas, GAME_WIDTH, GAME_HEIGHT, player)
                 else:
-                    turn_rate = player.turn_rate * (0.75 if ground_support_manager.is_slow_mo else 1.0)
+                    turn_rate = player.get_effective_turn_rate() * (0.75 if ground_support_manager.is_slow_mo else 1.0)
+                    player_turned_delta = 0.0
                     if keys[pygame.K_a] or keys[pygame.K_LEFT]:
                         player.angle += turn_rate
+                        player_turned_delta += turn_rate
                     if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
                         player.angle -= turn_rate
+                        player_turned_delta -= turn_rate
+                    if abs(player_turned_delta) > 0.0:
+                        combat_juice.emit_wingtip_contrails(
+                            cx=player.pos_x + PLAYER_WIDTH / 2,
+                            cy=player.pos_y + PLAYER_HEIGHT / 2,
+                            angle_deg=player.angle,
+                            speed=player.velocity_x,
+                            angular_delta=player_turned_delta,
+                            wing_span=21.0,
+                            tail_offset=14.0,
+                            is_enemy=False,
+                        )
 
                     rad = math.radians(player.angle)
                     dx = -math.sin(rad)
@@ -3086,7 +3366,7 @@ def run_game():
                         player.velocity_x = max(player.min_speed, player.velocity_x - player.acceleration)
                         player.velocity_y = max(player.min_speed, player.velocity_y - player.acceleration)
 
-                    steering_factor = PLAYER_STEERING_SLOW_MO_FACTOR if ground_support_manager.is_slow_mo else 1.0
+                    steering_factor = (PLAYER_STEERING_SLOW_MO_FACTOR if ground_support_manager.is_slow_mo else 1.0) * comms_hud.get_time_dilation()
                     player.pos_x += dx * player.velocity_x * steering_factor
                     player.pos_y += dy * player.velocity_y * steering_factor
 

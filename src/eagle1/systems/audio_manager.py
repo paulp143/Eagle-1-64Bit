@@ -65,6 +65,8 @@ SOUND_CHANNELS = {
     "gate_pass": [CH_PICKUPS],
     "drill_complete": [CH_TACTICAL],
     "ceremony_fanfare": [CH_TACTICAL],
+    "radio_squelch": [CH_TACTICAL],
+    "radio_beep": [CH_UI, CH_TACTICAL],
 }
 
 # Minimum cooldown interval (in ms) to prevent ear-piercing volume stacking / clipping
@@ -88,6 +90,8 @@ SOUND_MIN_INTERVALS = {
     "gate_pass": 80,
     "drill_complete": 200,
     "ceremony_fanfare": 500,
+    "radio_squelch": 80,
+    "radio_beep": 60,
 }
 
 
@@ -361,6 +365,16 @@ class AudioManager:
                 snd.play()
         except Exception:
             pass
+
+    def play_radio_squelch(self, volume_scale=0.8):
+        """Play military RF transceiver squelch burst."""
+        snd_name = "radio_squelch" if "radio_squelch" in self.sounds else "radio_chatter"
+        self.play_sfx(snd_name, volume_scale=volume_scale)
+
+    def play_radio_beep(self, volume_scale=0.7):
+        """Play tactical dialogue choice confirmation / stance beep."""
+        snd_name = "radio_beep" if "radio_beep" in self.sounds else "ui_click"
+        self.play_sfx(snd_name, volume_scale=volume_scale)
 
     # -------------------------------------------------------------
     # Continuous Engine / Thruster Sound
