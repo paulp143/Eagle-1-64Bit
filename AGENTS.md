@@ -109,6 +109,9 @@ Always keep coordinate spaces strictly separated:
 6. **Proactive Improvement Suggestions**:
    - Whenever you identify code, architecture, performance, test coverage, gameplay balancing, or usability that could be improved, **proactively state your observations and recommendations to the user**.
    - Outline the rationale, expected benefits, and possible implementation approach clearly, without performing unrequested invasive refactors.
+7. **Strict English in Code & Documentation, User-Language in Chat**:
+   - **Code, Comments, Docstrings & Documentation in English**: All variable names, class/function/method names, constants, code comments, docstrings, and repository documentation MUST be written strictly in English, regardless of what language the user uses in their prompt.
+   - **Chat Responses Match User Language**: Always reply to the user in the language they used to write their prompt (e.g., if the user writes in German, respond to them in German; if they write in English, respond in English).
 
 
 ---
@@ -157,9 +160,27 @@ Verify:
 
 ---
 
-## GitHub CLI (`gh`) & Repository Operations
+## Strict Git & GitHub CLI (`gh`) User Approval Policy
 
-Use the GitHub CLI (`gh`) whenever you determine it is necessary or advantageous to complete a task. If you decide so, tell the user why you think it would improve the task and ask him for permission.
+> [!CAUTION]
+> **MANDATORY POLICY**: NEVER execute ANY `git` command that modifies repository state (e.g., `git commit`, `git add`, `git push`, `git checkout`, `git switch`, `git reset`, `git rebase`, `git merge`, `git branch`, `git stash`) OR ANY `gh` command (e.g., `gh pr create`, `gh issue`, `gh release`) without explicit prior user approval!
+> Autonomous commits, branch switching, and automated PR/issue operations are strictly forbidden.
+
+### User Approval Protocol for Git & `gh`
+Before running **ANY** `git` or `gh` command:
+1. **Always ask the user for explicit permission first.**
+2. **Provide a detailed, precise explanation**:
+   - **Why** the command is needed right now.
+   - **Why exactly this command** (and these exact flags/arguments) was chosen instead of any other command or approach.
+   - **What exact impact** the command will have on files, branches, remotes, or git history.
+   - Display the exact command line string that is proposed for execution.
+3. **Wait for the user's explicit confirmation** before running the command. Never assume implicit consent or chain commits inside automated workflows.
+
+---
+
+## GitHub CLI (`gh`) & Repository Operations Reference
+
+When approved by the user, use the GitHub CLI (`gh`) according to the following guidelines:
 
 ### Key Use Cases
 1. **Direct User Commands**: Execute `gh` commands whenever the user requests managing issues, pull requests, runs, or releases.
