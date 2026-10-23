@@ -1,7 +1,10 @@
 """Shared visual effect helpers, screen shake, wingtip contrails, hit sparks, and explosion sprite classes."""
 
+from __future__ import annotations
+
 import math
 import random
+from typing import Optional
 
 import pygame
 
@@ -29,7 +32,7 @@ class ScreenShake:
         self.kick_x = 0.0
         self.kick_y = 0.0
 
-    def trigger(self, intensity: float, duration_frames: int = 6, direction_rad: float | None = None):
+    def trigger(self, intensity: float, duration_frames: int = 6, direction_rad: Optional[float] = None):
         """Trigger camera shockwave impulse.
 
         Args:
