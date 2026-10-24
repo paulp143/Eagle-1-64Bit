@@ -9,6 +9,11 @@ os.environ["SDL_AUDIODRIVER"] = "dummy"
 import pygame
 pygame.init()
 
+from unittest.mock import MagicMock
+
+from eagle1.story.comms_hud import CommsHUD
+from eagle1.story.story_manager import StoryManager
+from eagle1.systems.ground_support import AirStrikeType, GroundSupportManager, HelldiverUnit
 from eagle1.story.dialogue_db import get_dialogue_node, validate_dialogue_database
 from eagle1.story.dialogue_data import (
     VIPER_SQUAD_PROFILES,
@@ -173,6 +178,121 @@ class TestViperSquadDialogue(unittest.TestCase):
         """Verify get_dialogue_node resolves Viper Squad dialogue nodes seamlessly."""
         self.assertIsNotNone(get_dialogue_node("viper_1_deck_briefing"))
         self.assertIsNotNone(get_dialogue_node("viper_debrief_flawless"))
+
+    def test_ground_support_low_health_triggers_banter(self):
+        """When a Helldiver drops below 35% health, a low_health banter callout should emit."""
+        mock_audio = MagicMock()
+        hud = CommsHUD(audio_manager=mock_audio)
+        gsm = GroundSupportManager()
+        gsm.set_comms_hud(hud)
+
+        # 4 healthy units
+        gsm.units = [
+            HelldiverUnit(0, 1000, 1000),
+            HelldiverUnit(1, 1030, 1000),
+            HelldiverUnit(2, 1060, 1000),
+            HelldiverUnit(3, 1090, 1000),
+        ]
+
+        # Wound unit 3 (Doc) down to 20% health (< 35%)
+        gsm.units[3].health = 0.20 * gsm.units[3].max_health
+
+        mock_player = MagicMock()
+        mock_player.pos_x = 1000
+        mock_player.pos_y = 1000
+        mock_player.x = 1000
+        mock_player.y = 1000
+        mock_player.score = 0
+
+        gsm.update(0.016, mock_player, [], pygame.sprite.Group(), [])
+        self.assertTrue(hud.is_active)
+        self.assertEqual(hud.current_node.node_id, "banter_callout")
+
+    def test_ground_support_near_miss_bomb_triggers_banter(self):
+        """Explosive air strike targeted near living Helldivers should trigger near_miss_bomb banter."""
+        mock_audio = MagicMock()
+        hud = CommsHUD(audio_manager=mock_audio)
+        gsm = GroundSupportManager()
+        gsm.set_comms_hud(hud)
+
+        # Place Helldiver at (1500, 1500)
+        gsm.units = [HelldiverUnit(0, 1500, 1500)]
+
+        mock_player = MagicMock()
+        mock_player.pos_x = 1500
+        mock_player.pos_y = 1500
+        mock_player.x = 1500
+        mock_player.y = 1500
+        mock_player.angle = 0
+        mock_player.velocity_x = 0
+        mock_player.velocity_y = 0
+
+        # Equip 500kg bomb
+        gsm.weapon_menu.select(AirStrikeType.BOMB_500KG)
+        # Mock reticle impact at 1550, 1500 (within 180px distance)
+        gsm.reticle.calculate_strike_impact = MagicMock(return_value=(1550, 1500))
+
+        success = gsm.trigger_air_strike(mock_player)
+        self.assertTrue(success)
+        self.assertTrue(hud.is_active)
+        self.assertIn("Braker", hud.current_node.speaker)
+
+    def test_ground_support_kill_streak_and_cas_callout(self):
+        """CAS kill streak of 5 should trigger kill_streak banter from Viper Squad."""
+        mock_audio = MagicMock()
+        hud = CommsHUD(audio_manager=mock_audio)
+        gsm = GroundSupportManager()
+        gsm.set_comms_hud(hud)
+        gsm.units = [HelldiverUnit(0, 1000, 1000)]
+
+        mock_player = MagicMock()
+        mock_player.score = 0
+
+        mock_enemy = MagicMock()
+        mock_enemy.x = 1020
+        mock_enemy.y = 1020
+
+        # Simulate 5 consecutive kills near ally
+        for _ in range(5):
+            gsm.on_player_kill_enemy(mock_enemy, mock_player)
+
+        self.assertTrue(hud.is_active)
+        self.assertIn("Apex", hud.current_node.speaker)
+
+    def test_ground_support_post_sortie_debrief_selection(self):
+        """get_post_sortie_debrief_node should return appropriate debrief node based on casualties."""
+        gsm = GroundSupportManager()
+        gsm.units = [HelldiverUnit(i, 1000 + i * 30, 1000) for i in range(4)]
+
+        # No casualties
+        node_0 = gsm.get_post_sortie_debrief_node()
+        self.assertEqual(node_0.node_id, "viper_debrief_flawless")
+
+        # 2 casualties
+        gsm._downed_unit_ids = {0, 1}
+        node_2 = gsm.get_post_sortie_debrief_node()
+        self.assertEqual(node_2.node_id, "viper_debrief_casualties")
+
+        # Squad wipe
+        gsm._squad_wipe_reported = True
+        node_wipe = gsm.get_post_sortie_debrief_node()
+        self.assertEqual(node_wipe.node_id, "viper_debrief_replacements")
+
+    def test_ground_support_reset_preserves_story_and_comms_managers(self):
+        """gsm.reset() must not wipe story_manager or comms_hud instances."""
+        mock_audio = MagicMock()
+        story_mgr = StoryManager(audio_manager=mock_audio)
+        hud = CommsHUD(story_manager=story_mgr, audio_manager=mock_audio)
+        gsm = GroundSupportManager()
+
+        gsm.set_story_manager(story_mgr)
+        gsm.set_comms_hud(hud)
+
+        # Trigger reset
+        gsm.reset()
+
+        self.assertIs(gsm.story_manager, story_mgr)
+        self.assertIs(gsm.comms_hud, hud)
 
 
 if __name__ == "__main__":

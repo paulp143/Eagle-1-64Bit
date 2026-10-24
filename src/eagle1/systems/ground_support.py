@@ -25,9 +25,15 @@ Features:
 import os
 import math
 import random
+from typing import Optional
 import pygame
 
 from eagle1.paths import get_user_data_dir
+from eagle1.story.dialogue_data import (
+    get_contextual_banter,
+    get_debrief_dialogue_node,
+    get_viper_profile,
+)
 from eagle1.systems.hangar_cinematic import (
     SuperDestroyerManager,
 )
@@ -2058,10 +2064,16 @@ class GroundSupportManager:
         self.destroyed_fabs_count = 0
         self.strider_destroyed = False
 
-        # Story Campaign Manager & Casualty Tracking
-        self.story_manager = None
+        # Reset casualty and banter tracking while preserving story_manager and comms_hud
         self._downed_unit_ids = set()
         self._squad_wipe_reported = False
+        self._banter_cooldown = 0.0
+        self._banter_counter = 0
+        self._low_health_warned_units = set()
+        self._squad_kill_streak = 0
+
+        self.story_manager = None
+        self.comms_hud = None
 
         # Stratagem Loadout & 5-Slot Weapon System
         self.active_loadout = [
@@ -2097,6 +2109,61 @@ class GroundSupportManager:
     def set_story_manager(self, story_manager):
         """Bind StoryManager to receive real-time casualty and squad wipe events."""
         self.story_manager = story_manager
+
+    def set_comms_hud(self, comms_hud):
+        """Bind CommsHUD instance to display contextual Viper Squad combat banter."""
+        self.comms_hud = comms_hud
+
+    def emit_squad_banter(
+        self,
+        category: str,
+        member_id: Optional[str] = None,
+        force: bool = False,
+    ) -> bool:
+        """Trigger a contextual radio callout from a living Viper Squad member if cooldown permits."""
+        if not self.comms_hud:
+            return False
+
+        if not force and self._banter_cooldown > 0.0:
+            return False
+
+        living_units = [u for u in self.units if u.is_alive]
+        living_indices = {u.index for u in living_units}
+
+        # If squad is deployed and all are down, suppress general combat chatter (except casualty cries)
+        if self.units and not living_indices and category != "casualty":
+            return False
+
+        effective_member_id = member_id
+        if member_id and living_indices:
+            prof = get_viper_profile(member_id)
+            if prof and prof.unit_index not in living_indices:
+                # Target member is dead; fallback to a living member
+                fallback_prof = get_viper_profile(min(living_indices))
+                if fallback_prof:
+                    effective_member_id = fallback_prof.member_id
+
+        line = get_contextual_banter(category, member_id=effective_member_id, selection_index=self._banter_counter)
+        if not line:
+            return False
+
+        triggered = self.comms_hud.trigger_callout(
+            speaker=line.speaker,
+            text=line.text,
+            location="Viper Squad Tactical Net",
+            portrait=line.portrait_path,
+        )
+
+        if triggered:
+            self._banter_counter += 1
+            self._banter_cooldown = line.cooldown_sec
+
+        return triggered
+
+    def get_post_sortie_debrief_node(self):
+        """Return the post-mission debrief DialogueNode adapted to current sortie casualties."""
+        casualties = len(self._downed_unit_ids)
+        return get_debrief_dialogue_node(casualties_count=casualties, squad_wiped=self._squad_wipe_reported)
 
     def _sync_hero_from_super_destroyer(self):
         self.hero_score = self.super_destroyer.hero_score
@@ -2236,6 +2303,9 @@ class GroundSupportManager:
         self.factory_strider = None
         self._downed_unit_ids.clear()
         self._squad_wipe_reported = False
+        self._banter_cooldown = 0.0
+        self._low_health_warned_units.clear()
+        self._squad_kill_streak = 0
 
         if mission_config and not mission_config.get("has_ground", True):
             # Pure aerial combat mission: disable ground forces & fabricators
@@ -2305,10 +2375,13 @@ class GroundSupportManager:
         self.destroyed_fabs_count = 0
         self.strider_destroyed = False
 
-        # Story Campaign Manager & Casualty Tracking
-        self.story_manager = None
+        # Reset casualty and banter tracking while preserving story_manager and comms_hud
         self._downed_unit_ids = set()
         self._squad_wipe_reported = False
+        self._banter_cooldown = 0.0
+        self._banter_counter = 0
+        self._low_health_warned_units = set()
+        self._squad_kill_streak = 0
         self.beacon = ExtractionBeacon(self.outpost_center[0], self.outpost_center[1])
         self.weapon_menu = AirStrikeWeaponMenu(1280, 720)
         self.super_destroyer = SuperDestroyerManager()
@@ -2341,6 +2414,22 @@ class GroundSupportManager:
             self.add_combat_popup("STRATAGEM DEPLOYED", tx, ty, (255, 215, 0))
             if get_audio_manager:
                 get_audio_manager().play_sfx("airstrike_siren")
+
+            # Check near-miss bomb against allied Helldivers
+            st_type = self.weapon_menu.selected_type
+            is_explosive = st_type in (
+                AirStrikeType.BOMB_500KG,
+                AirStrikeType.CLUSTER,
+                AirStrikeType.NAPALM,
+                AirStrikeType.GAS,
+            )
+            living_allies = [u for u in self.units if u.is_alive]
+            danger_close = is_explosive and any(math.hypot(u.pos_x - tx, u.pos_y - ty) <= 180.0 for u in living_allies)
+            if danger_close:
+                self.emit_squad_banter("near_miss_bomb", member_id="viper_2", force=True)
+            else:
+                self.emit_squad_banter("stratagem_drop", member_id="viper_3")
+
             return True
         return False
 
@@ -2360,6 +2449,7 @@ class GroundSupportManager:
         self.add_combat_popup("SUPPLY POD CALLED", sx, sy, (0, 220, 255))
         if get_audio_manager:
             get_audio_manager().play_sfx("rocket_launch")
+        self.emit_squad_banter("supply_pod", member_id="viper_4")
         return True
 
     def add_combat_popup(self, text, x, y, color=(255, 255, 255)):
@@ -2382,6 +2472,9 @@ class GroundSupportManager:
         if self.supply_cooldown > 0:
             self.supply_cooldown = max(0.0, self.supply_cooldown - dt)
 
+        if self._banter_cooldown > 0.0:
+            self._banter_cooldown = max(0.0, self._banter_cooldown - dt)
+
         # Slow-Motion Energy Drain and Recharge
         if self.aiming_active and self.equipped_slot > 0:
             self.slow_mo_energy = max(0.0, self.slow_mo_energy - dt)
@@ -2391,12 +2484,21 @@ class GroundSupportManager:
         living_units = [u for u in self.units if u.is_alive]
         self.survivors_count = len([u for u in self.units if u.health > 0 and u.state != "DOWNED"])
 
+        # Check low health warning for Helldivers
+        for u in self.units:
+            if u.is_alive and u.health <= u.max_health * 0.35 and u.index not in self._low_health_warned_units:
+                self._low_health_warned_units.add(u.index)
+                self.emit_squad_banter("low_health", member_id="viper_4")
+
         # Notify StoryManager on Helldiver casualties and squad wipe
         for u in self.units:
             if (u.state == "DOWNED" or u.health <= 0) and u.index not in self._downed_unit_ids:
                 self._downed_unit_ids.add(u.index)
                 if self.story_manager:
                     self.story_manager.on_helldiver_death(u.index)
+                living_left = [unit for unit in self.units if unit.is_alive and unit.index != u.index]
+                if living_left:
+                    self.emit_squad_banter("casualty", member_id="viper_4", force=True)
 
         if self.units and self.survivors_count == 0 and not self._squad_wipe_reported:
             self._squad_wipe_reported = True
@@ -2453,6 +2555,7 @@ class GroundSupportManager:
                 # Auto-prepare strike in player weapon menu for rapid deployment
                 self.weapon_menu.select(req_type)
                 self.add_combat_popup(f"SQUAD CALLING IN {AirStrikeType.DATA[req_type]['name'].upper()}!", squad_cx, squad_cy, (255, 60, 40))
+                self.emit_squad_banter("cas_beacon_request", member_id="viper_1")
 
         # Extraction Beacon
         self.beacon.update(dt)
@@ -2586,6 +2689,9 @@ class GroundSupportManager:
             tx = getattr(target, 'x', getattr(target, 'pos_x', 0))
             ty = getattr(target, 'y', getattr(target, 'pos_y', 0))
             self.add_combat_popup(f"{weapon_name} KILL +{val}", tx, ty, (255, 200, 50))
+            self._squad_kill_streak += 1
+            if self._squad_kill_streak > 0 and self._squad_kill_streak % 5 == 0:
+                self.emit_squad_banter("kill_streak", member_id="viper_1")
 
         for strike in self.active_strikes:
             strike.update(dt, enemies, all_ground_targets, explosion_group, frames, score_callback=on_strike_kill)
@@ -2652,6 +2758,9 @@ class GroundSupportManager:
             player.score += bonus
             self.total_cas_kills += 1
             self.add_combat_popup(f"CLOSE AIR SUPPORT! +{bonus}", ex, ey, (0, 255, 180))
+            self._squad_kill_streak += 1
+            if self._squad_kill_streak > 0 and self._squad_kill_streak % 5 == 0:
+                self.emit_squad_banter("kill_streak", member_id="viper_1")
 
     def on_wave_cleared(self, wave_num, player):
         living_count = len([u for u in self.units if u.is_alive])

@@ -2863,6 +2863,7 @@ combat_juice = CombatJuiceManager()
 story_manager = StoryManager(audio_manager=audio_manager)
 comms_hud = CommsHUD(story_manager=story_manager, audio_manager=audio_manager, screen_width=GAME_WIDTH, screen_height=GAME_HEIGHT)
 ground_support_manager.set_story_manager(story_manager)
+ground_support_manager.set_comms_hud(comms_hud)
 light_enemy = wave_manager.enemies[0] if wave_manager.enemies else Light_Enemy()
 player.bullets = []
 player.rockets = []
