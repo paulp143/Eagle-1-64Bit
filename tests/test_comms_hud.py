@@ -127,6 +127,125 @@ class TestCommsHUD(unittest.TestCase):
         self.hud.update(0.1)
         self.hud.render(surface)
 
+    def test_trigger_callout_non_interactive_no_slow_mo(self):
+        """Callouts should activate HUD, display prompt, stay at 1.0 time dilation, and auto-dismiss."""
+        success = self.hud.trigger_callout(
+            speaker='Viper-1 "Apex"',
+            text="CAS beacon planted! Bring the rain!",
+            portrait="images/portraits/viper_1_apex.png",
+            duration=1.5,
+        )
+        self.assertTrue(success)
+        self.assertTrue(self.hud.is_active)
+        self.assertEqual(self.hud.get_time_dilation(), 1.0)
+        self.assertFalse(self.hud.is_waiting_for_choice)
+
+        # Fast forward typewriter
+        self.hud.typewriter_chars = 999.0
+        self.hud.update(dt=0.1)
+        self.assertEqual(self.hud.get_time_dilation(), 1.0)
+        self.assertFalse(self.hud.is_waiting_for_choice)
+
+        # Advance past duration
+        for _ in range(20):
+            self.hud.update(dt=0.1)
+
+        self.assertFalse(self.hud.is_active)
+
+    def test_callout_does_not_interrupt_active_choice(self):
+        """Non-interactive callout must return False and not overwrite pending 3-way choices."""
+        self.hud.trigger_transmission("sortie_1_briefing")
+        self.hud.typewriter_chars = len(self.hud.current_node.prompt)
+        self.hud.update(0.1)
+        self.assertTrue(self.hud.is_waiting_for_choice)
+
+        # Attempt to trigger background banter while player choice is pending
+        rejected = self.hud.trigger_callout(
+            speaker='Viper-4 "Doc"',
+            text="I need supplies!",
+            portrait="images/portraits/viper_4_doc.png",
+        )
+        self.assertFalse(rejected)
+        # Original interactive node remains untouched
+        self.assertEqual(self.hud.current_node.node_id, "sortie_1_briefing")
+        self.assertTrue(self.hud.is_waiting_for_choice)
+
+    def test_portrait_loading_and_caching(self):
+        """Speaker portrait surfaces should load from disk, cache, and render cleanly."""
+        portrait_path = "images/portraits/viper_1_apex.png"
+        surf = self.hud._get_portrait_surface(portrait_path)
+        self.assertIsNotNone(surf)
+        self.assertEqual(surf.get_size(), (64, 64))
+
+        # Second lookup should return cached surface
+        surf_cached = self.hud._get_portrait_surface(portrait_path)
+        self.assertIs(surf, surf_cached)
+
+        # Render with portrait
+        canvas = pygame.Surface((1280, 720))
+        self.hud.trigger_callout(
+            speaker='Viper-1 "Apex"',
+            text="Holding the line!",
+            portrait=portrait_path,
+        )
+        self.hud.render(canvas)
+
+        # Invalid portrait fallback
+        none_surf = self.hud._get_portrait_surface("images/portraits/non_existent.png")
+        self.assertIsNone(none_surf)
+
+    def test_non_interactive_callout_never_intercepts_gameplay_keys(self):
+        """Callouts must never swallow SPACE, ESCAPE, RETURN, or combat keys."""
+        self.hud.trigger_callout(
+            speaker='Viper-1 "Apex"',
+            text="CAS beacon planted! Bring the rain!",
+            duration=3.0,
+        )
+        self.assertTrue(self.hud.is_active)
+
+        # Test during typewriter playback
+        self.hud.typewriter_chars = 5.0
+        for key in (pygame.K_SPACE, pygame.K_RETURN, pygame.K_ESCAPE, pygame.K_1, pygame.K_w):
+            ev = pygame.event.Event(pygame.KEYDOWN, {"key": key})
+            self.assertFalse(self.hud.handle_event(ev))
+            self.assertTrue(self.hud.is_active)
+
+        # Test after typewriter text has completed
+        self.hud.typewriter_chars = 999.0
+        for key in (pygame.K_SPACE, pygame.K_RETURN, pygame.K_ESCAPE, pygame.K_1, pygame.K_w):
+            ev = pygame.event.Event(pygame.KEYDOWN, {"key": key})
+            self.assertFalse(self.hud.handle_event(ev))
+            self.assertTrue(self.hud.is_active)
+
+    def test_render_caches_text_surfaces_without_reallocation(self):
+        """HUD render method should reuse pre-cached font surfaces without per-frame re-rendering."""
+        canvas = pygame.Surface((1280, 720))
+        self.hud.trigger_transmission("sortie_1_briefing")
+        self.hud.typewriter_chars = float(len(self.hud.current_node.prompt))
+        self.hud.is_waiting_for_choice = True
+
+        # First frame render
+        self.hud.render(canvas)
+        speaker_surf = self.hud._cached_speaker_surf
+        loc_surf = self.hud._cached_loc_surf
+        body_surfs = list(self.hud._cached_body_surfs)
+        option_cards = dict(self.hud._cached_option_cards)
+
+        self.assertIsNotNone(speaker_surf)
+        self.assertIsNotNone(loc_surf)
+        self.assertGreater(len(body_surfs), 0)
+        self.assertIn("loyal", option_cards)
+
+        # Subsequent frame render
+        self.hud.render(canvas)
+        self.assertIs(self.hud._cached_speaker_surf, speaker_surf)
+        self.assertIs(self.hud._cached_loc_surf, loc_surf)
+        self.assertEqual(len(self.hud._cached_body_surfs), len(body_surfs))
+        for s1, s2 in zip(self.hud._cached_body_surfs, body_surfs):
+            self.assertIs(s1, s2)
+        self.assertIs(self.hud._cached_option_cards["loyal"][0], option_cards["loyal"][0])
+        self.assertIs(self.hud._cached_option_cards["loyal"][1], option_cards["loyal"][1])
+
 
 if __name__ == "__main__":
     unittest.main()
