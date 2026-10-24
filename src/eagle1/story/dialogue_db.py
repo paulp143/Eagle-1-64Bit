@@ -156,7 +156,13 @@ DIALOGUE_DATABASE: Dict[str, DialogueNode] = {
 
 def get_dialogue_node(node_id: str) -> Optional[DialogueNode]:
     """Retrieve a dialogue node by its identifier."""
-    return DIALOGUE_DATABASE.get(node_id)
+    if node_id in DIALOGUE_DATABASE:
+        return DIALOGUE_DATABASE[node_id]
+    try:
+        from eagle1.story.dialogue_data import VIPER_DIALOGUE_TREES
+        return VIPER_DIALOGUE_TREES.get(node_id)
+    except ImportError:
+        return None
 
 
 def get_nodes_for_act_and_sortie(act: int, sortie: int) -> List[DialogueNode]:
