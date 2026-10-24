@@ -398,7 +398,7 @@ class CommsHUD:
             py = wave_y + math.sin(self.waveform_phase + i * 0.35) * amp
             self._waveform_points[i] = (px, py)
         if num_pts > 1:
-            pygame.draw.lines(surface, wave_col, False, self._waveform_points[:num_pts], wave_width)
+            pygame.draw.lines(surface, wave_col, False, self._waveform_points, wave_width)
 
         # 3. Header Information: Speaker & Tactical Channel
         header_x = port_x + port_size + 14

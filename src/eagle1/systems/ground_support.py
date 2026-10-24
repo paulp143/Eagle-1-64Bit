@@ -2154,6 +2154,7 @@ class GroundSupportManager:
         if living_indices:
             line_prof = get_viper_profile(line.member_id)
             if line_prof and line_prof.unit_index not in living_indices:
+                alt_found = False
                 for idx in sorted(living_indices):
                     fallback_prof = get_viper_profile(idx)
                     if fallback_prof:
@@ -2162,7 +2163,10 @@ class GroundSupportManager:
                         )
                         if alt_line and alt_line.member_id == fallback_prof.member_id:
                             line = alt_line
+                            alt_found = True
                             break
+                if not alt_found:
+                    return False
 
         triggered = self.comms_hud.trigger_callout(
             speaker=line.speaker,
@@ -2501,12 +2505,15 @@ class GroundSupportManager:
         living_units = [u for u in self.units if u.is_alive]
         self.survivors_count = len([u for u in self.units if u.health > 0 and u.state != "DOWNED"])
 
-        # Check low health warning for Helldivers
+        # Check low health warning for Helldivers with healing hysteresis
         for u in self.units:
-            if u.is_alive and u.health <= u.max_health * 0.35 and u.index not in self._low_health_warned_units:
-                self._low_health_warned_units.add(u.index)
-                prof = get_viper_profile(u.index)
-                self.emit_squad_banter("low_health", member_id=prof.member_id if prof else None)
+            if u.is_alive:
+                if u.health <= u.max_health * 0.35 and u.index not in self._low_health_warned_units:
+                    self._low_health_warned_units.add(u.index)
+                    prof = get_viper_profile(u.index)
+                    self.emit_squad_banter("low_health", member_id=prof.member_id if prof else None)
+                elif u.health >= u.max_health * 0.60 and u.index in self._low_health_warned_units:
+                    self._low_health_warned_units.discard(u.index)
 
         # Notify StoryManager on Helldiver casualties and squad wipe
         for u in self.units:

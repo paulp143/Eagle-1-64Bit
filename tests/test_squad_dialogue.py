@@ -2,7 +2,7 @@
 
 import os
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 os.environ["SDL_VIDEODRIVER"] = "dummy"
 os.environ["SDL_AUDIODRIVER"] = "dummy"
@@ -214,8 +214,8 @@ class TestViperSquadDialogue(unittest.TestCase):
         gsm = GroundSupportManager()
         gsm.set_comms_hud(hud)
 
-        # Place Helldiver at (1500, 1500)
-        gsm.units = [HelldiverUnit(0, 1500, 1500)]
+        # Place Helldiver at (1500, 1500) (Unit 1 is Braker)
+        gsm.units = [HelldiverUnit(1, 1500, 1500)]
 
         mock_player = MagicMock()
         mock_player.pos_x = 1500
@@ -331,6 +331,71 @@ class TestViperSquadDialogue(unittest.TestCase):
         """get_viper_profile must explicitly reject boolean inputs."""
         self.assertIsNone(get_viper_profile(True))
         self.assertIsNone(get_viper_profile(False))
+
+    def test_dead_member_banter_aborted_when_no_living_alternative_exists(self):
+        """When target member is dead and living members lack lines in category, comms must abort."""
+        mock_audio = MagicMock()
+        hud = CommsHUD(audio_manager=mock_audio)
+        gsm = GroundSupportManager()
+        gsm.set_comms_hud(hud)
+        # Only Ghost (index 2) is alive
+        gsm.units = [HelldiverUnit(i, 1000 + i * 30, 1000) for i in range(4)]
+        gsm.units[0].state = "DOWNED"
+        gsm.units[0].health = 0
+        gsm.units[1].state = "DOWNED"
+        gsm.units[1].health = 0
+        gsm.units[3].state = "DOWNED"
+        gsm.units[3].health = 0
+
+        dead_line = BanterLine(
+            line_id="test_dead",
+            member_id="viper_1",
+            speaker='Viper-1 "Apex"',
+            category="custom_test",
+            text="Test dead line",
+            portrait_path="images/portraits/viper_1_apex.png",
+        )
+        with patch("eagle1.systems.ground_support.get_contextual_banter") as mock_banter:
+            # First call returns dead_line, fallback query for living member (viper_3) returns None
+            mock_banter.side_effect = [dead_line, None]
+
+            result = gsm.emit_squad_banter("custom_test", member_id="viper_1", force=True)
+            self.assertFalse(result)
+            self.assertFalse(hud.is_active)
+
+    def test_low_health_warning_resets_on_unit_healing_hysteresis(self):
+        """Helldiver recovering above 60% HP must clear warned status, allowing subsequent warnings."""
+        mock_audio = MagicMock()
+        hud = CommsHUD(audio_manager=mock_audio)
+        gsm = GroundSupportManager()
+        gsm.set_comms_hud(hud)
+        gsm.units = [HelldiverUnit(i, 1000 + i * 30, 1000) for i in range(4)]
+        braker = gsm.units[1]
+
+        mock_player = MagicMock()
+        mock_player.pos_x = 1000
+        mock_player.pos_y = 1000
+        mock_player.score = 0
+
+        # 1. Damage Braker below 35% HP (40 / 150 = 26.6%)
+        braker.health = 40.0
+        gsm.update(0.016, mock_player, [], None, None)
+        self.assertIn(1, gsm._low_health_warned_units)
+        self.assertTrue(hud.is_active)
+
+        # 2. Dismiss and heal above 60% HP (100 / 150 = 66.6%)
+        hud.dismiss()
+        gsm._banter_cooldown = 0.0
+        braker.health = 100.0
+        gsm.update(0.016, mock_player, [], None, None)
+        self.assertNotIn(1, gsm._low_health_warned_units)
+
+        # 3. Damage Braker again below 35% HP
+        braker.health = 30.0
+        gsm.update(0.016, mock_player, [], None, None)
+        self.assertIn(1, gsm._low_health_warned_units)
+        self.assertTrue(hud.is_active)
+        self.assertIn("Braker", hud.current_node.speaker)
 
 
 if __name__ == "__main__":
