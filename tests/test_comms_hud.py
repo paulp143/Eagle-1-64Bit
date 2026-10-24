@@ -127,6 +127,73 @@ class TestCommsHUD(unittest.TestCase):
         self.hud.update(0.1)
         self.hud.render(surface)
 
+    def test_trigger_callout_non_interactive_no_slow_mo(self):
+        """Callouts should activate HUD, display prompt, stay at 1.0 time dilation, and auto-dismiss."""
+        success = self.hud.trigger_callout(
+            speaker='Viper-1 "Apex"',
+            text="CAS beacon planted! Bring the rain!",
+            portrait="images/portraits/viper_1_apex.png",
+            duration=1.5,
+        )
+        self.assertTrue(success)
+        self.assertTrue(self.hud.is_active)
+        self.assertEqual(self.hud.get_time_dilation(), 1.0)
+        self.assertFalse(self.hud.is_waiting_for_choice)
+
+        # Fast forward typewriter
+        self.hud.typewriter_chars = 999.0
+        self.hud.update(dt=0.1)
+        self.assertEqual(self.hud.get_time_dilation(), 1.0)
+        self.assertFalse(self.hud.is_waiting_for_choice)
+
+        # Advance past duration
+        for _ in range(20):
+            self.hud.update(dt=0.1)
+
+        self.assertFalse(self.hud.is_active)
+
+    def test_callout_does_not_interrupt_active_choice(self):
+        """Non-interactive callout must return False and not overwrite pending 3-way choices."""
+        self.hud.trigger_transmission("sortie_1_briefing")
+        self.hud.typewriter_chars = len(self.hud.current_node.prompt)
+        self.hud.update(0.1)
+        self.assertTrue(self.hud.is_waiting_for_choice)
+
+        # Attempt to trigger background banter while player choice is pending
+        rejected = self.hud.trigger_callout(
+            speaker='Viper-4 "Doc"',
+            text="I need supplies!",
+            portrait="images/portraits/viper_4_doc.png",
+        )
+        self.assertFalse(rejected)
+        # Original interactive node remains untouched
+        self.assertEqual(self.hud.current_node.node_id, "sortie_1_briefing")
+        self.assertTrue(self.hud.is_waiting_for_choice)
+
+    def test_portrait_loading_and_caching(self):
+        """Speaker portrait surfaces should load from disk, cache, and render cleanly."""
+        portrait_path = "images/portraits/viper_1_apex.png"
+        surf = self.hud._get_portrait_surface(portrait_path)
+        self.assertIsNotNone(surf)
+        self.assertEqual(surf.get_size(), (64, 64))
+
+        # Second lookup should return cached surface
+        surf_cached = self.hud._get_portrait_surface(portrait_path)
+        self.assertIs(surf, surf_cached)
+
+        # Render with portrait
+        canvas = pygame.Surface((1280, 720))
+        self.hud.trigger_callout(
+            speaker='Viper-1 "Apex"',
+            text="Holding the line!",
+            portrait=portrait_path,
+        )
+        self.hud.render(canvas)
+
+        # Invalid portrait fallback
+        none_surf = self.hud._get_portrait_surface("images/portraits/non_existent.png")
+        self.assertIsNone(none_surf)
+
 
 if __name__ == "__main__":
     unittest.main()

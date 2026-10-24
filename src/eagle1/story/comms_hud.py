@@ -8,10 +8,13 @@ Renders an interactive military radio HUD overlay during active flight operation
 - Zero per-frame allocations in render() to strictly maintain 60 FPS.
 """
 
+from __future__ import annotations
+
 import math
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 import pygame
 
+from eagle1.paths import get_base_dir, verify_path_exact_casing
 from eagle1.story.dialogue_db import DialogueNode, DialogueOption, get_dialogue_node
 from eagle1.story.story_manager import StoryManager
 
@@ -43,8 +46,10 @@ class CommsHUD:
         self.typewriter_chars: float = 0.0
         self.typewriter_speed: float = 55.0  # Chars per second
         self.response_timer: float = 0.0
-        self.response_duration: float = 3.5  # Seconds to read response
+        self.default_response_duration: float = 3.5  # Seconds to read response
+        self.response_duration: float = self.default_response_duration
         self.waveform_phase: float = 0.0
+        self._portrait_cache: Dict[str, Optional[pygame.Surface]] = {}
 
         # Time dilation
         self.current_time_dilation: float = 1.0
@@ -116,10 +121,52 @@ class CommsHUD:
         self.selected_option = None
         self.response_text = None
         self.response_timer = 0.0
+        self.response_duration = self.default_response_duration
         self.typewriter_chars = 0.0
         self.target_time_dilation = 1.0
 
         # Audio squelch
+        if self.audio and hasattr(self.audio, "play_radio_squelch"):
+            self.audio.play_radio_squelch()
+
+        return True
+
+    def trigger_callout(
+        self,
+        speaker: str,
+        text: str,
+        location: str = "Tactical Ground Net",
+        portrait: Optional[str] = None,
+        duration: float = 3.2,
+    ) -> bool:
+        """Trigger a non-interactive in-flight radio callout without time dilation."""
+        if not text or not text.strip():
+            return False
+
+        # Protect active interactive choices from being interrupted by background banter
+        if self.is_active and self.current_node and self.current_node.options:
+            return False
+
+        node = DialogueNode(
+            node_id="banter_callout",
+            speaker=speaker,
+            location=location,
+            prompt=text.strip(),
+            options={},
+            portrait=portrait,
+        )
+
+        self.current_node = node
+        self.is_active = True
+        self.is_waiting_for_choice = False
+        self.selected_stance = None
+        self.selected_option = None
+        self.response_text = None
+        self.response_timer = 0.0
+        self.response_duration = max(0.5, float(duration))
+        self.typewriter_chars = 0.0
+        self.target_time_dilation = 1.0
+
         if self.audio and hasattr(self.audio, "play_radio_squelch"):
             self.audio.play_radio_squelch()
 
@@ -153,12 +200,18 @@ class CommsHUD:
                 self.is_waiting_for_choice = True
                 self.target_time_dilation = 0.4
 
-        # Response dismissal timer
+        # Response or non-interactive callout dismissal timer
         if self.selected_stance is not None:
             self.target_time_dilation = 1.0
             self.response_timer += dt
             if self.response_timer >= self.response_duration:
                 self.dismiss()
+        elif self.current_node and not self.current_node.options:
+            self.target_time_dilation = 1.0
+            if self.typewriter_chars >= total_len:
+                self.response_timer += dt
+                if self.response_timer >= self.response_duration:
+                    self.dismiss()
 
         self._update_time_dilation(dt)
 
@@ -242,6 +295,28 @@ class CommsHUD:
         if self.audio and hasattr(self.audio, "play_radio_squelch"):
             self.audio.play_radio_squelch()
 
+    def _get_portrait_surface(self, portrait_path: Optional[str]) -> Optional[pygame.Surface]:
+        """Load and cache a 64x64 speaker portrait surface safely."""
+        if not portrait_path:
+            return None
+
+        if portrait_path in self._portrait_cache:
+            return self._portrait_cache[portrait_path]
+
+        try:
+            full_path = get_base_dir() / portrait_path
+            if full_path.exists() and verify_path_exact_casing(portrait_path):
+                img = pygame.image.load(str(full_path)).convert_alpha()
+                if img.get_size() != (64, 64):
+                    img = pygame.transform.smoothscale(img, (64, 64))
+                self._portrait_cache[portrait_path] = img
+                return img
+        except Exception:
+            pass
+
+        self._portrait_cache[portrait_path] = None
+        return None
+
     def render(self, surface: pygame.Surface) -> None:
         """Render the complete tactical radio HUD overlay on the target surface."""
         if not self.is_active or not self.current_node:
@@ -257,20 +332,34 @@ class CommsHUD:
         pygame.draw.rect(surface, (20, 35, 50), (port_x, port_y, port_size, port_size))
         pygame.draw.rect(surface, self.color_border_subtle, (port_x, port_y, port_size, port_size), 1)
 
-        # Transceiver RF Signal Badge
-        badge = self.font_badge.render("RF COMM 9", True, (160, 210, 240))
-        surface.blit(badge, (port_x + 2, port_y + 4))
+        portrait_surf = self._get_portrait_surface(self.current_node.portrait)
+        if portrait_surf:
+            surface.blit(portrait_surf, (port_x, port_y))
+            # Subtle waveform across lower edge of portrait
+            wave_y = port_y + 54
+            points = []
+            for i in range(port_size - 8):
+                px = port_x + 4 + i
+                amp = 3.0 if self.is_active else 1.0
+                py = wave_y + math.sin(self.waveform_phase + i * 0.35) * amp
+                points.append((px, py))
+            if len(points) > 1:
+                pygame.draw.lines(surface, (120, 240, 160), False, points, 1)
+        else:
+            # Transceiver RF Signal Badge
+            badge = self.font_badge.render("RF COMM 9", True, (160, 210, 240))
+            surface.blit(badge, (port_x + 2, port_y + 4))
 
-        # Animated green radio waveform below portrait
-        wave_y = port_y + 38
-        points = []
-        for i in range(port_size - 8):
-            px = port_x + 4 + i
-            amp = 8.0 if self.is_active else 2.0
-            py = wave_y + math.sin(self.waveform_phase + i * 0.35) * amp
-            points.append((px, py))
-        if len(points) > 1:
-            pygame.draw.lines(surface, self.color_waveform, False, points, 2)
+            # Animated green radio waveform below portrait
+            wave_y = port_y + 38
+            points = []
+            for i in range(port_size - 8):
+                px = port_x + 4 + i
+                amp = 8.0 if self.is_active else 2.0
+                py = wave_y + math.sin(self.waveform_phase + i * 0.35) * amp
+                points.append((px, py))
+            if len(points) > 1:
+                pygame.draw.lines(surface, self.color_waveform, False, points, 2)
 
         # 3. Header Information: Speaker & Tactical Channel
         header_x = port_x + port_size + 14
