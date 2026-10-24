@@ -194,6 +194,58 @@ class TestCommsHUD(unittest.TestCase):
         none_surf = self.hud._get_portrait_surface("images/portraits/non_existent.png")
         self.assertIsNone(none_surf)
 
+    def test_non_interactive_callout_never_intercepts_gameplay_keys(self):
+        """Callouts must never swallow SPACE, ESCAPE, RETURN, or combat keys."""
+        self.hud.trigger_callout(
+            speaker='Viper-1 "Apex"',
+            text="CAS beacon planted! Bring the rain!",
+            duration=3.0,
+        )
+        self.assertTrue(self.hud.is_active)
+
+        # Test during typewriter playback
+        self.hud.typewriter_chars = 5.0
+        for key in (pygame.K_SPACE, pygame.K_RETURN, pygame.K_ESCAPE, pygame.K_1, pygame.K_w):
+            ev = pygame.event.Event(pygame.KEYDOWN, {"key": key})
+            self.assertFalse(self.hud.handle_event(ev))
+            self.assertTrue(self.hud.is_active)
+
+        # Test after typewriter text has completed
+        self.hud.typewriter_chars = 999.0
+        for key in (pygame.K_SPACE, pygame.K_RETURN, pygame.K_ESCAPE, pygame.K_1, pygame.K_w):
+            ev = pygame.event.Event(pygame.KEYDOWN, {"key": key})
+            self.assertFalse(self.hud.handle_event(ev))
+            self.assertTrue(self.hud.is_active)
+
+    def test_render_caches_text_surfaces_without_reallocation(self):
+        """HUD render method should reuse pre-cached font surfaces without per-frame re-rendering."""
+        canvas = pygame.Surface((1280, 720))
+        self.hud.trigger_transmission("sortie_1_briefing")
+        self.hud.typewriter_chars = float(len(self.hud.current_node.prompt))
+        self.hud.is_waiting_for_choice = True
+
+        # First frame render
+        self.hud.render(canvas)
+        speaker_surf = self.hud._cached_speaker_surf
+        loc_surf = self.hud._cached_loc_surf
+        body_surfs = list(self.hud._cached_body_surfs)
+        option_cards = dict(self.hud._cached_option_cards)
+
+        self.assertIsNotNone(speaker_surf)
+        self.assertIsNotNone(loc_surf)
+        self.assertGreater(len(body_surfs), 0)
+        self.assertIn("loyal", option_cards)
+
+        # Subsequent frame render
+        self.hud.render(canvas)
+        self.assertIs(self.hud._cached_speaker_surf, speaker_surf)
+        self.assertIs(self.hud._cached_loc_surf, loc_surf)
+        self.assertEqual(len(self.hud._cached_body_surfs), len(body_surfs))
+        for s1, s2 in zip(self.hud._cached_body_surfs, body_surfs):
+            self.assertIs(s1, s2)
+        self.assertIs(self.hud._cached_option_cards["loyal"][0], option_cards["loyal"][0])
+        self.assertIs(self.hud._cached_option_cards["loyal"][1], option_cards["loyal"][1])
+
 
 if __name__ == "__main__":
     unittest.main()

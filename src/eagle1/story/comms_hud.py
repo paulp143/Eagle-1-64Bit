@@ -11,7 +11,7 @@ Renders an interactive military radio HUD overlay during active flight operation
 from __future__ import annotations
 
 import math
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import pygame
 
 from eagle1.paths import get_base_dir, verify_path_exact_casing
@@ -78,6 +78,14 @@ class CommsHUD:
             "dissident": (255, 100, 90),  # Red/Coral
         }
 
+        # Zero-allocation surface caching
+        self._cached_speaker_surf: Optional[pygame.Surface] = None
+        self._cached_loc_surf: Optional[pygame.Surface] = None
+        self._cached_option_cards: Dict[str, Tuple[pygame.Surface, pygame.Surface]] = {}
+        self._cached_body_key: Tuple[str, int] = ("", -1)
+        self._cached_body_surfs: List[pygame.Surface] = []
+        self._waveform_points: List[Tuple[int, float]] = [(0, 0.0)] * 56
+
         # Pre-cached surfaces & fonts
         self._init_surfaces()
         self._init_fonts()
@@ -103,6 +111,32 @@ class CommsHUD:
         self.font_body = pygame.font.SysFont("arial", 13)
         self.font_option = pygame.font.SysFont("arial", 12, bold=True)
         self.font_badge = pygame.font.SysFont("courier", 10, bold=True)
+        self.badge_rf_surface = self.font_badge.render("RF COMM 9", True, (160, 210, 240))
+
+    def _rebuild_node_surface_cache(self) -> None:
+        """Pre-render static text surfaces for the active DialogueNode to avoid per-frame allocations."""
+        self._cached_body_key = ("", -1)
+        self._cached_body_surfs = []
+        if not self.current_node:
+            self._cached_speaker_surf = None
+            self._cached_loc_surf = None
+            self._cached_option_cards.clear()
+            return
+
+        self._cached_speaker_surf = self.font_header.render(
+            f"▶ {self.current_node.speaker.upper()}", True, self.color_speaker
+        )
+        self._cached_loc_surf = self.font_header.render(
+            f"[{self.current_node.location}]", True, self.color_location
+        )
+        self._cached_option_cards.clear()
+        for stance, opt in self.current_node.options.items():
+            col = self.stance_colors.get(stance, self.color_border)
+            card_lbl = self.font_option.render(opt.label[:36], True, col)
+            sign = "+" if opt.loyalty_delta > 0 else ""
+            delta_str = f"Loyalty: {sign}{opt.loyalty_delta:.0f}" if opt.loyalty_delta != 0 else "Loyalty: 0"
+            delta_surf = self.font_badge.render(delta_str, True, (170, 190, 210))
+            self._cached_option_cards[stance] = (card_lbl, delta_surf)
 
     def trigger_transmission(self, node_or_id: Any) -> bool:
         """Start an incoming radio transmission from a DialogueNode or node_id."""
@@ -129,6 +163,7 @@ class CommsHUD:
         if self.audio and hasattr(self.audio, "play_radio_squelch"):
             self.audio.play_radio_squelch()
 
+        self._rebuild_node_surface_cache()
         return True
 
     def trigger_callout(
@@ -170,6 +205,7 @@ class CommsHUD:
         if self.audio and hasattr(self.audio, "play_radio_squelch"):
             self.audio.play_radio_squelch()
 
+        self._rebuild_node_surface_cache()
         return True
 
     def get_time_dilation(self) -> float:
@@ -226,6 +262,10 @@ class CommsHUD:
     def handle_event(self, event: pygame.event.Event) -> bool:
         """Handle keyboard input for dialogue choices and transmission advance."""
         if not self.is_active or event.type != pygame.KEYDOWN:
+            return False
+
+        # Non-interactive callouts must never intercept or swallow gameplay keys
+        if not self.current_node or not self.current_node.options:
             return False
 
         # Fast-forward typewriter on space or return
@@ -295,6 +335,8 @@ class CommsHUD:
         if self.audio and hasattr(self.audio, "play_radio_squelch"):
             self.audio.play_radio_squelch()
 
+        self._rebuild_node_surface_cache()
+
     def _get_portrait_surface(self, portrait_path: Optional[str]) -> Optional[pygame.Surface]:
         """Load and cache a 64x64 speaker portrait surface safely."""
         if not portrait_path:
@@ -333,65 +375,69 @@ class CommsHUD:
         pygame.draw.rect(surface, self.color_border_subtle, (port_x, port_y, port_size, port_size), 1)
 
         portrait_surf = self._get_portrait_surface(self.current_node.portrait)
+        num_pts = min(port_size - 8, len(self._waveform_points))
         if portrait_surf:
             surface.blit(portrait_surf, (port_x, port_y))
             # Subtle waveform across lower edge of portrait
             wave_y = port_y + 54
-            points = []
-            for i in range(port_size - 8):
-                px = port_x + 4 + i
-                amp = 3.0 if self.is_active else 1.0
-                py = wave_y + math.sin(self.waveform_phase + i * 0.35) * amp
-                points.append((px, py))
-            if len(points) > 1:
-                pygame.draw.lines(surface, (120, 240, 160), False, points, 1)
+            amp = 3.0 if self.is_active else 1.0
+            wave_col = (120, 240, 160)
+            wave_width = 1
         else:
-            # Transceiver RF Signal Badge
-            badge = self.font_badge.render("RF COMM 9", True, (160, 210, 240))
-            surface.blit(badge, (port_x + 2, port_y + 4))
+            # Transceiver RF Signal Badge (pre-rendered)
+            surface.blit(self.badge_rf_surface, (port_x + 2, port_y + 4))
 
             # Animated green radio waveform below portrait
             wave_y = port_y + 38
-            points = []
-            for i in range(port_size - 8):
-                px = port_x + 4 + i
-                amp = 8.0 if self.is_active else 2.0
-                py = wave_y + math.sin(self.waveform_phase + i * 0.35) * amp
-                points.append((px, py))
-            if len(points) > 1:
-                pygame.draw.lines(surface, self.color_waveform, False, points, 2)
+            amp = 8.0 if self.is_active else 2.0
+            wave_col = self.color_waveform
+            wave_width = 2
+
+        for i in range(num_pts):
+            px = port_x + 4 + i
+            py = wave_y + math.sin(self.waveform_phase + i * 0.35) * amp
+            self._waveform_points[i] = (px, py)
+        if num_pts > 1:
+            pygame.draw.lines(surface, wave_col, False, self._waveform_points[:num_pts], wave_width)
 
         # 3. Header Information: Speaker & Tactical Channel
         header_x = port_x + port_size + 14
         header_y = self.box_y + 14
-        speaker_surf = self.font_header.render(f"▶ {self.current_node.speaker.upper()}", True, self.color_speaker)
-        surface.blit(speaker_surf, (header_x, header_y))
+        if self._cached_speaker_surf is None:
+            self._rebuild_node_surface_cache()
 
-        loc_surf = self.font_header.render(f"[{self.current_node.location}]", True, self.color_location)
-        surface.blit(loc_surf, (header_x + speaker_surf.get_width() + 12, header_y))
+        if self._cached_speaker_surf:
+            surface.blit(self._cached_speaker_surf, (header_x, header_y))
+            loc_x = header_x + self._cached_speaker_surf.get_width() + 12
+            if self._cached_loc_surf:
+                surface.blit(self._cached_loc_surf, (loc_x, header_y))
 
         # 4. Message Body (Typewriter)
         body_y = header_y + 22
         active_full_text = self.response_text if self.response_text else self.current_node.prompt
         visible_len = int(min(len(active_full_text), self.typewriter_chars))
-        visible_text = active_full_text[:visible_len]
+        body_key = (active_full_text, visible_len)
 
-        # Simple 2-line wrapper
-        max_chars_line = 85
-        lines = []
-        words = visible_text.split(" ")
-        cur_line = ""
-        for w in words:
-            if len(cur_line) + len(w) + 1 <= max_chars_line:
-                cur_line = f"{cur_line} {w}".strip()
-            else:
+        if body_key != self._cached_body_key:
+            self._cached_body_key = body_key
+            visible_text = active_full_text[:visible_len]
+            max_chars_line = 85
+            lines = []
+            words = visible_text.split(" ") if visible_text else []
+            cur_line = ""
+            for w in words:
+                if len(cur_line) + len(w) + 1 <= max_chars_line:
+                    cur_line = f"{cur_line} {w}".strip()
+                else:
+                    lines.append(cur_line)
+                    cur_line = w
+            if cur_line:
                 lines.append(cur_line)
-                cur_line = w
-        if cur_line:
-            lines.append(cur_line)
+            self._cached_body_surfs = [
+                self.font_body.render(line, True, self.color_text) for line in lines[:3]
+            ]
 
-        for idx, line in enumerate(lines[:3]):
-            txt_surf = self.font_body.render(line, True, self.color_text)
+        for idx, txt_surf in enumerate(self._cached_body_surfs):
             surface.blit(txt_surf, (header_x, body_y + idx * 16))
 
         # 5. Choice Options Cards (Rendered when choice is active)
@@ -403,7 +449,6 @@ class CommsHUD:
             for i, stance in enumerate(stance_keys):
                 if stance not in self.current_node.options:
                     continue
-                opt = self.current_node.options[stance]
                 card_x = header_x + i * opt_spacing
                 card_w = opt_spacing - 10
                 card_h = 42
@@ -413,12 +458,7 @@ class CommsHUD:
                 pygame.draw.rect(surface, (16, 26, 38), (card_x, opts_y, card_w, card_h))
                 pygame.draw.rect(surface, col, (card_x, opts_y, card_w, card_h), 1)
 
-                # Option label
-                card_lbl = self.font_option.render(opt.label[:36], True, col)
-                surface.blit(card_lbl, (card_x + 6, opts_y + 6))
-
-                # Loyalty shift indicator
-                sign = "+" if opt.loyalty_delta > 0 else ""
-                delta_str = f"Loyalty: {sign}{opt.loyalty_delta:.0f}" if opt.loyalty_delta != 0 else "Loyalty: 0"
-                delta_surf = self.font_badge.render(delta_str, True, (170, 190, 210))
-                surface.blit(delta_surf, (card_x + 6, opts_y + 24))
+                if stance in self._cached_option_cards:
+                    card_lbl, delta_surf = self._cached_option_cards[stance]
+                    surface.blit(card_lbl, (card_x + 6, opts_y + 6))
+                    surface.blit(delta_surf, (card_x + 6, opts_y + 24))
