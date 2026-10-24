@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple, Union
+
 import pygame
 
 from eagle1.story.dialogue_db import DialogueNode, DialogueOption, validate_dialogue_database
@@ -656,7 +657,7 @@ VIPER_DIALOGUE_TREES: Dict[str, DialogueNode] = {
 
 def get_viper_profile(identifier: Union[str, int]) -> Optional[ViperCharacterProfile]:
     """Retrieve a Viper Squad character profile by member_id ('viper_1'), index (0..3), or nickname."""
-    if identifier is None:
+    if identifier is None or isinstance(identifier, bool):
         return None
 
     if isinstance(identifier, int):

@@ -2124,14 +2124,17 @@ class GroundSupportManager:
         if not self.comms_hud:
             return False
 
+        if not self.units:
+            return False
+
         if not force and self._banter_cooldown > 0.0:
             return False
 
         living_units = [u for u in self.units if u.is_alive]
         living_indices = {u.index for u in living_units}
 
-        # If squad is deployed and all are down, suppress general combat chatter (except casualty cries)
-        if self.units and not living_indices and category != "casualty":
+        # Suppress combat chatter when no living Helldivers remain on the battlefield
+        if not living_indices and category != "casualty":
             return False
 
         effective_member_id = member_id
@@ -2146,6 +2149,20 @@ class GroundSupportManager:
         line = get_contextual_banter(category, member_id=effective_member_id, selection_index=self._banter_counter)
         if not line:
             return False
+
+        # Ensure the chosen line's speaker is alive if living units exist
+        if living_indices:
+            line_prof = get_viper_profile(line.member_id)
+            if line_prof and line_prof.unit_index not in living_indices:
+                for idx in sorted(living_indices):
+                    fallback_prof = get_viper_profile(idx)
+                    if fallback_prof:
+                        alt_line = get_contextual_banter(
+                            category, member_id=fallback_prof.member_id, selection_index=self._banter_counter
+                        )
+                        if alt_line and alt_line.member_id == fallback_prof.member_id:
+                            line = alt_line
+                            break
 
         triggered = self.comms_hud.trigger_callout(
             speaker=line.speaker,
@@ -2488,7 +2505,8 @@ class GroundSupportManager:
         for u in self.units:
             if u.is_alive and u.health <= u.max_health * 0.35 and u.index not in self._low_health_warned_units:
                 self._low_health_warned_units.add(u.index)
-                self.emit_squad_banter("low_health", member_id="viper_4")
+                prof = get_viper_profile(u.index)
+                self.emit_squad_banter("low_health", member_id=prof.member_id if prof else None)
 
         # Notify StoryManager on Helldiver casualties and squad wipe
         for u in self.units:
@@ -2498,7 +2516,7 @@ class GroundSupportManager:
                     self.story_manager.on_helldiver_death(u.index)
                 living_left = [unit for unit in self.units if unit.is_alive and unit.index != u.index]
                 if living_left:
-                    self.emit_squad_banter("casualty", member_id="viper_4", force=True)
+                    self.emit_squad_banter("casualty", member_id=None, force=True)
 
         if self.units and self.survivors_count == 0 and not self._squad_wipe_reported:
             self._squad_wipe_reported = True
@@ -2555,7 +2573,7 @@ class GroundSupportManager:
                 # Auto-prepare strike in player weapon menu for rapid deployment
                 self.weapon_menu.select(req_type)
                 self.add_combat_popup(f"SQUAD CALLING IN {AirStrikeType.DATA[req_type]['name'].upper()}!", squad_cx, squad_cy, (255, 60, 40))
-                self.emit_squad_banter("cas_beacon_request", member_id="viper_1")
+                self.emit_squad_banter("cas_beacon_request", member_id=None)
 
         # Extraction Beacon
         self.beacon.update(dt)
@@ -2691,7 +2709,7 @@ class GroundSupportManager:
             self.add_combat_popup(f"{weapon_name} KILL +{val}", tx, ty, (255, 200, 50))
             self._squad_kill_streak += 1
             if self._squad_kill_streak > 0 and self._squad_kill_streak % 5 == 0:
-                self.emit_squad_banter("kill_streak", member_id="viper_1")
+                self.emit_squad_banter("kill_streak", member_id=None)
 
         for strike in self.active_strikes:
             strike.update(dt, enemies, all_ground_targets, explosion_group, frames, score_callback=on_strike_kill)
@@ -2760,7 +2778,7 @@ class GroundSupportManager:
             self.add_combat_popup(f"CLOSE AIR SUPPORT! +{bonus}", ex, ey, (0, 255, 180))
             self._squad_kill_streak += 1
             if self._squad_kill_streak > 0 and self._squad_kill_streak % 5 == 0:
-                self.emit_squad_banter("kill_streak", member_id="viper_1")
+                self.emit_squad_banter("kill_streak", member_id=None)
 
     def on_wave_cleared(self, wave_num, player):
         living_count = len([u for u in self.units if u.is_alive])

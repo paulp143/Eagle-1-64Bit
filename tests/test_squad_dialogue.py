@@ -2,14 +2,13 @@
 
 import os
 import unittest
+from unittest.mock import MagicMock
 
 os.environ["SDL_VIDEODRIVER"] = "dummy"
 os.environ["SDL_AUDIODRIVER"] = "dummy"
 
 import pygame
 pygame.init()
-
-from unittest.mock import MagicMock
 
 from eagle1.story.comms_hud import CommsHUD
 from eagle1.story.story_manager import StoryManager
@@ -293,6 +292,45 @@ class TestViperSquadDialogue(unittest.TestCase):
 
         self.assertIs(gsm.story_manager, story_mgr)
         self.assertIs(gsm.comms_hud, hud)
+
+    def test_low_health_banter_uses_damaged_unit_profile(self):
+        """When unit 1 (Braker) drops below 35% HP, Braker should transmit the distress call."""
+        mock_audio = MagicMock()
+        hud = CommsHUD(audio_manager=mock_audio)
+        gsm = GroundSupportManager()
+        gsm.set_comms_hud(hud)
+        # Unit 1 is Braker
+        gsm.units = [HelldiverUnit(i, 1000 + i * 30, 1000) for i in range(4)]
+        braker = gsm.units[1]
+        braker.health = 40.0  # < 35% of 150 (52.5)
+
+        mock_player = MagicMock()
+        mock_player.pos_x = 1000
+        mock_player.pos_y = 1000
+        mock_player.score = 0
+
+        gsm.update(0.016, mock_player, [], None, None)
+
+        self.assertTrue(hud.is_active)
+        self.assertIn("Braker", hud.current_node.speaker)
+
+    def test_no_ghost_banter_when_units_empty_in_aerial_missions(self):
+        """In pure aerial missions where units is empty, no ground squad chatter should trigger."""
+        mock_audio = MagicMock()
+        hud = CommsHUD(audio_manager=mock_audio)
+        gsm = GroundSupportManager()
+        gsm.set_comms_hud(hud)
+        gsm.units = []
+
+        self.assertFalse(gsm.emit_squad_banter("pre_mission_briefing"))
+        self.assertFalse(gsm.emit_squad_banter("kill_streak"))
+        self.assertFalse(gsm.emit_squad_banter("cas_beacon_request"))
+        self.assertFalse(hud.is_active)
+
+    def test_get_viper_profile_rejects_booleans(self):
+        """get_viper_profile must explicitly reject boolean inputs."""
+        self.assertIsNone(get_viper_profile(True))
+        self.assertIsNone(get_viper_profile(False))
 
 
 if __name__ == "__main__":
