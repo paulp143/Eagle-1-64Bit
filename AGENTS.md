@@ -163,8 +163,9 @@ Verify:
 ## Strict Git & GitHub CLI (`gh`) User Approval Policy
 
 > [!CAUTION]
-> **MANDATORY POLICY**: NEVER execute ANY `git` command that modifies repository state (e.g., `git commit`, `git add`, `git push`, `git checkout`, `git switch`, `git reset`, `git rebase`, `git merge`, `git branch`, `git stash`) OR ANY `gh` command (e.g., `gh pr create`, `gh issue`, `gh release`) without explicit prior user approval!
-> Autonomous commits, branch switching, and automated PR/issue operations are strictly forbidden.
+> **MANDATORY POLICY**: NEVER execute ANY `git` command OR ANY `gh` command without explicit prior user approval!
+> There are **NO EXCEPTIONS**, whether the command modifies repository state (e.g. `commit`, `push`, `pr create`) or is purely read-only (e.g. `issue view`, `pr list`, `status`, `diff`, `log`, `api`).
+> Autonomous execution of ANY `git` or `gh` command—even for gathering context, answering questions, or inspecting issues/PRs—is strictly forbidden.
 
 ### User Approval Protocol for Git & `gh`
 Before running **ANY** `git` or `gh` command:
@@ -172,9 +173,9 @@ Before running **ANY** `git` or `gh` command:
 2. **Provide a detailed, precise explanation**:
    - **Why** the command is needed right now.
    - **Why exactly this command** (and these exact flags/arguments) was chosen instead of any other command or approach.
-   - **What exact impact** the command will have on files, branches, remotes, or git history.
+   - **What exact impact** the command will have on files, branches, remotes, or git history (or note that it is read-only).
    - Display the exact command line string that is proposed for execution.
-3. **Wait for the user's explicit confirmation** before running the command. Never assume implicit consent or chain commits inside automated workflows.
+3. **Wait for the user's explicit confirmation** before running the command. Never assume implicit consent or execute commands speculatively to answer a question.
 
 ---
 
@@ -182,9 +183,9 @@ Before running **ANY** `git` or `gh` command:
 
 When approved by the user, use the GitHub CLI (`gh`) according to the following guidelines:
 
-### Key Use Cases
-1. **Direct User Commands**: Execute `gh` commands whenever the user requests managing issues, pull requests, runs, or releases.
-2. **Autonomous Issue & PR Context**:
+### Key Use Cases (Always Require Prior Approval)
+1. **Direct User Commands**: After approval, execute `gh` commands to manage issues, pull requests, runs, or releases.
+2. **Issue & PR Inspection**:
    - Inspect related issues, feature requirements, or bug reports:
      ```bash
      gh issue list
