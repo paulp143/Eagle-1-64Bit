@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import sys
-from typing import Optional, Union
 
 
 def get_base_dir() -> Path:
@@ -98,21 +97,24 @@ def verify_path_exact_casing(path: Path | str, base_dir: Path | str | None = Non
         base_dir = Path(base_dir).resolve()
 
     path_obj = Path(path)
-    try:
-        if not path_obj.is_absolute():
-            resolved = (base_dir / path_obj).resolve()
-        else:
-            resolved = path_obj.resolve()
-
-        rel = resolved.relative_to(base_dir)
+    if not path_obj.is_absolute():
         current = base_dir
-        segments = rel.parts
-    except ValueError:
-        resolved = path_obj.resolve()
-        current = Path(resolved.anchor)
-        segments = resolved.parts[1:]
+        segments = path_obj.parts
+    else:
+        try:
+            rel = path_obj.relative_to(base_dir)
+            current = base_dir
+            segments = rel.parts
+        except ValueError:
+            current = Path(path_obj.anchor)
+            segments = path_obj.parts[1:]
 
     for part in segments:
+        if part in ("", "."):
+            continue
+        if part == "..":
+            current = current.parent
+            continue
         if not current.is_dir():
             return False
         try:

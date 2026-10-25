@@ -7,8 +7,6 @@ import pytest
 
 from eagle1.paths import (
     get_base_dir,
-    IMAGES_DIR,
-    AUDIO_DIR,
     verify_path_exact_casing,
 )
 from eagle1.app.game import load_image
@@ -146,7 +144,7 @@ def test_code_asset_string_literals_match_disk_casing():
                                 f"'{val}' != disk '{expected_rel}'"
                             )
 
-    assert not casing_errors, f"Case sensitivity discrepancies detected in code:\n" + "\n".join(casing_errors)
+    assert not casing_errors, "Case sensitivity discrepancies detected in code:\n" + "\n".join(casing_errors)
 
 
 def test_audio_sfx_and_music_identifiers_match_disk():
@@ -160,6 +158,7 @@ def test_audio_sfx_and_music_identifiers_match_disk():
 
     actual_sfx = {f.stem for f in sfx_dir.glob("*.wav")}
     actual_music = {f.stem for f in music_dir.glob("*.wav")}
+    assert "menu_theme" in actual_music, f"Track 'menu_theme' not found in {music_dir}"
 
     # Verify channel allocations
     for sfx_name in SOUND_CHANNELS:
