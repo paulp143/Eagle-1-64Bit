@@ -1,0 +1,968 @@
+"""academy_briefing.py - Super Earth Naval Academy Flight Training Subsystem.
+
+Encapsulates the basic flight certification, weapon targeting qualification,
+radar operations, and Close Air Support (CAS) training drills under
+Flight Drill Instructor Commander Vance.
+"""
+
+import math
+import pygame
+from typing import List, Optional
+
+from eagle1.data.player_profile import PlayerProfileManager
+
+try:
+    from eagle1.systems.audio_manager import get_audio_manager
+except Exception:
+    get_audio_manager = None
+
+
+def _get_font(name: str, size: int, bold: bool = False) -> pygame.font.Font:
+    """Safe font loader with Fallback for headless environments."""
+    if not pygame.font.get_init():
+        try:
+            pygame.font.init()
+        except Exception:
+            pass
+    try:
+        return pygame.font.SysFont(name, size, bold=bold)
+    except Exception:
+        return pygame.font.Font(None, size)
+
+
+# Academy Training Drill States
+DRILL_BRIEFING = "briefing"
+DRILL_STEERING = "steering"
+DRILL_THROTTLE = "throttle"
+DRILL_BORDER_SAFETY = "border_safety"
+DRILL_CANNONS = "cannons"
+DRILL_RADAR_ROCKETS = "radar_rockets"
+DRILL_STRATAGEM = "stratagem"
+DRILL_GRADUATION = "graduation"
+DRILL_COMPLETE = "complete"
+
+DRILL_SEQUENCE = [
+    DRILL_BRIEFING,
+    DRILL_STEERING,
+    DRILL_THROTTLE,
+    DRILL_BORDER_SAFETY,
+    DRILL_CANNONS,
+    DRILL_RADAR_ROCKETS,
+    DRILL_STRATAGEM,
+    DRILL_GRADUATION,
+    DRILL_COMPLETE,
+]
+
+MAP_WIDTH = 3000
+MAP_HEIGHT = 3000
+ACADEMY_MAP_MARGIN = 350.0
+
+
+def compute_safe_drill_spawn(
+    player,
+    forward_dist: float,
+    right_offset: float = 0.0,
+    margin: float = ACADEMY_MAP_MARGIN,
+) -> tuple:
+    """Compute safe world coordinates for academy training targets.
+
+    Calculates placement based on player's position and flight heading angle.
+    If projecting forward exceeds safe map margins (e.g. player is flying
+    towards the sector perimeter), targets are dynamically re-routed towards
+    the center of the map (1500, 1500) and clamped strictly within safe bounds.
+    """
+    px = float(getattr(player, "pos_x", 1500.0) if player else 1500.0)
+    py = float(getattr(player, "pos_y", 1500.0) if player else 1500.0)
+    angle = float(getattr(player, "angle", 0.0) if player else 0.0)
+
+    rad = math.radians(angle)
+    fwd_x = -math.sin(rad)
+    fwd_y = -math.cos(rad)
+    right_x = -fwd_y
+    right_y = fwd_x
+
+    # Candidate position using flight heading
+    cand_x = px + fwd_x * forward_dist + right_x * right_offset
+    cand_y = py + fwd_y * forward_dist + right_y * right_offset
+
+    # Check if candidate position stays inside safe playable boundaries
+    min_x, max_x = margin, MAP_WIDTH - margin
+    min_y, max_y = margin, MAP_HEIGHT - margin
+
+    if min_x <= cand_x <= max_x and min_y <= cand_y <= max_y:
+        return cand_x, cand_y
+
+    # If heading into border or outside bounds, direct towards sector center
+    center_x = MAP_WIDTH / 2.0
+    center_y = MAP_HEIGHT / 2.0
+    dx = center_x - px
+    dy = center_y - py
+    dist_to_center = math.hypot(dx, dy)
+
+    if dist_to_center > 10.0:
+        c_fwd_x = dx / dist_to_center
+        c_fwd_y = dy / dist_to_center
+        c_right_x = -c_fwd_y
+        c_right_y = c_fwd_x
+        # Place forward towards center
+        target_fwd_dist = min(forward_dist, max(250.0, dist_to_center * 0.75))
+        cand_x = px + c_fwd_x * target_fwd_dist + c_right_x * right_offset
+        cand_y = py + c_fwd_y * target_fwd_dist + c_right_y * right_offset
+    else:
+        # Player is already at map center; offset along center axis
+        cand_x = center_x + right_offset
+        cand_y = center_y - forward_dist
+
+    # Strict clamping
+    safe_x = max(min_x, min(max_x, cand_x))
+    safe_y = max(min_y, min(max_y, cand_y))
+    return safe_x, safe_y
+
+
+class AcademyWaypointGate:
+    """Holographic energy gate requiring player navigation alignment."""
+
+    def __init__(self, x: float, y: float, radius: float = 85.0, label: str = "ALPHA"):
+        safe_radius = float(radius)
+        self.radius = safe_radius
+        self.x = max(safe_radius, min(MAP_WIDTH - safe_radius, float(x)))
+        self.y = max(safe_radius, min(MAP_HEIGHT - safe_radius, float(y)))
+        self.label = label
+        self.cleared = False
+        self.pulse_phase = 0.0
+
+    def check_collision(self, player_x: float, player_y: float) -> bool:
+        """Return True if player passes within the gate threshold radius."""
+        if self.cleared:
+            return False
+        dist = math.hypot(player_x - self.x, player_y - self.y)
+        if dist <= self.radius:
+            self.cleared = True
+            return True
+        return False
+
+    def draw(self, surface: pygame.Surface, camera_x: float, camera_y: float, font: pygame.font.Font):
+        """Render pulsating energy ring in world space."""
+        if self.cleared:
+            return
+
+        screen_x = int(self.x - camera_x)
+        screen_y = int(self.y - camera_y)
+
+        # Pulse radius
+        self.pulse_phase = (self.pulse_phase + 0.05) % (2 * math.pi)
+        pulse_r = int(self.radius + math.sin(self.pulse_phase) * 6)
+
+        # Draw outer glowing ring
+        pygame.draw.circle(surface, (0, 180, 240), (screen_x, screen_y), pulse_r, width=3)
+        pygame.draw.circle(surface, (0, 240, 255), (screen_x, screen_y), max(1, pulse_r - 8), width=1)
+
+        # Gate Label
+        label_surf = font.render(f"GATE {self.label}", True, (255, 215, 0))
+        surface.blit(label_surf, label_surf.get_rect(center=(screen_x, screen_y - pulse_r - 16)))
+
+
+class AcademyTargetDrone(pygame.Rect):
+    """Automaton training target drone for Quad-Cannon and Missile drills."""
+
+    def __init__(self, x: float, y: float, max_health: float = 50.0, label: str = "DRONE-1", is_mobile: bool = False):
+        safe_x = max(50.0, min(MAP_WIDTH - 50.0, float(x)))
+        safe_y = max(50.0, min(MAP_HEIGHT - 50.0, float(y)))
+        super().__init__(int(safe_x - 24), int(safe_y - 24), 48, 48)
+        self.pos_x = safe_x
+        self.pos_y = safe_y
+        self.max_health = float(max_health)
+        self.health = float(max_health)
+        self.label = label
+        self.is_mobile = is_mobile
+        self.exploding = False
+        self.move_angle = 0.0
+
+    @property
+    def is_alive(self) -> bool:
+        return self.health > 0.0 and not self.exploding
+
+    def take_damage(self, amount: float) -> bool:
+        """Apply damage and return True if destroyed by this hit."""
+        if not self.is_alive:
+            return False
+        self.health -= amount
+        if self.health <= 0.0:
+            self.health = 0.0
+            self.exploding = True
+            return True
+        return False
+
+    def update(self, dt: float):
+        """Hover or maneuver training drone."""
+        if self.is_mobile and self.is_alive:
+            self.move_angle = (self.move_angle + 1.2 * dt) % (2 * math.pi)
+            self.pos_x += math.cos(self.move_angle) * 1.5
+            self.pos_y += math.sin(self.move_angle) * 1.5
+            # Clamp inside map bounds so drifting drones never leave the map
+            self.pos_x = max(50.0, min(MAP_WIDTH - 50.0, self.pos_x))
+            self.pos_y = max(50.0, min(MAP_HEIGHT - 50.0, self.pos_y))
+            self.x = int(self.pos_x - 24)
+            self.y = int(self.pos_y - 24)
+
+    def draw(self, surface: pygame.Surface, camera_x: float, camera_y: float, font: pygame.font.Font):
+        """Render target drone and health bracket in world space."""
+        if not self.is_alive:
+            return
+
+        screen_x = int(self.pos_x - camera_x)
+        screen_y = int(self.pos_y - camera_y)
+
+        # Drone diamond chassis
+        points = [
+            (screen_x, screen_y - 22),
+            (screen_x + 22, screen_y),
+            (screen_x, screen_y + 22),
+            (screen_x - 22, screen_y),
+        ]
+        pygame.draw.polygon(surface, (180, 40, 40), points)
+        pygame.draw.polygon(surface, (255, 80, 80), points, width=2)
+        pygame.draw.circle(surface, (255, 200, 0), (screen_x, screen_y), 6)
+
+        # Health bar
+        bar_w = 44
+        bar_h = 6
+        bar_x = screen_x - bar_w // 2
+        bar_y = screen_y - 32
+        pct = max(0.0, min(1.0, self.health / self.max_health))
+        pygame.draw.rect(surface, (40, 10, 10), (bar_x, bar_y, bar_w, bar_h))
+        pygame.draw.rect(surface, (255, 50, 50), (bar_x, bar_y, int(bar_w * pct), bar_h))
+        pygame.draw.rect(surface, (100, 100, 100), (bar_x, bar_y, bar_w, bar_h), width=1)
+
+
+class AcademyTargetBunker(pygame.Rect):
+    """Automaton simulated training foundry bunker for Stratagem Air Strike drill."""
+
+    def __init__(self, x: float, y: float, max_health: float = 100.0, label: str = "TRAINING FOUNDRY"):
+        safe_x = max(80.0, min(MAP_WIDTH - 80.0, float(x)))
+        safe_y = max(80.0, min(MAP_HEIGHT - 80.0, float(y)))
+        super().__init__(int(safe_x - 50), int(safe_y - 50), 100, 100)
+        self.pos_x = safe_x
+        self.pos_y = safe_y
+        self.max_health = float(max_health)
+        self.health = float(max_health)
+        self.label = label
+        self.exploding = False
+
+    @property
+    def is_alive(self) -> bool:
+        return self.health > 0.0 and not self.exploding
+
+    def take_damage(self, amount: float) -> bool:
+        """Apply damage and return True if destroyed."""
+        if not self.is_alive:
+            return False
+        self.health -= amount
+        if self.health <= 0.0:
+            self.health = 0.0
+            self.exploding = True
+            return True
+        return False
+
+    def draw(self, surface: pygame.Surface, camera_x: float, camera_y: float, font: pygame.font.Font):
+        """Render heavy target structure in world space."""
+        if not self.is_alive:
+            return
+
+        screen_x = int(self.pos_x - camera_x)
+        screen_y = int(self.pos_y - camera_y)
+
+        b_rect = pygame.Rect(screen_x - 50, screen_y - 50, 100, 100)
+        pygame.draw.rect(surface, (45, 50, 60), b_rect, border_radius=6)
+        pygame.draw.rect(surface, (255, 60, 60), b_rect, width=3, border_radius=6)
+
+        # Danger cross
+        pygame.draw.line(surface, (255, 80, 80), (b_rect.left + 15, b_rect.top + 15), (b_rect.right - 15, b_rect.bottom - 15), 3)
+        pygame.draw.line(surface, (255, 80, 80), (b_rect.right - 15, b_rect.top + 15), (b_rect.left + 15, b_rect.bottom - 15), 3)
+
+        # CAS Beacon Target Reticle
+        pygame.draw.circle(surface, (255, 215, 0), (screen_x, screen_y), 65, width=2)
+        pygame.draw.circle(surface, (255, 0, 0), (screen_x, screen_y), 8)
+
+        lbl = font.render(self.label, True, (255, 215, 0))
+        surface.blit(lbl, lbl.get_rect(center=(screen_x, screen_y - 65)))
+
+
+class AcademyCelebrationParticle:
+    """Golden democratic particle for the graduation ceremony."""
+
+    def __init__(self, x: float, y: float):
+        import random
+        self.x = float(x)
+        self.y = float(y)
+        angle = random.uniform(0, 2 * math.pi)
+        speed = random.uniform(60.0, 280.0)
+        self.vx = math.cos(angle) * speed
+        self.vy = math.sin(angle) * speed - random.uniform(30.0, 100.0)
+        self.lifetime = random.uniform(1.0, 2.5)
+        self.max_lifetime = self.lifetime
+        self.color = random.choice([
+            (255, 215, 0),    # Gold
+            (255, 240, 120),  # Light Gold
+            (0, 220, 255),    # Cyan
+            (255, 255, 255),  # White
+            (255, 180, 50),   # Amber
+        ])
+        self.size = random.uniform(2.5, 5.0)
+
+    def update(self, dt: float):
+        self.x += self.vx * dt
+        self.y += self.vy * dt
+        self.vy += 60.0 * dt  # slight gravity
+        self.vx *= (1.0 - 0.3 * dt)
+        self.lifetime -= dt
+
+    @property
+    def is_alive(self) -> bool:
+        return self.lifetime > 0.0
+
+    def draw(self, surface: pygame.Surface):
+        if not self.is_alive:
+            return
+        alpha = max(0.0, min(1.0, self.lifetime / self.max_lifetime))
+        r = max(1, int(self.size * alpha))
+        pygame.draw.circle(surface, self.color, (int(self.x), int(self.y)), r)
+
+
+class CommsHUDBox:
+    """Typewriter tactical radio transmission display from Commander Vance."""
+
+    def __init__(self, x: int = 80, y: int = 70, w: int = 640, h: int = 110):
+        self.rect = pygame.Rect(x, y, w, h)
+        self.speaker_title = "CDR. VANCE // NAVAL ACADEMY CHIEF INSTRUCTOR"
+        self.full_text = ""
+        self.displayed_chars = 0
+        self.chars_per_second = 38.0
+        self.is_finished = False
+
+        self.font_title = _get_font("arial", 13, bold=True)
+        self.font_msg = _get_font("arial", 16)
+        self.audio = get_audio_manager() if get_audio_manager else None
+
+    def set_message(self, text: str, sfx_cue: Optional[str] = "radio_chatter"):
+        """Queue and begin typewriter rendering of dialogue."""
+        self.full_text = text
+        self.displayed_chars = 0
+        self.is_finished = False
+        if sfx_cue and self.audio:
+            self.audio.play_sfx(sfx_cue)
+
+    def update(self, dt: float):
+        """Advance typewriter characters."""
+        if not self.is_finished:
+            self.displayed_chars += self.chars_per_second * dt
+            if self.displayed_chars >= len(self.full_text):
+                self.displayed_chars = len(self.full_text)
+                self.is_finished = True
+
+    def draw(self, surface: pygame.Surface):
+        """Render comms HUD frame."""
+        if not self.full_text:
+            return
+
+        # Semi-transparent background
+        box_surf = pygame.Surface((self.rect.w, self.rect.h), pygame.SRCALPHA)
+        box_surf.fill((12, 18, 28, 230))
+        surface.blit(box_surf, self.rect.topleft)
+
+        # Golden hazard border
+        pygame.draw.rect(surface, (220, 180, 50), self.rect, width=2, border_radius=6)
+
+        # Speaker badge
+        badge_rect = pygame.Rect(self.rect.x + 8, self.rect.y + 6, self.rect.w - 16, 22)
+        pygame.draw.rect(surface, (25, 35, 55), badge_rect, border_radius=4)
+        title_surf = self.font_title.render(self.speaker_title, True, (0, 230, 255))
+        surface.blit(title_surf, (badge_rect.x + 8, badge_rect.y + 3))
+
+        # Typewriter text content
+        current_len = int(self.displayed_chars)
+        visible_text = self.full_text[:current_len]
+
+        # Word wrap rendering
+        words = visible_text.split(" ")
+        lines = []
+        cur_line = ""
+        max_w = self.rect.w - 32
+
+        for w in words:
+            test = f"{cur_line} {w}".strip()
+            if self.font_msg.size(test)[0] <= max_w:
+                cur_line = test
+            else:
+                if cur_line:
+                    lines.append(cur_line)
+                cur_line = w
+        if cur_line:
+            lines.append(cur_line)
+
+        y_offset = self.rect.y + 36
+        for line in lines[:3]:
+            msg_surf = self.font_msg.render(line, True, (245, 245, 255))
+            surface.blit(msg_surf, (self.rect.x + 16, y_offset))
+            y_offset += 21
+
+
+class AcademyTutorialManager:
+    """Central manager driving the Super Earth Naval Academy mission progression."""
+
+    def __init__(self):
+        self.state = DRILL_BRIEFING
+        self.drill_timer = 0.0
+        self.is_completed = False
+        self.graduated = False
+
+        self.comms_box = CommsHUDBox()
+        self.waypoint_gates: List[AcademyWaypointGate] = []
+        self.target_drones: List[AcademyTargetDrone] = []
+        self.target_bunker: Optional[AcademyTargetBunker] = None
+
+        # Drill specific tracking
+        self.current_gate_idx = 0
+        self.throttle_high_time = 0.0
+        self.throttle_low_time = 0.0
+        self.throttle_high_completed = False
+        self.throttle_low_completed = False
+        self.border_warned = False
+        self.border_cleared = False
+        self.celebration_particles: List[AcademyCelebrationParticle] = []
+
+        self.font_obj = _get_font("arial", 18, bold=True)
+        self.font_sub = _get_font("arial", 14)
+        self.font_ceremony_title = _get_font("arial", 22, bold=True)
+        self.font_ceremony_sub = _get_font("arial", 13, bold=True)
+        self.font_ceremony_name = _get_font("arial", 15, bold=True)
+        self.audio = get_audio_manager() if get_audio_manager else None
+
+        self._init_briefing_dialogue()
+
+    def _init_briefing_dialogue(self):
+        self.comms_box.set_message(
+            "Welcome to the Super Earth Naval Academy, Cadet. "
+            "Only the finest pilot the Eagle-1. Today we separate the patriots from the scrap metal!",
+            sfx_cue="radio_chatter"
+        )
+
+    def reset(self, player=None):
+        """Reset all training drills and spawn initial waypoints relative to player."""
+        self.state = DRILL_BRIEFING
+        self.drill_timer = 0.0
+        self.is_completed = False
+        self.graduated = False
+        self.current_gate_idx = 0
+        self.throttle_high_time = 0.0
+        self.throttle_low_time = 0.0
+        self.throttle_high_completed = False
+        self.throttle_low_completed = False
+        self.border_warned = False
+        self.border_cleared = False
+        self.celebration_particles = []
+
+        # Create slalom gates Alpha, Bravo, Charlie with safe bounds
+        g1_x, g1_y = compute_safe_drill_spawn(player, forward_dist=320.0, right_offset=0.0, margin=200.0)
+        g2_x, g2_y = compute_safe_drill_spawn(player, forward_dist=600.0, right_offset=-280.0, margin=200.0)
+        g3_x, g3_y = compute_safe_drill_spawn(player, forward_dist=880.0, right_offset=240.0, margin=200.0)
+        self.waypoint_gates = [
+            AcademyWaypointGate(g1_x, g1_y, radius=85.0, label="ALPHA"),
+            AcademyWaypointGate(g2_x, g2_y, radius=85.0, label="BRAVO"),
+            AcademyWaypointGate(g3_x, g3_y, radius=85.0, label="CHARLIE"),
+        ]
+
+        # Reset target entities
+        self.target_drones = []
+        self.target_bunker = None
+        self._init_briefing_dialogue()
+
+    def get_active_drill_title(self) -> str:
+        titles = {
+            DRILL_BRIEFING: "PHASE 0: PRE-FLIGHT BRIEFING",
+            DRILL_STEERING: "DRILL 1: YAW STEERING & WAYPOINT GATES",
+            DRILL_THROTTLE: "DRILL 2: TURBINE THROTTLE & AIR BRAKES",
+            DRILL_BORDER_SAFETY: "DRILL 3: HAZARD PERIMETER BOUNDARY",
+            DRILL_CANNONS: "DRILL 4: QUAD-CANNON CONVERGENCE RANGE",
+            DRILL_RADAR_ROCKETS: "DRILL 5: RADAR LOCK-ON & HOMING MISSILES",
+            DRILL_STRATAGEM: "DRILL 6: 500KG BOMB CAS AIR STRIKE",
+            DRILL_GRADUATION: "GRADUATION: SUPER EARTH WINGS OF LIBERTY",
+            DRILL_COMPLETE: "MISSION COMPLETE: NAVAL AVIATOR CERTIFIED",
+        }
+        return titles.get(self.state, "TRAINING DRILL")
+
+    def advance_drill(self, player=None):
+        """Transition cleanly to the next drill in the sequence."""
+        self.drill_timer = 0.0
+        if self.state == DRILL_BRIEFING:
+            self.state = DRILL_STEERING
+            if self.audio:
+                self.audio.play_sfx("drill_complete")
+            self.comms_box.set_message("Take the stick! Steer with [A] and [D] through Waypoint Gates Alpha, Bravo, and Charlie.", sfx_cue="radio_chatter")
+
+        elif self.state == DRILL_STEERING:
+            self.state = DRILL_THROTTLE
+            self.throttle_high_time = 0.0
+            self.throttle_low_time = 0.0
+            if self.audio:
+                self.audio.play_sfx("drill_complete")
+            self.comms_box.set_message("Good maneuvers! Now test thrust: hold [W] for maximum afterburners, then [S] for air brakes.", sfx_cue="radio_chatter")
+
+        elif self.state == DRILL_THROTTLE:
+            self.state = DRILL_BORDER_SAFETY
+            if self.audio:
+                self.audio.play_sfx("drill_complete")
+            self.comms_box.set_message("Heads up, Cadet! Fly toward the sector perimeter. Watch for boundary proximity warnings!", sfx_cue="radio_chatter")
+
+        elif self.state == DRILL_BORDER_SAFETY:
+            self.state = DRILL_CANNONS
+            d1_x, d1_y = compute_safe_drill_spawn(player, forward_dist=420.0, right_offset=-140.0)
+            d2_x, d2_y = compute_safe_drill_spawn(player, forward_dist=520.0, right_offset=0.0)
+            d3_x, d3_y = compute_safe_drill_spawn(player, forward_dist=420.0, right_offset=140.0)
+            self.target_drones = [
+                AcademyTargetDrone(d1_x, d1_y, max_health=40.0, label="DRONE-1"),
+                AcademyTargetDrone(d2_x, d2_y, max_health=40.0, label="DRONE-2"),
+                AcademyTargetDrone(d3_x, d3_y, max_health=40.0, label="DRONE-3"),
+            ]
+            if self.audio:
+                self.audio.play_sfx("drill_complete")
+            self.comms_box.set_message("Guns hot! Align the 180m convergence pip on the drone dummies. Fire Quad-Cannons with [SPACE]!", sfx_cue="radio_chatter")
+
+        elif self.state == DRILL_CANNONS:
+            self.state = DRILL_RADAR_ROCKETS
+            ia_x, ia_y = compute_safe_drill_spawn(player, forward_dist=480.0, right_offset=-180.0)
+            ib_x, ib_y = compute_safe_drill_spawn(player, forward_dist=480.0, right_offset=180.0)
+            self.target_drones = [
+                AcademyTargetDrone(ia_x, ia_y, max_health=60.0, label="INTERCEPTOR-A", is_mobile=True),
+                AcademyTargetDrone(ib_x, ib_y, max_health=60.0, label="INTERCEPTOR-B", is_mobile=True),
+            ]
+            if self.audio:
+                self.audio.play_sfx("drill_complete")
+            self.comms_box.set_message("Toggle radar with [Q]. Acquire target lock brackets and launch homing rockets with [Right Click] or [E]!", sfx_cue="radio_chatter")
+
+        elif self.state == DRILL_RADAR_ROCKETS:
+            self.state = DRILL_STRATAGEM
+            bk_x, bk_y = compute_safe_drill_spawn(player, forward_dist=550.0, right_offset=0.0)
+            self.target_bunker = AcademyTargetBunker(bk_x, bk_y, max_health=100.0, label="TRAINING FOUNDRY")
+            if self.audio:
+                self.audio.play_sfx("drill_complete")
+            self.comms_box.set_message("Final exam: Close Air Support! Select your 500kg Bomb with [2], align the predictive reticle, and drop with [C]!", sfx_cue="radio_chatter")
+
+        elif self.state == DRILL_STRATAGEM:
+            self.state = DRILL_GRADUATION
+            self.graduated = True
+            if self.audio:
+                self.audio.play_sfx("ceremony_fanfare")
+            import random
+            for _ in range(60):
+                self.celebration_particles.append(
+                    AcademyCelebrationParticle(random.uniform(400, 880), random.uniform(250, 450))
+                )
+            self.comms_box.set_message(
+                "Direct hit! Outstanding flying, Pilot! By decree of Super Earth High Command, "
+                "you are hereby certified as a Super Earth Naval Aviator!",
+                sfx_cue="radio_chatter"
+            )
+            # Update user profile
+            try:
+                prof_mgr = PlayerProfileManager()
+                if prof_mgr.has_active_profile():
+                    prof = prof_mgr.load_profile()
+                    prof.academy_completed = True
+                    prof.missions_cleared = max(1, prof.missions_cleared)
+                    if prof.active_mission in ("academy_tutorial", ""):
+                        prof.active_mission = "air_superiority"
+                    if 3 not in prof.unlocked_stratagems:
+                        prof.unlocked_stratagems.append(3)
+                    if 4 not in prof.unlocked_stratagems:
+                        prof.unlocked_stratagems.append(4)
+                    prof_mgr.save_profile(prof)
+            except Exception:
+                pass
+
+        elif self.state == DRILL_GRADUATION:
+            self.state = DRILL_COMPLETE
+            self.is_completed = True
+
+    def update_throttle_drill(self, dt: float, player, keys=None):
+        """Accumulate hold duration at max and min speed thresholds."""
+        if not player:
+            return
+
+        # Safely determine current flight speed across Player and Mock implementations
+        if hasattr(player, "get_forward_speed"):
+            speed = player.get_forward_speed()
+        elif hasattr(player, "velocity_x"):
+            speed = float(player.velocity_x)
+        elif hasattr(player, "velocity_y"):
+            speed = float(player.velocity_y)
+        elif hasattr(player, "speed"):
+            speed = float(player.speed)
+        else:
+            speed = 4.0
+
+        # Inspect key presses if provided
+        pressing_w = False
+        pressing_s = False
+        if keys is not None:
+            try:
+                if isinstance(keys, dict):
+                    pressing_w = bool(keys.get(pygame.K_w, False) or keys.get(pygame.K_UP, False))
+                    pressing_s = bool(keys.get(pygame.K_s, False) or keys.get(pygame.K_DOWN, False))
+                else:
+                    pressing_w = bool(keys[pygame.K_w] or keys[pygame.K_UP])
+                    pressing_s = bool(keys[pygame.K_s] or keys[pygame.K_DOWN])
+            except Exception:
+                pass
+
+        target_time = 1.2
+
+        # 1. High Speed / Afterburner check (either W held or speed >= 5.8)
+        if not self.throttle_high_completed:
+            if speed >= 5.8 or (pressing_w and speed >= 4.8):
+                self.throttle_high_time += dt
+                if self.throttle_high_time >= target_time:
+                    self.throttle_high_completed = True
+                    if self.audio:
+                        self.audio.play_sfx("gate_pass")
+                    if not self.throttle_low_completed:
+                        self.comms_box.set_message("Afterburner confirmed! Now hit [S] to engage air brakes down to minimum speed.", sfx_cue="radio_chatter")
+            else:
+                self.throttle_high_time = max(0.0, self.throttle_high_time - dt * 0.4)
+
+        # 2. Low Speed / Air Brakes check (either S held or speed <= 3.0)
+        if not self.throttle_low_completed:
+            if speed <= 3.0 or (pressing_s and speed <= 3.8):
+                self.throttle_low_time += dt
+                if self.throttle_low_time >= target_time:
+                    self.throttle_low_completed = True
+                    if self.audio:
+                        self.audio.play_sfx("gate_pass")
+                    if not self.throttle_high_completed:
+                        self.comms_box.set_message("Air brakes confirmed! Now hit [W] to kick in maximum afterburners.", sfx_cue="radio_chatter")
+            else:
+                self.throttle_low_time = max(0.0, self.throttle_low_time - dt * 0.4)
+
+    def update(self, dt: float, player=None, keys=None, ground_support=None):
+        """Main update tick driving drill triggers and state transitions."""
+        self.drill_timer += dt
+        self.comms_box.update(dt)
+
+        if not player:
+            return
+
+        # Auto-rearm ammo during training so cadet never runs out
+        if player.used_bullets >= player.max_bullets - 10:
+            player.used_bullets = 0
+        if player.used_rockets >= player.max_rockets - 1:
+            player.used_rockets = 0
+
+        # Update targets
+        for drone in self.target_drones:
+            drone.update(dt)
+
+        # 0. BRIEFING
+        if self.state == DRILL_BRIEFING:
+            if self.drill_timer >= 4.5:
+                self.advance_drill(player)
+
+        # 1. STEERING DRILL
+        elif self.state == DRILL_STEERING:
+            if self.current_gate_idx < len(self.waypoint_gates):
+                gate = self.waypoint_gates[self.current_gate_idx]
+                if gate.check_collision(player.pos_x, player.pos_y):
+                    self.current_gate_idx += 1
+                    if self.audio:
+                        self.audio.play_sfx("gate_pass")
+                    if self.current_gate_idx < len(self.waypoint_gates):
+                        next_label = self.waypoint_gates[self.current_gate_idx].label
+                        self.comms_box.set_message(f"Gate cleared! Bank toward Gate {next_label}.", sfx_cue="radio_chatter")
+                    else:
+                        self.advance_drill(player)
+
+        # 2. THROTTLE DRILL
+        elif self.state == DRILL_THROTTLE:
+            self.update_throttle_drill(dt, player, keys)
+            if self.throttle_high_completed and self.throttle_low_completed:
+                self.advance_drill(player)
+
+        # 3. BORDER SAFETY DRILL
+        elif self.state == DRILL_BORDER_SAFETY:
+            px, py = player.pos_x, player.pos_y
+            near_border = (px < 400.0 or px > 2600.0 or py < 400.0 or py > 2600.0)
+            in_safe_zone = (700.0 < px < 2300.0 and 700.0 < py < 2300.0)
+
+            if near_border and not self.border_warned:
+                self.border_warned = True
+                self.comms_box.set_message("PERIMETER WARNING! Turn hard back toward center before boundary hazard dampers engage!", sfx_cue="player_damage")
+
+            if self.border_warned and in_safe_zone:
+                self.border_cleared = True
+                self.advance_drill(player)
+
+        # 4. CANNONS DRILL
+        elif self.state == DRILL_CANNONS:
+            living_drones = [d for d in self.target_drones if d.is_alive]
+            if len(living_drones) == 0:
+                self.advance_drill(player)
+
+        # 5. RADAR & HOMING ROCKETS
+        elif self.state == DRILL_RADAR_ROCKETS:
+            living_drones = [d for d in self.target_drones if d.is_alive]
+            if len(living_drones) == 0:
+                self.advance_drill(player)
+
+        # 6. STRATAGEM AIR STRIKE
+        elif self.state == DRILL_STRATAGEM:
+            if ground_support and self.target_bunker and self.target_bunker.is_alive:
+                for strike in getattr(ground_support, "active_strikes", []):
+                    if getattr(strike, "impacted", False):
+                        dist = math.hypot(strike.target_x - self.target_bunker.pos_x, strike.target_y - self.target_bunker.pos_y)
+                        blast_r = 480.0 if getattr(strike, "type", 0) == 1 else 320.0
+                        if dist <= blast_r:
+                            self.target_bunker.take_damage(200.0)
+                            break
+            if self.target_bunker and not self.target_bunker.is_alive:
+                self.advance_drill(player)
+
+        # 7. GRADUATION
+        elif self.state == DRILL_GRADUATION:
+            # Update celebration particles
+            import random
+            if len(self.celebration_particles) < 100:
+                for _ in range(3):
+                    self.celebration_particles.append(
+                        AcademyCelebrationParticle(random.uniform(250, 1030), random.uniform(180, 520))
+                    )
+            for p in self.celebration_particles:
+                p.update(dt)
+            self.celebration_particles = [p for p in self.celebration_particles if p.is_alive]
+
+            if self.drill_timer >= 6.5:
+                self.advance_drill(player)
+
+    def on_stratagem_deployed(self, x: float, y: float, radius: float = 350.0, damage: float = 200.0) -> bool:
+        """Called when a stratagem air strike detonates near the training bunker."""
+        if self.state == DRILL_STRATAGEM and self.target_bunker and self.target_bunker.is_alive:
+            dist = math.hypot(x - self.target_bunker.pos_x, y - self.target_bunker.pos_y)
+            if dist <= radius:
+                self.target_bunker.take_damage(damage)
+                return True
+        return False
+
+    def get_combat_targets(self) -> list:
+        """Expose training entities for radar lock and ballistic collisions."""
+        targets = [d for d in self.target_drones if d.is_alive]
+        if self.target_bunker and self.target_bunker.is_alive:
+            targets.append(self.target_bunker)
+        return targets
+
+    def draw_world(self, surface: pygame.Surface, camera_x: float, camera_y: float):
+        """Render all training gates, target dummies, and bunkers in world space."""
+        # Gates
+        if self.state == DRILL_STEERING:
+            for gate in self.waypoint_gates:
+                gate.draw(surface, camera_x, camera_y, self.font_obj)
+
+        # Target drones
+        if self.state in (DRILL_CANNONS, DRILL_RADAR_ROCKETS):
+            for drone in self.target_drones:
+                drone.draw(surface, camera_x, camera_y, self.font_obj)
+
+        # Target Bunker
+        if self.state == DRILL_STRATAGEM and self.target_bunker:
+            self.target_bunker.draw(surface, camera_x, camera_y, self.font_obj)
+
+    def _draw_graduation_badge(self, surface: pygame.Surface):
+        """Render golden 'Wings of Liberty' aviator badge ceremony overlay."""
+        w = surface.get_width()
+        h = surface.get_height()
+        cx = w // 2
+        cy = h // 2 - 20
+
+        # Semi-transparent backdrop vignette
+        overlay = pygame.Surface((w, h), pygame.SRCALPHA)
+        overlay.fill((5, 10, 18, 160))
+        surface.blit(overlay, (0, 0))
+
+        # Draw particles
+        for p in self.celebration_particles:
+            p.draw(surface)
+
+        # Badge card container
+        card_w = 640
+        card_h = 240
+        card_rect = pygame.Rect(cx - card_w // 2, cy - card_h // 2, card_w, card_h)
+        card_surf = pygame.Surface((card_w, card_h), pygame.SRCALPHA)
+        card_surf.fill((12, 18, 30, 240))
+        surface.blit(card_surf, card_rect.topleft)
+
+        # Ornate golden border
+        pygame.draw.rect(surface, (255, 215, 0), card_rect, width=3, border_radius=12)
+        pygame.draw.rect(surface, (0, 220, 255), card_rect.inflate(-8, -8), width=1, border_radius=8)
+
+        # Aviator Wings geometry (Golden wings left and right)
+        wing_y = cy - 45
+        left_wing = [
+            (cx - 30, wing_y),
+            (cx - 90, wing_y - 25),
+            (cx - 170, wing_y - 15),
+            (cx - 240, wing_y + 10),
+            (cx - 180, wing_y + 20),
+            (cx - 90, wing_y + 15),
+            (cx - 30, wing_y + 10),
+        ]
+        right_wing = [
+            (cx + 30, wing_y),
+            (cx + 90, wing_y - 25),
+            (cx + 170, wing_y - 15),
+            (cx + 240, wing_y + 10),
+            (cx + 180, wing_y + 20),
+            (cx + 90, wing_y + 15),
+            (cx + 30, wing_y + 10),
+        ]
+        pygame.draw.polygon(surface, (230, 190, 40), left_wing)
+        pygame.draw.polygon(surface, (255, 235, 120), left_wing, width=2)
+        pygame.draw.polygon(surface, (230, 190, 40), right_wing)
+        pygame.draw.polygon(surface, (255, 235, 120), right_wing, width=2)
+
+        # Center Shield / Star
+        pygame.draw.circle(surface, (30, 40, 60), (cx, wing_y), 32)
+        pygame.draw.circle(surface, (255, 215, 0), (cx, wing_y), 32, width=3)
+        pygame.draw.circle(surface, (0, 220, 255), (cx, wing_y), 24, width=1)
+        # Gold Star at center
+        star_points = []
+        for i in range(10):
+            r = 18 if i % 2 == 0 else 8
+            ang = i * math.pi / 5 - math.pi / 2
+            star_points.append((cx + math.cos(ang) * r, wing_y + math.sin(ang) * r))
+        pygame.draw.polygon(surface, (255, 220, 50), star_points)
+
+        # Typography
+        title = self.font_ceremony_title.render("SUPER EARTH NAVAL AVIATOR", True, (255, 220, 50))
+        surface.blit(title, title.get_rect(center=(cx, cy + 18)))
+
+        sub = self.font_ceremony_sub.render("WINGS OF LIBERTY — FLIGHT QUALIFICATION CERTIFIED", True, (0, 230, 255))
+        surface.blit(sub, sub.get_rect(center=(cx, cy + 46)))
+
+        # Get pilot callsign
+        callsign = "PILOT"
+        try:
+            mgr = PlayerProfileManager()
+            if mgr.has_active_profile():
+                callsign = mgr.load_profile().username.upper()
+        except Exception:
+            pass
+
+        congrats = self.font_ceremony_name.render(f"COMMENDATION CONFERRED UPON: CADET {callsign}", True, (255, 255, 255))
+        surface.blit(congrats, congrats.get_rect(center=(cx, cy + 76)))
+
+    def draw_hud(self, surface: pygame.Surface, player=None):
+        """Render objective tracker, progress gauge, and Vance comms box in screen space."""
+        # Commander Vance comms
+        self.comms_box.draw(surface)
+
+        # Top Objective tracker banner
+        banner_rect = pygame.Rect(surface.get_width() - 480, 70, 430, 80)
+        pygame.draw.rect(surface, (14, 20, 32, 230), banner_rect, border_radius=8)
+        pygame.draw.rect(surface, (0, 200, 255), banner_rect, width=2, border_radius=8)
+
+        title_surf = self.font_obj.render(self.get_active_drill_title(), True, (255, 215, 0))
+        surface.blit(title_surf, (banner_rect.x + 14, banner_rect.y + 10))
+
+        # Dynamic sub-status
+        sub_text = "Follow Commander Vance's tactical instructions."
+        if self.state == DRILL_STEERING:
+            sub_text = f"Waypoint Rings Cleared: [{self.current_gate_idx} / {len(self.waypoint_gates)}]"
+        elif self.state == DRILL_THROTTLE:
+            target_t = 1.2
+            h_stat = "DONE" if self.throttle_high_completed else f"{int(min(1.0, self.throttle_high_time / target_t) * 100)}%"
+            l_stat = "DONE" if self.throttle_low_completed else f"{int(min(1.0, self.throttle_low_time / target_t) * 100)}%"
+            sub_text = f"Max Thrust [W]: [{h_stat}] | Air Brakes [S]: [{l_stat}]"
+        elif self.state == DRILL_BORDER_SAFETY:
+            sub_text = "STATUS: Perform 180° turnaround back to safe airspace."
+        elif self.state == DRILL_CANNONS:
+            left = len([d for d in self.target_drones if d.is_alive])
+            sub_text = f"Cannon Targets Remaining: [{left}]"
+        elif self.state == DRILL_RADAR_ROCKETS:
+            left = len([d for d in self.target_drones if d.is_alive])
+            sub_text = f"Radar Lock Targets Remaining: [{left}]"
+        elif self.state == DRILL_STRATAGEM:
+            sub_text = "STATUS: Deploy Eagle 500kg Bomb on marked Foundry!"
+        elif self.state == DRILL_GRADUATION:
+            sub_text = "STATUS: CERTIFIED! Returning to Fleet..."
+
+        sub_surf = self.font_sub.render(sub_text, True, (230, 240, 255))
+        surface.blit(sub_surf, (banner_rect.x + 14, banner_rect.y + 44))
+
+        # Graduation ceremony badge overlay
+        if self.state == DRILL_GRADUATION:
+            self._draw_graduation_badge(surface)
+
+    def draw_minimap(self, surface: pygame.Surface, scale: float):
+        """Render academy training waypoints, target drones, and objective beacons on the minimap."""
+        ticks = pygame.time.get_ticks()
+        mm_w, mm_h = surface.get_size()
+
+        # 1. Waypoint Gates (Alpha, Bravo, Charlie)
+        if self.state in (DRILL_BRIEFING, DRILL_STEERING):
+            for i, gate in enumerate(self.waypoint_gates):
+                gx = max(0, min(mm_w - 1, int(gate.x * scale)))
+                gy = max(0, min(mm_h - 1, int(gate.y * scale)))
+
+                if gate.cleared:
+                    # Cleared waypoint (subtle green check dot)
+                    pygame.draw.circle(surface, (46, 204, 113), (gx, gy), 2)
+                elif i == self.current_gate_idx and self.state == DRILL_STEERING:
+                    # Active navigation gate (pulsing cyan / gold radar ring)
+                    pulse_r = int(5 + 2 * math.sin(ticks * 0.015))
+                    pygame.draw.circle(surface, (0, 240, 255), (gx, gy), pulse_r, 1)
+                    pygame.draw.circle(surface, (255, 215, 0), (gx, gy), 3)
+                else:
+                    # Upcoming waypoint (cyan ring)
+                    pygame.draw.circle(surface, (0, 160, 220), (gx, gy), 3, 1)
+
+        # 2. Hazard Perimeter Boundary Line (Drill 3)
+        if self.state == DRILL_BORDER_SAFETY:
+            inset = int(400.0 * scale)
+            pulse_alpha = int(160 + 80 * math.sin(ticks * 0.01))
+            border_col = (pulse_alpha, 40, 40)
+            pygame.draw.rect(
+                surface,
+                border_col,
+                (inset, inset, max(1, mm_w - 2 * inset), max(1, mm_h - 2 * inset)),
+                1,
+            )
+
+        # 3. Training Drone Dummies (Drill 4 & 5)
+        if self.state in (DRILL_CANNONS, DRILL_RADAR_ROCKETS):
+            for drone in self.target_drones:
+                if drone.is_alive:
+                    dx = max(0, min(mm_w - 1, int(drone.x * scale)))
+                    dy = max(0, min(mm_h - 1, int(drone.y * scale)))
+
+                    # Bright red / gold target blip with pulsing radar ping
+                    pulse_r = int(4 + 1.5 * math.sin(ticks * 0.02 + dx * 0.1))
+                    pygame.draw.circle(surface, (255, 140, 40), (dx, dy), pulse_r, 1)
+                    pygame.draw.circle(surface, (255, 50, 50), (dx, dy), 3)
+                    pygame.draw.circle(surface, (255, 230, 100), (dx, dy), 1)
+
+        # 4. Target Foundry Bunker (Drill 6)
+        if self.state == DRILL_STRATAGEM and self.target_bunker and self.target_bunker.is_alive:
+            bx = max(0, min(mm_w - 1, int(self.target_bunker.x * scale)))
+            by = max(0, min(mm_h - 1, int(self.target_bunker.y * scale)))
+
+            # Pulsing golden CAS strike beacon
+            pulse_r = int(6 + 3 * math.sin(ticks * 0.02))
+            pygame.draw.circle(surface, (255, 215, 0), (bx, by), pulse_r, 1)
+            # Red bunker structure marker
+            pygame.draw.rect(surface, (255, 40, 40), (bx - 3, by - 3, 6, 6))
+            pygame.draw.rect(surface, (255, 255, 180), (bx - 3, by - 3, 6, 6), 1)
+
+        # 5. Graduation Ceremony Beacon
+        if self.state == DRILL_GRADUATION:
+            cx = max(0, min(mm_w - 1, int(1500.0 * scale)))
+            cy = max(0, min(mm_h - 1, int(1500.0 * scale)))
+            pulse_r = int(7 + 4 * math.sin(ticks * 0.015))
+            pygame.draw.circle(surface, (255, 215, 0), (cx, cy), pulse_r, 1)
+            pygame.draw.circle(surface, (0, 255, 180), (cx, cy), 3)

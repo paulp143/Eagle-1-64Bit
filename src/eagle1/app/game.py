@@ -4,8 +4,9 @@ import random
 
 import pygame
 
-from eagle1.effects import Large_explosion_a, Spritesheet
-from eagle1.paths import PROJECT_ROOT, get_user_data_dir, image_search_dirs
+from eagle1.data.player_profile import PlayerProfileManager
+from eagle1.effects import CombatJuiceManager, Large_explosion_a, Spritesheet
+from eagle1.paths import PROJECT_ROOT, get_user_data_dir, image_search_dirs, verify_path_exact_casing
 from eagle1.systems.audio_manager import get_audio_manager
 from eagle1.systems.ground_support import (
     GroundSupportManager,
@@ -24,11 +25,14 @@ from eagle1.systems.powerups import (
 from eagle1.ui.help_menu import HelpMenu
 from eagle1.ui.settings_menu import SettingsMenu
 from eagle1.ui.debriefing_screen import DebriefingScreen
+from eagle1.ui.enlistment_screen import EnlistmentScreen
+from eagle1.systems.academy_briefing import AcademyTutorialManager
 from eagle1.systems.hangar_cinematic import (
     PHASE_ASCENT,
     PHASE_HANGAR,
     PHASE_DESCENT,
 )
+from eagle1.story import CommsHUD, StoryManager
 
 BASE_DIR = str(PROJECT_ROOT)
 audio_manager = get_audio_manager()
@@ -46,20 +50,126 @@ PLAYER_HEIGHT = 61
 PLAYER_MAX_HEALTH = 5
 PLAYER_MAX_BULLETS = 200
 PLAYER_RELOAD_TIME = 5000
-PLAYER_ATTACK_DAMAGE_KAMIKAZE = 4
+PLAYER_ATTACK_DAMAGE_KAMIKAZE = 6
 PLAYER_INVINCIBLE_TIME = 1000
 PLAYER_MAX_SHIELD = 20
 PLAYER_MIN_SPEED = 2.0
 PLAYER_MAX_SPEED = 7.0
+CORNER_SPEED = 4.5
+TURN_RATE_STALL_MULT = 0.80
+TURN_RATE_CORNER_MULT = 1.35
+TURN_RATE_MAX_SPEED_MULT = 0.75
 PLAYER_MOVEMENT_SPEED_Y = PLAYER_MAX_SPEED / 2
 PLAYER_MOVEMENT_SPEED_X = PLAYER_MAX_SPEED / 2
 PLAYER_ACCELERATION = 0.15
-PLAYER_TURN_RATE = 3
+PLAYER_TURN_RATE = 3.2
 PLAYER_BULLET_DAMAGE = 1
+
+
+def calculate_turn_rate(speed: float, base_turn_rate: float) -> float:
+    """Compute effective angular turn rate using a Corner Speed aerodynamic curve.
+
+    - At stall speed (<= PLAYER_MIN_SPEED = 2.0): multiplier is 0.80 (sluggish authority).
+    - At corner speed (CORNER_SPEED = 4.5): multiplier peaks at 1.35 (maximum bite).
+    - At max speed (>= PLAYER_MAX_SPEED = 7.0): multiplier drops to 0.75 (high-G wide radius).
+    """
+    spd = float(speed)
+    if spd <= PLAYER_MIN_SPEED:
+        mult = TURN_RATE_STALL_MULT
+    elif spd <= CORNER_SPEED:
+        t = (spd - PLAYER_MIN_SPEED) / (CORNER_SPEED - PLAYER_MIN_SPEED)
+        mult = TURN_RATE_STALL_MULT + t * (TURN_RATE_CORNER_MULT - TURN_RATE_STALL_MULT)
+    elif spd <= PLAYER_MAX_SPEED:
+        t = (spd - CORNER_SPEED) / (PLAYER_MAX_SPEED - CORNER_SPEED)
+        mult = TURN_RATE_CORNER_MULT - t * (TURN_RATE_CORNER_MULT - TURN_RATE_MAX_SPEED_MULT)
+    else:
+        over_t = min(1.0, (spd - PLAYER_MAX_SPEED) / 3.0)
+        mult = TURN_RATE_MAX_SPEED_MULT - over_t * 0.10
+    return float(base_turn_rate) * mult
+
+
+COLLISION_COOLDOWN_MS = 500
+COLLISION_SEPARATION_DIST = 48.0
+
+
+def calculate_directional_gun_damage(
+    base_damage: float,
+    bullet_dx: float,
+    bullet_dy: float,
+    enemy_angle: float,
+) -> float:
+    """Calculate aspect-angle gun damage against an aerial fighter.
+
+    Enemy forward unit vector is (sin(rad), cos(rad)).
+    - Dot product >= +0.35 (rear ~140° tail cone / engines): 1.50x critical damage.
+    - Dot product <= -0.50 (frontal 120° nose armor): 0.65x deflected damage.
+    - Side / beam aspect (-0.50 < dot < +0.35): 1.15x fuselage damage.
+    """
+    b_mag = math.hypot(bullet_dx, bullet_dy)
+    if b_mag < 1e-6:
+        return float(base_damage)
+    bx = bullet_dx / b_mag
+    by = bullet_dy / b_mag
+
+    rad = math.radians(enemy_angle)
+    ex = math.sin(rad)
+    ey = math.cos(rad)
+
+    dot = bx * ex + by * ey
+    if dot >= 0.35:
+        return float(base_damage) * 1.50
+    elif dot <= -0.50:
+        return float(base_damage) * 0.50
+    else:
+        return float(base_damage) * 1.15
+
+
+def resolve_aerial_collision(player_obj, enemy_obj, current_time_ms=None):
+    """Resolve mid-air collision with physical bounce-back, momentum loss, and hull trauma.
+
+    Prevents instant kamikaze kills and stops multi-frame overlap damage grinding during
+    player invulnerability frames.
+    """
+    now = current_time_ms if current_time_ms is not None else pygame.time.get_ticks()
+    last_hit = getattr(enemy_obj, "last_collision_time", -99999)
+
+    p_cx = player_obj.pos_x + PLAYER_WIDTH / 2
+    p_cy = player_obj.pos_y + PLAYER_HEIGHT / 2
+    e_cx = enemy_obj.pos_x + LIGHT_ENEMY_WIDTH / 2
+    e_cy = enemy_obj.pos_y + LIGHT_ENEMY_HEIGHT / 2
+
+    dx = p_cx - e_cx
+    dy = p_cy - e_cy
+    dist = math.hypot(dx, dy)
+    if dist < 0.001:
+        rad = math.radians(player_obj.angle)
+        nx, ny = math.sin(rad), math.cos(rad)
+    else:
+        nx, ny = dx / dist, dy / dist
+
+    push_half = COLLISION_SEPARATION_DIST / 2.0
+    player_obj.pos_x = max(0.0, min(float(MAP_WIDTH - PLAYER_WIDTH), player_obj.pos_x + nx * push_half))
+    player_obj.pos_y = max(0.0, min(float(MAP_HEIGHT - PLAYER_HEIGHT), player_obj.pos_y + ny * push_half))
+    player_obj.x = int(player_obj.pos_x)
+    player_obj.y = int(player_obj.pos_y)
+
+    enemy_obj.pos_x = max(50.0, min(float(MAP_WIDTH - LIGHT_ENEMY_WIDTH - 50.0), enemy_obj.pos_x - nx * push_half))
+    enemy_obj.pos_y = max(50.0, min(float(MAP_HEIGHT - LIGHT_ENEMY_HEIGHT - 50.0), enemy_obj.pos_y - ny * push_half))
+    enemy_obj.x = int(enemy_obj.pos_x)
+    enemy_obj.y = int(enemy_obj.pos_y)
+
+    player_obj.velocity_x = max(player_obj.min_speed, player_obj.velocity_x * 0.55)
+    player_obj.velocity_y = max(player_obj.min_speed, player_obj.velocity_y * 0.55)
+
+    if now - last_hit >= COLLISION_COOLDOWN_MS:
+        enemy_obj.last_collision_time = now
+        enemy_obj.health -= getattr(player_obj, "kamikaze_attack_damage", PLAYER_ATTACK_DAMAGE_KAMIKAZE)
+        player_obj.take_damage(16.0)
 
 BULLET_WIDTH = 9
 BULLET_HEIGHT = 12
-BULLET_VELOCITY_Y = 8
+BULLET_VELOCITY_Y = 9.5
+BULLET_MAX_RANGE = 460.0
 BULLET_UI_WIDTH = BULLET_WIDTH / 2  # 4 px
 BULLET_UI_HEIGHT = BULLET_HEIGHT / 2
 BULLET_SHOOTING_TIMER = 100
@@ -67,8 +177,8 @@ BULLET_SHOOTING_TIMER = 100
 # Raketen-Parameter (Homing Rocket System)
 ROCKET_WIDTH = 12
 ROCKET_HEIGHT = 16
-ROCKET_VELOCITY = 7.0
-ROCKET_TURN_RATE = 2.0         
+ROCKET_VELOCITY = 11.5
+ROCKET_TURN_RATE = 5.5
 ROCKET_DAMAGE = 20
 ROCKET_SHOOTING_TIMER = 350
 ROCKET_MAX_FLIGHT_TIME = 2500  
@@ -81,7 +191,27 @@ RADAR_CONE_MIN_RANGE = 300
 RADAR_OMNI_RANGE = 420
 
 PLAYER_MAX_ROCKETS = 4
-PLAYER_ROCKET_RELOAD_TIME = 25000
+PLAYER_ROCKET_RELOAD_TIME = 12000
+
+
+def calculate_missile_intercept_point(rx: float, ry: float, r_speed: float, target) -> tuple:
+    """Compute predicted lead-intercept point for a homing missile against a moving target."""
+    tx = float(getattr(target, "pos_x", getattr(target, "x", 0.0))) + getattr(target, "width", LIGHT_ENEMY_WIDTH) / 2.0
+    ty = float(getattr(target, "pos_y", getattr(target, "y", 0.0))) + getattr(target, "height", LIGHT_ENEMY_HEIGHT) / 2.0
+
+    dist = math.hypot(tx - rx, ty - ry)
+    t_intercept = min(35.0, dist / max(1.0, float(r_speed)))
+
+    t_speed = float(getattr(target, "speed", 0.0))
+    if t_speed > 0.0 and hasattr(target, "angle"):
+        t_rad = math.radians(float(target.angle))
+        v_tx = math.sin(t_rad) * t_speed
+        v_ty = math.cos(t_rad) * t_speed
+    else:
+        v_tx = 0.0
+        v_ty = 0.0
+
+    return (tx + v_tx * t_intercept, ty + v_ty * t_intercept)
 
 SHIELD_UI_WIDTH = 12
 SHIELD_UI_HEIGHT = 8
@@ -91,7 +221,7 @@ BORDER_TICK_DAMAGE = 0.1
 
 LIGHT_ENEMY_WIDTH = 50
 LIGHT_ENEMY_HEIGHT = 46
-LIGHT_ENEMY_HEALTH = 4
+LIGHT_ENEMY_HEALTH = 20
 LIGHT_ENEMY_EXPLOSION_DAMAGE = 5
 LIGHT_ENEMY_EXPLOSION_WIDTH = 50
 LIGHT_ENEMY_EXPLOSION_HEIGHT = 46
@@ -100,7 +230,7 @@ LIGHT_ENEMY_BULLET_VELOCITY_Y = 5
 LIGHT_ENEMY_BULLET_SPEED = 5.0
 LIGHT_ENEMY_BULLET_DAMAGE = 1
 LIGHT_ENEMY_SPEED = 2.5
-LIGHT_ENEMY_TURN_RATE = 2.0
+LIGHT_ENEMY_TURN_RATE = 1.55
 LIGHT_ENEMY_ALIGNMENT_THRESHOLD = 15.0
 LIGHT_ENEMY_VELOCITY_X = 2
 LIGHT_ENEMY_VELOCITY_Y = 2
@@ -134,6 +264,8 @@ HIGHSCORE_FILE = os.path.join(str(get_user_data_dir()), "highscore.txt")
 
 def load_image(image_path, scale=None, colorkey=None):
     if os.path.isabs(image_path) and os.path.exists(image_path):
+        if not verify_path_exact_casing(image_path):
+            raise FileNotFoundError(f"Image case mismatch for: {image_path}")
         image = pygame.image.load(image_path)
     else:
         basename = os.path.basename(image_path)
@@ -154,7 +286,7 @@ def load_image(image_path, scale=None, colorkey=None):
                 os.path.join(str(image_dir), basename),
             ])
 
-        found = next((path for path in candidates if os.path.exists(path)), None)
+        found = next((path for path in candidates if os.path.exists(path) and verify_path_exact_casing(path)), None)
         if found is None:
             raise FileNotFoundError(f"Image not found: {image_path}")
         image = pygame.image.load(found)
@@ -210,6 +342,10 @@ class TextBox:
         border_color=None,
         hover_border_color=None,
         border_width=2,
+        enabled=True,
+        disabled_text_color=(120, 130, 145),
+        disabled_bg_color=(25, 28, 35),
+        disabled_border_color=(50, 55, 65),
         **rect_kwargs
     ):
         self.text = str(text)
@@ -222,11 +358,16 @@ class TextBox:
         self.border_color = border_color
         self.hover_border_color = hover_border_color
         self.border_width = border_width
+        self.enabled = enabled
+        self.disabled_text_color = disabled_text_color
+        self.disabled_bg_color = disabled_bg_color
+        self.disabled_border_color = disabled_border_color
         self.rect_kwargs = rect_kwargs
         self.update_surface()
 
     def update_surface(self):
-        self.text_surface = self.font.render(self.text, True, self.text_color)
+        color = self.text_color if self.enabled else self.disabled_text_color
+        self.text_surface = self.font.render(self.text, True, color)
         self.text_rect = self.text_surface.get_rect(**self.rect_kwargs)
         if self.bg_color is not None or self.border_color is not None or self.hover_bg_color is not None or self.hover_border_color is not None:
             self.bg_rect = self.text_rect.inflate(self.padding[0], self.padding[1])
@@ -239,15 +380,22 @@ class TextBox:
             self.text = new_text
             self.update_surface()
 
+    def set_enabled(self, enabled: bool):
+        if self.enabled != enabled:
+            self.enabled = enabled
+            self.update_surface()
+
     def get_hitbox(self):
         return self.bg_rect if self.bg_rect is not None else self.text_rect
 
     def is_hovered(self, mouse_pos):
-        if mouse_pos is None:
+        if not self.enabled or mouse_pos is None:
             return False
         return self.get_hitbox().collidepoint(mouse_pos)
 
     def is_clicked(self, event, mouse_pos):
+        if not self.enabled:
+            return False
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             clicked = self.is_hovered(mouse_pos)
             if clicked:
@@ -256,6 +404,14 @@ class TextBox:
         return False
 
     def draw(self, surface, mouse_pos=None):
+        if not self.enabled:
+            if self.disabled_bg_color and self.bg_rect:
+                pygame.draw.rect(surface, self.disabled_bg_color, self.bg_rect, border_radius=self.border_radius)
+            if self.disabled_border_color and self.bg_rect:
+                pygame.draw.rect(surface, self.disabled_border_color, self.bg_rect, width=self.border_width, border_radius=self.border_radius)
+            surface.blit(self.text_surface, self.text_rect)
+            return
+
         hovered = self.is_hovered(mouse_pos)
         if hovered and not getattr(self, "was_hovered", False):
             audio_manager.play_sfx("ui_hover")
@@ -313,10 +469,17 @@ try:
         pygame.mixer.set_num_channels(16)
 except Exception:
     pass
-font = pygame.font.SysFont("arial", 24, bold=True)
-title_font = pygame.font.SysFont("arial", 48, bold=True)
-speed_font = pygame.font.SysFont("arial", 18, bold=True)
-hud_small_font = pygame.font.SysFont("arial", 13, bold=True)
+def safe_font(name, size, bold=False):
+    try:
+        return pygame.font.SysFont(name, size, bold=bold)
+    except Exception:
+        return pygame.font.Font(None, size)
+
+font = safe_font("arial", 24, bold=True)
+title_font = safe_font("arial", 48, bold=True)
+speed_font = safe_font("arial", 18, bold=True)
+hud_small_font = safe_font("arial", 13, bold=True)
+profile_manager = PlayerProfileManager()
 clock = pygame.time.Clock()
 window = _set_display_mode((GAME_WIDTH, GAME_HEIGHT), pygame.RESIZABLE)
 # Explicit 32-bit RGBX surface with Amask=0 so macOS Cocoa never zeroes dstA when compositing overlapping SRCALPHA sprites
@@ -364,6 +527,8 @@ ground_support_manager = GroundSupportManager()
 help_menu = HelpMenu(GAME_WIDTH, GAME_HEIGHT)
 settings_menu = SettingsMenu(GAME_WIDTH, GAME_HEIGHT)
 debriefing_screen = DebriefingScreen(GAME_WIDTH, GAME_HEIGHT)
+enlistment_screen = EnlistmentScreen(GAME_WIDTH, GAME_HEIGHT)
+academy_manager = AcademyTutorialManager()
 previous_game_state = "main_menu"
 
 # Mission Performance Tracking Variables
@@ -376,6 +541,7 @@ mission_bomber_kills = 0
 # =====================================================================
 
 class MissionType:
+    ACADEMY_TUTORIAL = "academy_tutorial"
     AIR_SUPERIORITY = "air_superiority"
     BASE_DEFENSE = "base_defense"
     STRIDER_RAID = "strider_raid"
@@ -383,6 +549,20 @@ class MissionType:
     ENDLESS_WAR = "endless_war"
 
 MISSION_CONFIGS = {
+    MissionType.ACADEMY_TUTORIAL: {
+        "id": MissionType.ACADEMY_TUTORIAL,
+        "name": "SUPER EARTH NAVAL ACADEMY",
+        "category": "TRAINING OPERATIONS",
+        "desc": "Basic Flight Certification & Close Air Support Qualification under Commander Vance.",
+        "difficulty": "TRAINING",
+        "has_ground": False,
+        "has_fabricators": False,
+        "has_strider": False,
+        "has_bombers": False,
+        "has_base": False,
+        "max_waves": 1,
+        "icon_color": (255, 215, 0),
+    },
     MissionType.AIR_SUPERIORITY: {
         "id": MissionType.AIR_SUPERIORITY,
         "name": "AIR SUPERIORITY",
@@ -692,65 +872,113 @@ def get_canvas_mouse_pos():
 
 # UI TextBoxes & Buttons vorbereiten
 title_box = TextBox(
-    "Eagle 1 64Bit",
+    "EAGLE 1: 64-BIT",
     title_font,
-    bg_color="Black",
-    padding=(40, 40),
-    border_radius=8,
-    centerx=GAME_WIDTH/2,
-    bottom=GAME_HEIGHT*0.2
+    text_color=(0, 230, 255),
+    bg_color=(10, 15, 25),
+    border_color=(0, 180, 240),
+    border_width=2,
+    padding=(50, 14),
+    border_radius=10,
+    centerx=GAME_WIDTH / 2,
+    centery=120,
 )
 
-menu_play_box = TextBox(
-    "To play press SHIFT",
-    font,
-    bg_color=(20, 25, 35),
-    hover_bg_color=(40, 60, 100),
-    border_color=(80, 100, 140),
-    hover_border_color=(0, 200, 255),
-    padding=(30, 16),
-    border_radius=8,
-    centerx=GAME_WIDTH/2,
-    bottom=GAME_HEIGHT/2+35
+subtitle_box = TextBox(
+    "SUPER EARTH NAVAL AIR DIVISION — STORY CAMPAIGN",
+    hud_small_font,
+    text_color=(255, 215, 0),
+    bg_color=(15, 20, 30),
+    border_color=(100, 85, 30),
+    padding=(24, 6),
+    border_radius=6,
+    centerx=GAME_WIDTH / 2,
+    centery=185,
 )
 
-menu_help_box = TextBox(
-    "Help & Weapons Guide: Press H",
+menu_new_game_box = TextBox(
+    "NEW GAME",
     font,
-    bg_color=(20, 25, 35),
-    hover_bg_color=(20, 70, 110),
-    border_color=(80, 100, 140),
+    text_color=(255, 255, 255),
+    bg_color=(20, 30, 45),
+    hover_bg_color=(35, 75, 120),
+    border_color=(0, 180, 240),
+    hover_border_color=(0, 240, 255),
+    padding=(60, 14),
+    border_radius=8,
+    centerx=GAME_WIDTH / 2,
+    centery=280,
+)
+
+menu_continue_box = TextBox(
+    "CONTINUE",
+    font,
+    text_color=(255, 255, 255),
+    bg_color=(20, 30, 45),
+    hover_bg_color=(30, 70, 100),
+    border_color=(80, 120, 160),
     hover_border_color=(0, 220, 255),
-    padding=(26, 14),
+    disabled_text_color=(100, 110, 125),
+    disabled_bg_color=(18, 22, 28),
+    disabled_border_color=(45, 50, 60),
+    padding=(60, 14),
     border_radius=8,
-    centerx=GAME_WIDTH/2,
-    bottom=GAME_HEIGHT/2+90
+    centerx=GAME_WIDTH / 2,
+    centery=350,
 )
 
 menu_settings_box = TextBox(
-    "Settings & Audio: Press O",
+    "SETTINGS",
     font,
+    text_color=(255, 255, 255),
     bg_color=(20, 25, 35),
-    hover_bg_color=(20, 70, 110),
+    hover_bg_color=(25, 55, 85),
     border_color=(80, 100, 140),
-    hover_border_color=(0, 220, 255),
-    padding=(26, 14),
+    hover_border_color=(0, 200, 255),
+    padding=(60, 14),
     border_radius=8,
-    centerx=GAME_WIDTH/2,
-    bottom=GAME_HEIGHT/2+145
+    centerx=GAME_WIDTH / 2,
+    centery=420,
 )
 
-menu_reset_box = TextBox(
-    "Hold L-SHIFT + R-SHIFT + R to reset Highscore",
+menu_help_box = TextBox(
+    "TACTICAL MANUAL",
     font,
+    text_color=(255, 255, 255),
     bg_color=(20, 25, 35),
-    hover_bg_color=(80, 30, 30),
+    hover_bg_color=(25, 55, 85),
     border_color=(80, 100, 140),
-    hover_border_color=(255, 80, 80),
-    padding=(24, 12),
+    hover_border_color=(0, 200, 255),
+    padding=(60, 14),
     border_radius=8,
-    centerx=GAME_WIDTH/2,
-    bottom=GAME_HEIGHT/2+200
+    centerx=GAME_WIDTH / 2,
+    centery=490,
+)
+
+menu_quit_box = TextBox(
+    "QUIT TO DESKTOP",
+    font,
+    text_color=(255, 255, 255),
+    bg_color=(25, 20, 25),
+    hover_bg_color=(80, 30, 35),
+    border_color=(120, 70, 80),
+    hover_border_color=(255, 70, 70),
+    padding=(60, 14),
+    border_radius=8,
+    centerx=GAME_WIDTH / 2,
+    centery=560,
+)
+
+menu_status_hint_box = TextBox(
+    "NO ACTIVE SERVICE RECORD — SELECT 'NEW GAME' TO ENLIST",
+    hud_small_font,
+    text_color=(220, 160, 50),
+    bg_color=(20, 20, 25),
+    border_color=(70, 50, 20),
+    padding=(18, 6),
+    border_radius=6,
+    centerx=GAME_WIDTH / 2,
+    centery=635,
 )
 
 pause_title_box = TextBox(
@@ -888,6 +1116,8 @@ class Player(pygame.Rect):
             self.image = pygame.transform.rotate(bullet_image, angle)
             self.used = False
             self.speed = BULLET_VELOCITY_Y
+            self.max_range = float(BULLET_MAX_RANGE)
+            self.distance_traveled = 0.0
             rad = math.radians(angle)
             self.dx = -math.sin(rad) * self.speed
             self.dy = -math.cos(rad) * self.speed
@@ -897,6 +1127,9 @@ class Player(pygame.Rect):
             self.pos_y += self.dy
             self.x = int(self.pos_x)
             self.y = int(self.pos_y)
+            self.distance_traveled += self.speed
+            if self.distance_traveled >= self.max_range:
+                self.used = True
 
     class Rocket(pygame.Rect):
         """Zielsuchende Rakete mit sanfter Drehphysik (turn_rate=2.0) und maximaler Flugzeit."""
@@ -977,13 +1210,12 @@ class Player(pygame.Rect):
                     self.lock_on(targets, player=player)
 
             if self.target and not getattr(self.target, 'exploding', False) and getattr(self.target, 'health', 0) > 0:
-                tx = self.target.x + getattr(self.target, 'width', LIGHT_ENEMY_WIDTH) / 2
-                ty = self.target.y + getattr(self.target, 'height', LIGHT_ENEMY_HEIGHT) / 2
                 cx = self.pos_x + ROCKET_WIDTH / 2
                 cy = self.pos_y + ROCKET_HEIGHT / 2
+                lead_x, lead_y = calculate_missile_intercept_point(cx, cy, self.speed, self.target)
 
-                diff_x = tx - cx
-                diff_y = ty - cy
+                diff_x = lead_x - cx
+                diff_y = lead_y - cy
 
                 desired_angle = math.degrees(math.atan2(-diff_x, -diff_y)) % 360
                 angle_diff = (desired_angle - self.angle + 180) % 360 - 180
@@ -1048,6 +1280,14 @@ class Player(pygame.Rect):
         self.velocity_y = float(PLAYER_MOVEMENT_SPEED_Y)
         self.velocity_x = float(PLAYER_MOVEMENT_SPEED_X)
         self.boundaries = False
+
+    def get_forward_speed(self):
+        """Returns the scalar forward movement speed of the ship."""
+        return float(self.velocity_x)
+
+    def get_effective_turn_rate(self):
+        """Returns the speed-dependent angular turn rate peaking at CORNER_SPEED."""
+        return calculate_turn_rate(self.get_forward_speed(), self.turn_rate)
 
     def toggle_radar_mode(self):
         """Wechselt zwischen CONE (Geradeaus-Fernbereich) und OMNI (360°-Nahbereich)."""
@@ -1238,11 +1478,13 @@ class Light_Enemy(pygame.Rect):
                 x = random.randrange(100, MAP_WIDTH - LIGHT_ENEMY_WIDTH - 100, LIGHT_ENEMY_WIDTH * 2)
             if y is None:
                 y = random.randrange(100, 400)
-        pygame.Rect.__init__(self, int(x), int(y), LIGHT_ENEMY_WIDTH, LIGHT_ENEMY_HEIGHT)
-        self.pos_x = float(x)
-        self.pos_y = float(y)
-        self.x = int(x)
-        self.y = int(y)
+        safe_x = max(50.0, min(float(MAP_WIDTH - LIGHT_ENEMY_WIDTH - 50.0), float(x)))
+        safe_y = max(50.0, min(float(MAP_HEIGHT - LIGHT_ENEMY_HEIGHT - 50.0), float(y)))
+        pygame.Rect.__init__(self, int(safe_x), int(safe_y), LIGHT_ENEMY_WIDTH, LIGHT_ENEMY_HEIGHT)
+        self.pos_x = float(safe_x)
+        self.pos_y = float(safe_y)
+        self.x = int(safe_x)
+        self.y = int(safe_y)
         self.original_image = light_enemy_image
         self.image = light_enemy_image
         self.angle = 0.0
@@ -1261,10 +1503,18 @@ class Light_Enemy(pygame.Rect):
         # Squadron & AI State
         self.squadron_id = squadron_id
         self.state = "PATROL"  # "PATROL" or "AGRO"
+        self.bfm_mode = "PATROL"
+        self.bfm_commit_timer = 0
+        self.jink_cooldown_timer = 0
+        self.target_heading = 0.0
         self.orbit_direction = orbit_direction
         self.orbit_radius = orbit_radius
         self.formation_offset = formation_offset
         self.orbit_angle = math.degrees(math.atan2(self.pos_x - MAP_WIDTH / 2, self.pos_y - MAP_HEIGHT / 2))
+
+    def get_effective_turn_rate(self):
+        """Returns the speed-dependent angular turn rate peaking at CORNER_SPEED."""
+        return calculate_turn_rate(self.speed, self.turn_rate)
 
     def trigger_agro(self, enemies=None):
         self.state = "AGRO"
@@ -1302,19 +1552,79 @@ class Light_Enemy(pygame.Rect):
                 if dist_to_player > ENEMY_DEAGRO_RADIUS:
                     self.state = "PATROL"
 
-            # Determine target angle & speed by state
+            # Determine target angle & speed by state (BFM Pursuit Geometry)
             if self.state == "AGRO":
                 dx = pcx - cx
                 dy = pcy - cy
-                if dist_to_player < 180.0:
-                    # Break-away evasive flight: strafe pass rather than head-on suicide ramming
-                    evade_sign = getattr(self, "orbit_direction", 1)
-                    target_angle = (math.degrees(math.atan2(dx, dy)) + evade_sign * 75.0) % 360
-                    self.speed = ENEMY_AGRO_SPEED * 1.2
+                safe_dist = max(0.001, dist_to_player)
+                los_x = dx / safe_dist
+                los_y = dy / safe_dist
+
+                p_rad = math.radians(getattr(target, "angle", 0.0))
+                p_fx = -math.sin(p_rad)
+                p_fy = -math.cos(p_rad)
+
+                e_rad = math.radians(self.angle)
+                e_fx = math.sin(e_rad)
+                e_fy = math.cos(e_rad)
+
+                # +1.0 = pointing directly at opponent; -1.0 = pointing directly away
+                enemy_closing_dot = e_fx * los_x + e_fy * los_y
+                player_closing_dot = -(p_fx * los_x + p_fy * los_y)
+                evade_sign = 1 if getattr(self, "orbit_direction", 1) >= 0 else -1
+
+                if self.jink_cooldown_timer > 0:
+                    self.jink_cooldown_timer -= 1
+
+                if self.bfm_commit_timer > 0:
+                    # Stay committed to current break heading so enemy passes through the merge
+                    # instead of orbiting in a tiny circle
+                    self.bfm_commit_timer -= 1
+                    target_angle = self.target_heading
+                elif dist_to_player < 280.0 and enemy_closing_dot > 0.35 and player_closing_dot > 0.35:
+                    # 1. MERGE_BREAK: True head-on merge -> commit to a lateral pass-through slice
+                    self.bfm_mode = "MERGE_BREAK"
+                    self.bfm_commit_timer = 32
+                    los_angle = math.degrees(math.atan2(dx, dy))
+                    if self.squadron_id % 2 == 0:
+                        # 1-Circle Radius Fighter: brake to Corner Speed and cut inside the turn
+                        self.speed = CORNER_SPEED
+                        target_angle = (los_angle + evade_sign * 50.0) % 360
+                    else:
+                        # 2-Circle Rate Fighter: extend through merge at high speed for rate flow
+                        self.speed = CORNER_SPEED * 1.15
+                        target_angle = (los_angle + evade_sign * 70.0) % 360
+                elif (
+                    dist_to_player < 380.0
+                    and enemy_closing_dot < -0.30
+                    and player_closing_dot > 0.70
+                    and self.jink_cooldown_timer <= 0
+                ):
+                    # 2. EVASIVE_JINK: Brief defensive jink when player first lines up on enemy's six,
+                    # followed by a cooldown window so the player can track and finish the kill
+                    self.bfm_mode = "EVASIVE_JINK"
+                    self.bfm_commit_timer = 20
+                    self.jink_cooldown_timer = 150
+                    self.speed = CORNER_SPEED
+                    away_angle = math.degrees(math.atan2(-dx, -dy))
+                    target_angle = (away_angle + evade_sign * 65.0) % 360
+                elif dist_to_player < 420.0 and player_closing_dot < -0.35:
+                    # 3. WEZ_ATTACK: Slotted behind player's tail -> pull lead pursuit for gun burst
+                    self.bfm_mode = "WEZ_ATTACK"
+                    self.speed = CORNER_SPEED
+                    lead_x = pcx + p_fx * 40.0
+                    lead_y = pcy + p_fy * 40.0
+                    target_angle = math.degrees(math.atan2(lead_x - cx, lead_y - cy))
                 else:
-                    self.speed = ENEMY_AGRO_SPEED
-                    target_angle = math.degrees(math.atan2(dx, dy))
+                    # 4. TAIL_STALK: Lag pursuit aiming behind player's tail (scales down at close range)
+                    self.bfm_mode = "TAIL_STALK"
+                    self.speed = CORNER_SPEED if dist_to_player < 550.0 else ENEMY_AGRO_SPEED * 1.35
+                    lag_offset = min(140.0, dist_to_player * 0.30)
+                    tail_x = pcx - p_fx * lag_offset
+                    tail_y = pcy - p_fy * lag_offset
+                    target_angle = math.degrees(math.atan2(tail_x - cx, tail_y - cy))
             else:
+                self.bfm_mode = "PATROL"
                 self.speed = ENEMY_PATROL_SPEED
                 angular_speed = (self.speed / max(100.0, self.orbit_radius)) * (180.0 / math.pi) * self.orbit_direction * speed_factor
                 self.orbit_angle = (self.orbit_angle + angular_speed) % 360
@@ -1329,9 +1639,12 @@ class Light_Enemy(pygame.Rect):
                 dy = waypoint_y - cy
                 target_angle = math.degrees(math.atan2(dx, dy))
 
+            self.target_heading = (target_angle + 180) % 360 - 180
+
             # Rotate enemy sprite so it turns to face heading
+            prev_angle = self.angle
             angle_diff = (target_angle - self.angle + 180) % 360 - 180
-            effective_turn_rate = self.turn_rate * speed_factor
+            effective_turn_rate = self.get_effective_turn_rate() * speed_factor
             if abs(angle_diff) <= effective_turn_rate:
                 self.angle = target_angle
             elif angle_diff > 0:
@@ -1339,6 +1652,18 @@ class Light_Enemy(pygame.Rect):
             else:
                 self.angle -= effective_turn_rate
             self.angle = (self.angle + 180) % 360 - 180
+            turned_delta = (self.angle - prev_angle + 180) % 360 - 180
+            if "combat_juice" in globals():
+                combat_juice.emit_wingtip_contrails(
+                    cx=cx,
+                    cy=cy,
+                    angle_deg=self.angle,
+                    speed=self.speed,
+                    angular_delta=turned_delta,
+                    wing_span=16.0,
+                    tail_offset=10.0,
+                    is_enemy=True,
+                )
 
         self.image = pygame.transform.rotate(self.original_image, self.angle)
 
@@ -1409,8 +1734,12 @@ class WaveManager:
         self.enemies = []
         self.state = "ACTIVE"  # "ACTIVE", "INTERMISSION"
         self.intermission_timer = 0
-        self.wave_announcement = "WAVE 1"
-        self.announcement_timer = 180
+        if active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL:
+            self.wave_announcement = ""
+            self.announcement_timer = 0
+        else:
+            self.wave_announcement = "WAVE 1"
+            self.announcement_timer = 180
         self.spawn_wave(1)
 
     def spawn_wave(self, wave_num):
@@ -1418,6 +1747,12 @@ class WaveManager:
         self.wave = min(wave_num, max_w)
         self.enemies.clear()
         self.state = "ACTIVE"
+
+        if active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL:
+            self.wave_announcement = ""
+            self.announcement_timer = 0
+            return
+
         self.wave_announcement = f"WAVE {self.wave}"
         self.announcement_timer = 150
 
@@ -1607,12 +1942,14 @@ def move():
     primary_enemy = wave_manager.get_closest_enemy(player)
     light_enemy = primary_enemy
 
+    comms_scale = comms_hud.get_time_dilation() if comms_hud else 1.0
+
     # Update power-up subsystem (buff timers, drops, drone, micro-missiles, popups)
-    powerup_manager.update(1.0 / 60.0, player, primary_enemy)
+    powerup_manager.update(1.0 / 60.0 * comms_scale, player, primary_enemy)
 
     # Update ground support subsystem (Helldivers, airstrikes, supply drops, danger alerts)
     all_air_targets = list(wave_manager.enemies) + list(bomber_enemies)
-    ground_support_manager.update(1.0 / 60.0, player, all_air_targets, explosion_group, large_explosion_a_spritesheet.frames)
+    ground_support_manager.update(1.0 / 60.0 * comms_scale, player, all_air_targets, explosion_group, large_explosion_a_spritesheet.frames)
 
     if ground_support_manager.objective_phase == "COMPLETE":
         trigger_mission_complete()
@@ -1623,7 +1960,7 @@ def move():
         target_pt = (orbital_base.pos_x + 60, orbital_base.pos_y + 60) if (orbital_base and orbital_base.is_alive) else (player.pos_x, player.pos_y)
         for bomber in list(bomber_enemies):
             if not bomber.exploding:
-                b_speed_mult = SLOW_MO_TIME_SCALE if ground_support_manager.is_slow_mo else 1.0
+                b_speed_mult = (SLOW_MO_TIME_SCALE if ground_support_manager.is_slow_mo else 1.0) * comms_scale
                 bomber.update(target_pt, speed_factor=b_speed_mult)
                 if orbital_base and orbital_base.is_alive and math.hypot((bomber.pos_x + 32) - target_pt[0], (bomber.pos_y + 26) - target_pt[1]) <= 65.0:
                     orbital_base.take_damage(bomber.bullet_damage)
@@ -1655,7 +1992,16 @@ def move():
         for enemy in wave_manager.enemies:
             if bullet.colliderect(enemy) and not enemy.exploding:
                 bullet.used = True
-                enemy.health -= bullet_dmg
+                dir_dmg = calculate_directional_gun_damage(
+                    bullet_dmg, bullet.dx, bullet.dy, enemy.angle
+                )
+                enemy.health -= dir_dmg
+                if "combat_juice" in globals():
+                    combat_juice.spawn_hit_sparks(
+                        bullet.pos_x + BULLET_WIDTH / 2,
+                        bullet.pos_y + BULLET_HEIGHT / 2,
+                        damage_ratio=dir_dmg / max(0.01, bullet_dmg),
+                    )
                 powerup_manager.on_bullet_hit_enemy(enemy)
                 enemy.trigger_agro(wave_manager.enemies)
                 audio_manager.play_sfx("hit")
@@ -1692,10 +2038,26 @@ def move():
                     audio_manager.play_sfx("hit")
                     break
 
-    # Rocket Update & Collision across all targets (aerial enemies, bombers, ground units, fabricators, strider)
+        # Check collision with Academy training targets (drones, bunker)
+        if not bullet.used and active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL:
+            for target in academy_manager.get_combat_targets():
+                if target.is_alive and bullet.colliderect(target):
+                    bullet.used = True
+                    target.take_damage(bullet_dmg)
+                    audio_manager.play_sfx("hit")
+                    if not target.is_alive:
+                        audio_manager.play_sfx("explosion_small")
+                        cx = getattr(target, 'centerx', getattr(target, 'pos_x', 0))
+                        cy = getattr(target, 'centery', getattr(target, 'pos_y', 0))
+                        explosion_group.add(Large_explosion_a(cx, cy, large_explosion_a_spritesheet.frames, speed=0.6))
+                    break
+
+    # Rocket Update & Collision across all targets (aerial enemies, bombers, ground units, fabricators, strider, academy targets)
     all_combat_targets = list(wave_manager.enemies) + list(bomber_enemies) + [g for g in ground_support_manager.enemy_ground_units if g.is_alive] + [f for f in ground_support_manager.enemy_fabricators if f.is_alive]
     if ground_support_manager.factory_strider and ground_support_manager.factory_strider.is_alive:
         all_combat_targets.append(ground_support_manager.factory_strider)
+    if active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL:
+        all_combat_targets.extend(academy_manager.get_combat_targets())
 
     for rocket in player.rockets:
         rocket.update_position(all_combat_targets, player=player)
@@ -1714,6 +2076,13 @@ def move():
                     rocket.used = True
                     enemy.health -= rocket.damage
                     enemy.trigger_agro(wave_manager.enemies)
+                    if "combat_juice" in globals():
+                        combat_juice.trigger_shake(4.5, 6)
+                        combat_juice.spawn_hit_sparks(
+                            rocket.x + ROCKET_WIDTH // 2,
+                            rocket.y + ROCKET_HEIGHT // 2,
+                            damage_ratio=1.25,
+                        )
                     hit_explosion = Large_explosion_a(
                         rocket.x + ROCKET_WIDTH // 2,
                         rocket.y + ROCKET_HEIGHT // 2,
@@ -1774,11 +2143,32 @@ def move():
                         audio_manager.play_sfx("explosion")
                         break
 
-    # Player Kamikaze Collision (Absorbed by Shields first, with separation recoil)
+            if not rocket.used and active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL:
+                for target in academy_manager.get_combat_targets():
+                    if target.is_alive and rocket.colliderect(target):
+                        rocket.used = True
+                        target.take_damage(rocket.damage)
+                        cx = getattr(target, 'centerx', getattr(target, 'pos_x', 0))
+                        cy = getattr(target, 'centery', getattr(target, 'pos_y', 0))
+                        hit_explosion = Large_explosion_a(
+                            cx, cy,
+                            large_explosion_a_spritesheet.frames,
+                            speed=0.6
+                        )
+                        explosion_group.add(hit_explosion)
+                        audio_manager.play_sfx("explosion")
+                        break
+
+    # Player Aerial Collision (Physical bounce-back, speed loss, and mutual hull trauma)
     for enemy in wave_manager.enemies:
         if not enemy.exploding and player.colliderect(enemy):
-            enemy.health -= player.kamikaze_attack_damage
-            player.take_damage(12.0)
+            if resolve_aerial_collision(player, enemy) and "combat_juice" in globals():
+                combat_juice.trigger_shake(5.5, 8)
+                combat_juice.spawn_hit_sparks(
+                    (player.pos_x + enemy.pos_x) * 0.5 + PLAYER_WIDTH * 0.5,
+                    (player.pos_y + enemy.pos_y) * 0.5 + PLAYER_HEIGHT * 0.5,
+                    damage_ratio=1.25,
+                )
             enemy.trigger_agro(wave_manager.enemies)
             
 
@@ -1842,8 +2232,8 @@ def move():
     player.rockets = [rocket for rocket in player.rockets if not rocket.used \
                     and 0 <= rocket.x <= MAP_WIDTH and 0 <= rocket.y <= MAP_HEIGHT]
 
-    # Enemy and enemy bullet movement affected by Time Slow, Frost/Freeze, and Stratagem Aiming Slow-Mo
-    slow_mo_mult = SLOW_MO_TIME_SCALE if ground_support_manager.is_slow_mo else 1.0
+    # Enemy and enemy bullet movement affected by Time Slow, Frost/Freeze, Stratagem Aiming, and Comms Dialogue
+    slow_mo_mult = (SLOW_MO_TIME_SCALE if ground_support_manager.is_slow_mo else 1.0) * comms_scale
     speed_factor = powerup_manager.modify_enemy_speed(1.0) * slow_mo_mult
     bullet_speed_factor = powerup_manager.modify_enemy_bullet_speed(1.0) * slow_mo_mult
 
@@ -1874,9 +2264,17 @@ def move():
                 drop.used = True
 
     health_drops = [d for d in health_drops if not d.used]
+    combat_juice.update()
 
-    # Update Wave progression
-    wave_manager.update(player)
+    # Update Wave progression or Academy Tutorial
+    if active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL:
+        keys = pygame.key.get_pressed()
+        academy_manager.update(1.0 / 60.0, player, keys, ground_support_manager)
+        if academy_manager.is_completed:
+            trigger_mission_complete()
+            return
+    else:
+        wave_manager.update(player)
 
 
 def respawn(mission_config=None, selected_stratagems=None):
@@ -1912,6 +2310,12 @@ def respawn(mission_config=None, selected_stratagems=None):
     bomber_enemies.clear()
     wave_manager = WaveManager()
 
+    if active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL:
+        wave_manager.enemies.clear()
+        wave_manager.announcement_timer = 0
+        wave_manager.wave_announcement = ""
+        academy_manager.reset(player)
+
     if active_mission_config.get("has_base"):
         orbital_base = OrbitalBase(1500, 1500)
     else:
@@ -1920,6 +2324,7 @@ def respawn(mission_config=None, selected_stratagems=None):
     light_enemy = wave_manager.enemies[0] if wave_manager.enemies else None
     player.shield = PLAYER_MAX_SHIELD
     explosion_group.empty()
+    combat_juice.reset()
     powerup_manager.reset(player)
     ground_support_manager.reset(active_mission_config, selected_stratagems=selected_stratagems)
     audio_manager.play_music("gameplay_normal")
@@ -1929,11 +2334,26 @@ def main_menu(mouse_pos=None):
     canvas.fill((0, 0, 0))
     canvas.blit(main_menu_image, (0, 0))
 
+    has_active_save = profile_manager.has_active_profile()
+    if has_active_save:
+        active_prof = profile_manager.load_profile()
+        callsign = active_prof.username.upper()
+        menu_continue_box.set_text(f"CONTINUE : CADET {callsign}")
+        menu_continue_box.set_enabled(True)
+    else:
+        menu_continue_box.set_text("CONTINUE (NO SERVICE RECORD)")
+        menu_continue_box.set_enabled(False)
+
     title_box.draw(canvas, mouse_pos)
-    menu_play_box.draw(canvas, mouse_pos)
-    menu_help_box.draw(canvas, mouse_pos)
+    subtitle_box.draw(canvas, mouse_pos)
+    menu_new_game_box.draw(canvas, mouse_pos)
+    menu_continue_box.draw(canvas, mouse_pos)
     menu_settings_box.draw(canvas, mouse_pos)
-    menu_reset_box.draw(canvas, mouse_pos)
+    menu_help_box.draw(canvas, mouse_pos)
+    menu_quit_box.draw(canvas, mouse_pos)
+
+    if not has_active_save:
+        menu_status_hint_box.draw(canvas, mouse_pos)
 
 
 def pause_menu(mouse_pos=None):
@@ -1960,9 +2380,15 @@ def draw(mouse_pos=None):
         camera_x = max(0, min(MAP_WIDTH - GAME_WIDTH, player.pos_x + PLAYER_WIDTH / 2 - GAME_WIDTH / 2))
         camera_y = max(0, min(MAP_HEIGHT - GAME_HEIGHT, player.pos_y + PLAYER_HEIGHT / 2 - GAME_HEIGHT / 2))
 
-    # Snap camera to integer pixels to prevent sub-pixel tile shimmer and seam wave artifacts
-    camera_x = int(round(camera_x))
-    camera_y = int(round(camera_y))
+    # Snap camera to integer pixels; apply screen shake only if enabled in Settings
+    if "settings_menu" in globals() and not settings_menu.toggle_screen_shake.state:
+        shake_ox, shake_oy = 0, 0
+    else:
+        shake_ox, shake_oy = combat_juice.get_camera_offset()
+    camera_x = int(round(camera_x)) + shake_ox
+    camera_y = int(round(camera_y)) + shake_oy
+    camera_x = max(0, min(MAP_WIDTH - GAME_WIDTH, camera_x))
+    camera_y = max(0, min(MAP_HEIGHT - GAME_HEIGHT, camera_y))
 
     # Seamless background tiling inside map boundaries
     bg_w, bg_h = backround_image.get_size()
@@ -1990,6 +2416,10 @@ def draw(mouse_pos=None):
         # Draw ground support world entities (Helldivers, obstacles, beacon, airstrikes, supply pods)
         ground_support_manager.draw_world_entities(canvas, camera_x, camera_y, hud_small_font)
 
+        # Draw Academy Tutorial world entities (gates, drones, bunkers)
+        if active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL:
+            academy_manager.draw_world(canvas, camera_x, camera_y)
+
         # Draw Orbital Base if present
         if orbital_base and orbital_base.is_alive:
             orbital_base.draw(canvas, camera_x, camera_y, font)
@@ -1997,6 +2427,9 @@ def draw(mouse_pos=None):
         # Draw Bomber Enemies
         for bomber in bomber_enemies:
             bomber.draw(canvas, camera_x, camera_y)
+
+        # Draw high-G wingtip vapor contrails and directional hit sparks
+        combat_juice.draw(canvas, camera_x, camera_y)
 
         # Player rendered relative to camera
         screen_player_x = player.pos_x - camera_x
@@ -2125,7 +2558,8 @@ def draw(mouse_pos=None):
 
         # Draw dynamic gun pip & predictive air strike impact reticle
         if player.health > 0:
-            ground_support_manager.draw_reticle(canvas, camera_x, camera_y, player)
+            extra_tgts = academy_manager.get_combat_targets() if active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL else None
+            ground_support_manager.draw_reticle(canvas, camera_x, camera_y, player, extra_targets=extra_tgts)
 
         # UI elements (Screen space, fixed overlay)
         score_box.set_text(f"Score: {player.score}")
@@ -2161,31 +2595,40 @@ def draw(mouse_pos=None):
         canvas.blit(hp_lbl, (gauge_x + gauge_w // 2 - hp_lbl.get_width() // 2, hull_y - 1))
 
         # Wave Counter HUD Box (Adjacent to Gauges at x=248)
-        living_count = len([e for e in wave_manager.enemies if not getattr(e, 'exploding', False)])
-        wave_box_w = 165
-        wave_box_h = 42
-        wave_box_x = 248
-        wave_box_y = 16
-        pygame.draw.rect(canvas, (18, 24, 36), (wave_box_x, wave_box_y, wave_box_w, wave_box_h), border_radius=6)
-        pygame.draw.rect(canvas, (60, 90, 130), (wave_box_x, wave_box_y, wave_box_w, wave_box_h), 1, border_radius=6)
+        if active_mission_config.get("id") != MissionType.ACADEMY_TUTORIAL:
+            living_count = len([e for e in wave_manager.enemies if not getattr(e, 'exploding', False)])
+            wave_box_w = 165
+            wave_box_h = 42
+            wave_box_x = 248
+            wave_box_y = 16
+            pygame.draw.rect(canvas, (18, 24, 36), (wave_box_x, wave_box_y, wave_box_w, wave_box_h), border_radius=6)
+            pygame.draw.rect(canvas, (60, 90, 130), (wave_box_x, wave_box_y, wave_box_w, wave_box_h), 1, border_radius=6)
 
-        wave_label = font.render(f"WAVE {wave_manager.wave}/{MAX_WAVE_LEVEL}", True, (255, 215, 0))
-        canvas.blit(wave_label, (wave_box_x + 8, wave_box_y + 3))
+            wave_label = font.render(f"WAVE {wave_manager.wave}/{MAX_WAVE_LEVEL}", True, (255, 215, 0))
+            canvas.blit(wave_label, (wave_box_x + 8, wave_box_y + 3))
 
-        hostiles_label = hud_small_font.render(f"HOSTILES: {living_count}", True, (255, 100, 100) if living_count > 0 else (100, 255, 100))
-        canvas.blit(hostiles_label, (wave_box_x + 8, wave_box_y + 24))
+            hostiles_label = hud_small_font.render(f"HOSTILES: {living_count}", True, (255, 100, 100) if living_count > 0 else (100, 255, 100))
+            canvas.blit(hostiles_label, (wave_box_x + 8, wave_box_y + 24))
 
         # Adrenaline Overdrive HUD indicator (displayed when player is at critical HP)
         if 0 < player.health <= ADRENALINE_HEALTH_THRESHOLD:
             adren_pulse = int(180 + 75 * math.sin(pygame.time.get_ticks() * 0.01))
             adren_surf = hud_small_font.render("! ADRENALINE OVERDRIVE !", True, (255, adren_pulse, 50))
-            adren_bg = pygame.Rect(wave_box_x, wave_box_y + wave_box_h + 6, wave_box_w, 20)
+            if active_mission_config.get("id") != MissionType.ACADEMY_TUTORIAL:
+                adren_x = 248
+                adren_y = 16 + 42 + 6
+                adren_w = 165
+            else:
+                adren_x = gauge_x
+                adren_y = hull_y + gauge_h + 6
+                adren_w = gauge_w
+            adren_bg = pygame.Rect(adren_x, adren_y, adren_w, 20)
             pygame.draw.rect(canvas, (60, 15, 15), adren_bg, border_radius=4)
             pygame.draw.rect(canvas, (255, 80, 50), adren_bg, 1, border_radius=4)
-            canvas.blit(adren_surf, (wave_box_x + wave_box_w // 2 - adren_surf.get_width() // 2, wave_box_y + wave_box_h + 9))
+            canvas.blit(adren_surf, (adren_x + adren_w // 2 - adren_surf.get_width() // 2, adren_y + 3))
 
         # Wave announcement banner (centered in upper third of canvas)
-        if wave_manager.announcement_timer > 0:
+        if wave_manager.announcement_timer > 0 and active_mission_config.get("id") != MissionType.ACADEMY_TUTORIAL:
             banner_surf = title_font.render(wave_manager.wave_announcement, True, (255, 230, 80))
             banner_bg = banner_surf.get_rect(center=(GAME_WIDTH // 2, GAME_HEIGHT // 3))
             pad_x, pad_y = 30, 15
@@ -2339,6 +2782,10 @@ def draw(mouse_pos=None):
         # Helldiver squad and beacon blips on minimap
         ground_support_manager.draw_minimap(minimap_surface, MINIMAP_SCALE)
 
+        # Academy tutorial training targets and objectives on minimap
+        if active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL:
+            academy_manager.draw_minimap(minimap_surface, MINIMAP_SCALE)
+
         # Player dot (Grün)
         pygame.draw.circle(minimap_surface, (0, 255, 100), (int(player_mm_x), int(player_mm_y)), 4)
 
@@ -2374,9 +2821,15 @@ def draw(mouse_pos=None):
         # --- GROUND SUPPORT HUD OVERLAY & WEAPON ARSENAL ---
         ground_support_manager.draw_hud(canvas, GAME_WIDTH, GAME_HEIGHT, font, title_font, speed_font, hud_small_font, player, mouse_pos)
 
+        # --- ACADEMY TUTORIAL HUD OVERLAY ---
+        if active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL:
+            academy_manager.draw_hud(canvas, player)
+
         # --- MISSION OBJECTIVE HUD BANNER ---
         obj_text = f"OBJECTIVE: {active_mission_config['name']}"
-        if active_mission_config["id"] == MissionType.BASE_DEFENSE and orbital_base:
+        if active_mission_config["id"] == MissionType.ACADEMY_TUTORIAL:
+            obj_text = f"OBJECTIVE: {academy_manager.get_active_drill_title()}"
+        elif active_mission_config["id"] == MissionType.BASE_DEFENSE and orbital_base:
             if ground_support_manager.objective_phase == "EXTRACTION":
                 obj_text = "OBJECTIVE: BASE DEFENDED! FLY TO EXTRACTION BEACON"
             else:
@@ -2416,11 +2869,20 @@ def draw(mouse_pos=None):
             pygame.draw.rect(vignette_surf, (0, 150, 220, 20), (8, 8, GAME_WIDTH - 16, GAME_HEIGHT - 16), 8)
             canvas.blit(vignette_surf, (0, 0))
 
+        # In-Flight Radio Transceiver Overlay
+        if comms_hud.is_active:
+            comms_hud.render(canvas)
+
 
 player = Player()
 wave_manager = WaveManager()
 health_drops = []
 ground_support_manager = GroundSupportManager()
+combat_juice = CombatJuiceManager()
+story_manager = StoryManager(audio_manager=audio_manager)
+comms_hud = CommsHUD(story_manager=story_manager, audio_manager=audio_manager, screen_width=GAME_WIDTH, screen_height=GAME_HEIGHT)
+ground_support_manager.set_story_manager(story_manager)
+ground_support_manager.set_comms_hud(comms_hud)
 light_enemy = wave_manager.enemies[0] if wave_manager.enemies else Light_Enemy()
 player.bullets = []
 player.rockets = []
@@ -2440,6 +2902,9 @@ def run_game():
                     add_highscore(player.score)
                 running = False
                 break
+            if comms_hud.is_active and event.type == pygame.KEYDOWN:
+                if comms_hud.handle_event(event):
+                    continue
             if event.type == SHOOTING_END:
                 player.shooting = False
             if event.type == ROCKET_SHOOTING_END:
@@ -2477,7 +2942,9 @@ def run_game():
 
             # Mouse Wheel / Trackpad Weapon Cycling with debounce for smooth Mac scrolling
             if event.type == pygame.MOUSEWHEEL:
-                if game_state == "" and player.health > 0:
+                if game_state == "enlistment":
+                    enlistment_screen.handle_event(event, canvas_mouse_pos)
+                elif game_state == "" and player.health > 0:
                     now = pygame.time.get_ticks()
                     if now - last_wheel_time > 90:
                         if event.y > 0:
@@ -2490,6 +2957,12 @@ def run_game():
             if event.type == pygame.MOUSEMOTION:
                 if game_state == "settings_menu":
                     settings_menu.handle_event(event, canvas_mouse_pos)
+                elif game_state == "enlistment":
+                    enlistment_screen.handle_event(event, canvas_mouse_pos)
+
+            if event.type == pygame.MOUSEBUTTONUP:
+                if game_state == "enlistment":
+                    enlistment_screen.handle_event(event, canvas_mouse_pos)
 
             # Maus-Klick Interaktion für Knöpfe & Raketen-Abschuss
             if event.type == pygame.MOUSEBUTTONDOWN:
@@ -2503,20 +2976,34 @@ def run_game():
                     if action == "close":
                         game_state = previous_game_state
 
+                elif game_state == "enlistment":
+                    action = enlistment_screen.handle_event(event, canvas_mouse_pos)
+                    if action == "start_academy":
+                        respawn(mission_config=MISSION_CONFIGS[MissionType.ACADEMY_TUTORIAL])
+                        game_state = ""
+                    elif action == "back":
+                        game_state = "main_menu"
+
                 elif game_state == "main_menu":
-                    if menu_play_box.is_clicked(event, canvas_mouse_pos):
-                        game_state = "mission_select"
-                    elif menu_help_box.is_clicked(event, canvas_mouse_pos):
-                        previous_game_state = "main_menu"
-                        game_state = "help_menu"
+                    if menu_new_game_box.is_clicked(event, canvas_mouse_pos):
+                        enlistment_screen.reset()
+                        game_state = "enlistment"
+                    elif menu_continue_box.is_clicked(event, canvas_mouse_pos):
+                        if profile_manager.has_active_profile():
+                            active_prof = profile_manager.load_profile()
+                            target_mission = MissionType.ACADEMY_TUTORIAL if not active_prof.academy_completed else active_prof.active_mission
+                            config = MISSION_CONFIGS.get(target_mission, MISSION_CONFIGS[MissionType.ACADEMY_TUTORIAL])
+                            respawn(mission_config=config)
+                            game_state = ""
                     elif menu_settings_box.is_clicked(event, canvas_mouse_pos):
                         previous_game_state = "main_menu"
                         settings_menu.sync_from_manager()
                         game_state = "settings_menu"
-                    elif menu_reset_box.is_clicked(event, canvas_mouse_pos):
-                        player.highscore = 0
-                        add_highscore(player.highscore)
-                        highscore_box.set_text("highscore: 0")
+                    elif menu_help_box.is_clicked(event, canvas_mouse_pos):
+                        previous_game_state = "main_menu"
+                        game_state = "help_menu"
+                    elif menu_quit_box.is_clicked(event, canvas_mouse_pos):
+                        running = False
 
                 elif game_state == "mission_select":
                     action = mission_select_menu.handle_event(event, canvas_mouse_pos)
@@ -2575,6 +3062,8 @@ def run_game():
                         elif event.button == 3:
                             ground_support_manager.stop_aiming()
                             targets = list(wave_manager.enemies) + [g for g in ground_support_manager.enemy_ground_units if g.is_alive] + [f for f in ground_support_manager.enemy_fabricators if f.is_alive]
+                            if active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL:
+                                targets.extend(academy_manager.get_combat_targets())
                             player.set_shoot_rocket(targets)
 
             # Button release to deploy equipped Stratagem
@@ -2617,8 +3106,15 @@ def run_game():
                         ground_support_manager.add_combat_popup(f"AUDIO {status_str}", player.pos_x, player.pos_y, (255, 80, 80) if is_muted else (80, 255, 120))
 
                 elif game_state == "main_menu":
-                    if event.key in (pygame.K_LSHIFT, pygame.K_RSHIFT):
-                        game_state = "mission_select"
+                    if event.key == pygame.K_n:
+                        enlistment_screen.reset()
+                        game_state = "enlistment"
+                    elif event.key == pygame.K_c and profile_manager.has_active_profile():
+                        active_prof = profile_manager.load_profile()
+                        target_mission = MissionType.ACADEMY_TUTORIAL if not active_prof.academy_completed else active_prof.active_mission
+                        config = MISSION_CONFIGS.get(target_mission, MISSION_CONFIGS[MissionType.ACADEMY_TUTORIAL])
+                        respawn(mission_config=config)
+                        game_state = ""
                     elif event.key == pygame.K_h:
                         previous_game_state = "main_menu"
                         game_state = "help_menu"
@@ -2626,10 +3122,20 @@ def run_game():
                         previous_game_state = "main_menu"
                         settings_menu.sync_from_manager()
                         game_state = "settings_menu"
+                    elif event.key in (pygame.K_ESCAPE, pygame.K_q):
+                        running = False
                     elif event.key == pygame.K_m:
                         is_muted = audio_manager.toggle_mute()
                         status_str = "MUTED" if is_muted else "UNMUTED"
                         ground_support_manager.add_combat_popup(f"AUDIO {status_str}", player.pos_x, player.pos_y, (255, 80, 80) if is_muted else (80, 255, 120))
+
+                elif game_state == "enlistment":
+                    action = enlistment_screen.handle_event(event, canvas_mouse_pos)
+                    if action == "start_academy":
+                        respawn(mission_config=MISSION_CONFIGS[MissionType.ACADEMY_TUTORIAL])
+                        game_state = ""
+                    elif action == "back":
+                        game_state = "main_menu"
 
                 elif game_state == "mission_select":
                     action = mission_select_menu.handle_event(event, canvas_mouse_pos)
@@ -2784,14 +3290,14 @@ def run_game():
         if not running:
             break
 
+        comms_hud.update(1.0 / 60.0)
         keys = pygame.key.get_pressed()
 
         if game_state == "main_menu":
             main_menu(canvas_mouse_pos)
-            if keys[pygame.K_LSHIFT] and keys[pygame.K_RSHIFT] and keys[pygame.K_r]:
-                player.highscore = 0
-                add_highscore(player.highscore)
-                highscore_box.set_text("highscore: 0")
+
+        elif game_state == "enlistment":
+            enlistment_screen.draw(canvas, canvas_mouse_pos)
 
         elif game_state == "mission_select":
             main_menu(None)
@@ -2843,11 +3349,25 @@ def run_game():
                         draw(canvas_mouse_pos)
                         sdm.draw(canvas, GAME_WIDTH, GAME_HEIGHT, player)
                 else:
-                    turn_rate = player.turn_rate * (0.75 if ground_support_manager.is_slow_mo else 1.0)
+                    turn_rate = player.get_effective_turn_rate() * (0.75 if ground_support_manager.is_slow_mo else 1.0)
+                    player_turned_delta = 0.0
                     if keys[pygame.K_a] or keys[pygame.K_LEFT]:
                         player.angle += turn_rate
+                        player_turned_delta += turn_rate
                     if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
                         player.angle -= turn_rate
+                        player_turned_delta -= turn_rate
+                    if abs(player_turned_delta) > 0.0:
+                        combat_juice.emit_wingtip_contrails(
+                            cx=player.pos_x + PLAYER_WIDTH / 2,
+                            cy=player.pos_y + PLAYER_HEIGHT / 2,
+                            angle_deg=player.angle,
+                            speed=player.velocity_x,
+                            angular_delta=player_turned_delta,
+                            wing_span=21.0,
+                            tail_offset=14.0,
+                            is_enemy=False,
+                        )
 
                     rad = math.radians(player.angle)
                     dx = -math.sin(rad)
@@ -2860,7 +3380,7 @@ def run_game():
                         player.velocity_x = max(player.min_speed, player.velocity_x - player.acceleration)
                         player.velocity_y = max(player.min_speed, player.velocity_y - player.acceleration)
 
-                    steering_factor = PLAYER_STEERING_SLOW_MO_FACTOR if ground_support_manager.is_slow_mo else 1.0
+                    steering_factor = (PLAYER_STEERING_SLOW_MO_FACTOR if ground_support_manager.is_slow_mo else 1.0) * comms_hud.get_time_dilation()
                     player.pos_x += dx * player.velocity_x * steering_factor
                     player.pos_y += dy * player.velocity_y * steering_factor
 
@@ -2875,6 +3395,8 @@ def run_game():
 
                     if (keys[pygame.K_e] or (keys[pygame.K_f] and not (keys[pygame.K_LMETA] or keys[pygame.K_RMETA])) or keys[pygame.K_LCTRL]) and not player.rocket_reloading:
                         targets = list(wave_manager.enemies) + [g for g in ground_support_manager.enemy_ground_units if g.is_alive] + [f for f in ground_support_manager.enemy_fabricators if f.is_alive]
+                        if active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL:
+                            targets.extend(academy_manager.get_combat_targets())
                         player.set_shoot_rocket(targets)
 
                     move()

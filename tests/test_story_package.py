@@ -1,0 +1,39 @@
+"""Tests for eagle1.story package public API exports and headless initialization."""
+
+import os
+
+
+def test_story_package_exports():
+    """Verify all expected symbols are exported cleanly by eagle1.story."""
+    import eagle1.story as story
+
+    assert hasattr(story, "StoryManager")
+    assert hasattr(story, "CampaignSaveManager")
+    assert hasattr(story, "CampaignSaveState")
+    assert hasattr(story, "DIALOGUE_DATABASE")
+    assert hasattr(story, "DialogueNode")
+    assert hasattr(story, "DialogueOption")
+    assert hasattr(story, "get_dialogue_node")
+    assert hasattr(story, "get_nodes_for_act_and_sortie")
+    assert hasattr(story, "validate_dialogue_database")
+
+
+def test_headless_story_instantiation():
+    """Verify StoryManager can be instantiated in headless environments without errors."""
+    old_video = os.environ.get("SDL_VIDEODRIVER")
+    old_audio = os.environ.get("SDL_AUDIODRIVER")
+    try:
+        os.environ["SDL_VIDEODRIVER"] = "dummy"
+        os.environ["SDL_AUDIODRIVER"] = "dummy"
+
+        from eagle1.story import StoryManager
+
+        mgr = StoryManager()
+        assert mgr.loyalty == 70.0
+        assert mgr.time_dilation == 1.0
+    finally:
+        if old_video is not None:
+            os.environ["SDL_VIDEODRIVER"] = old_video
+        if old_audio is not None:
+            os.environ["SDL_AUDIODRIVER"] = old_audio
+

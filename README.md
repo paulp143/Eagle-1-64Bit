@@ -55,6 +55,8 @@ A custom 2D camera tracks the player ship across the map, clamping to world bord
 
 ## Key Features
 
+- **Story Campaign Mode & Pilot Enlistment:** Streamlined story-driven main menu (`NEW GAME`, conditional `CONTINUE` locked until enlistment, `SETTINGS`, `TACTICAL MANUAL`, `QUIT`). Recruits enter their official pilot callsign, review the official Super Earth Helldivers Division **Contract of Employment** (with all indemnity, martyrdom deductions, and binding Clause 6.4), and take the Oath of Democracy before deploying.
+- **Super Earth Naval Academy Tutorial Mission (`academy_briefing.py`):** The introductory campaign training sortie guided by Chief Flight Drill Instructor Commander Vance. Features 6 progressive training drills (yaw steering gates, afterburners & air brakes, hazard perimeter turnaround, convergence pip cannon accuracy, radar modes & missile lock, and 500kg CAS bunker strike) culminating in a graduation ceremony awarding the "Wings of Liberty" aviator badge and unlocking operational stratagems.
 - **Mission Selection System:** Tactical operational menu (`game_state = "mission_select"`) featuring 5 focused modes to prevent chaotic gameplay.
 - **5 Focused Operational Modes:**
   - **Air Superiority:** Pure aerial dogfighting against 5 wave squadrons (ground hostiles disabled); extraction beacon deploys upon wave 5 completion.
@@ -93,8 +95,7 @@ A custom 2D camera tracks the player ship across the map, clamping to world bord
 - **Dual Defense System (Shield + Health):** Energy shields absorb incoming damage before hull health is impacted.
 - **Autonomous Enemy Aircraft:** Hostile `Light_Enemy` units spawn in coordinated squadrons with flocking and combat AI.
 - **In-Game Help Menu (6 Tabs):** Multi-tab help overlay providing weapons, abilities, radar, controls, wave combat, and Helldiver support guidance.
-- **Automated Headless Test Suite:** 32 automated pytest tests covering mission configs, ground combat, fabricators, stratagems, flight physics, persistence, and UI menus.
-- **Automated Headless Test Suite:** 33 automated pytest tests covering mission configs, ground combat, fabricators, stratagems, flight physics, persistence, and UI menus.
+- **Automated Headless Test Suite:** 99 automated pytest tests covering mission configs, ground combat, fabricators, stratagems, flight physics, player profiles, enlistment, academy drills, and regression suites.
 
 
 
@@ -389,9 +390,51 @@ Or run `pytest` directly with detailed test reporting:
 pytest -v
 ```
 
-### Test Coverage Summary (32 Tests)
-### Test Coverage Summary (33 Tests)
+### Test Coverage Summary (99 Tests)
 
+- **`tests/test_enlistment_and_profile.py` (7 tests):**
+  - Player profile schema initialization, serialization, and username validation.
+  - Active profile detection vs first-time detection.
+  - Profile corruption recovery and atomic file persistence.
+- **`tests/test_enlistment_screen.py` (7 tests):**
+  - Super Earth Contract of Employment full clause text verification.
+  - Interactive callsign input, typing, backspace, and character limit checks.
+  - Contract container scrolling and oath signature button state.
+- **`tests/test_story_menu.py` (3 tests):**
+  - TextBox enabled/disabled UI state and click rejection.
+  - Main menu first-time state (CONTINUE disabled with tooltip).
+  - Main menu active profile state (CONTINUE displays pilot callsign).
+- **`tests/test_academy_briefing.py` (12 tests):**
+  - Academy tutorial manager initial state and drill state sequence.
+  - Waypoint gate collision and vector alignment checks.
+  - Target dummy drones and bunker destruction.
+  - Throttle accumulator holding and boundary turnaround.
+  - Commander Vance comms typewriter and procedural audio cues.
+  - Wings of Liberty graduation badge and celebration particle mechanics.
+  - Minimap target, waypoint, hazard perimeter, and objective rendering.
+- **`tests/test_academy_integration.py` (8 tests):**
+  - Academy tutorial initialization via `respawn()`.
+  - Cannon and rocket damage against training drones during gameplay loop.
+  - 500kg bomb air strike destruction of the training foundry bunker.
+  - Throttle and air brake drill progression (forward and reverse order).
+  - Completion transition to debriefing screen.
+  - Headless rendering of academy world and HUD elements.
+- **`tests/test_mission_modes_regression.py` (8 tests):**
+  - Air Superiority 5-wave squadron lifecycle and extraction trigger.
+  - Orbital Base Defense base setup and bomber waves.
+  - Factory Strider Boss Raid walking fortress initialization and victory trigger.
+  - Outpost Demolition 3 fabricator foundries and demolition extraction.
+  - Endless War multi-wave ground and air simulation.
+  - High score file isolation integrity.
+  - Main menu campaign flow and CONTINUE mission resuming.
+- **`tests/test_bomber_extraction.py` (3 tests):**
+  - Bomber waves blocking early extraction beacon activation.
+  - Active bombers preventing extraction even when beacon is active.
+  - Successful extraction activation when bombers are repelled.
+- **`tests/test_debriefing_screen.py` (4 tests):**
+  - Rank evaluation (Rank S/A/B/C) based on score and squad survival.
+  - Keyboard shortcuts ([R], [SPACE], [ESC]) and mouse click navigation.
+  - Headless rendering of after-action report results.
 - **`tests/test_ground_support.py` (7 tests):**
   - Initial squad roster instantiation (Viper 1-4 with full health and shields).
   - Helldiver callsigns and role assignments (Lead, Heavy, Scout, Medic).
@@ -424,7 +467,6 @@ pytest -v
   - Help menu 6-tab cycle, boundary wrapping, and headless render execution.
   - Settings menu 3-tab navigation, slider updates, and headless drawing.
   - Audio manager mute state toggling.
-- **`tests/test_weapons_and_cooldowns.py` (6 tests):**
 - **`tests/test_weapons_and_cooldowns.py` (7 tests):**
   - Primary quad-cannon capacity (200 rounds) and reload timer (5.0s).
   - Secondary homing rocket payload (4 missiles) and reload cycle (25.0s).
@@ -433,6 +475,10 @@ pytest -v
   - Eagle Rearm timer mechanics (15.0s fixed duration restoring all charges).
   - Stratagem Hero minigame arrow code input matching and combo scoring.
   - Single-slot weapon quickbar cycling (avoiding double-slot jumps).
+- **`tests/test_hangar_cinematic.py` (8 tests):**
+  - Hangar cinematic sequence transitions and state management.
+- **`tests/test_macos_compatibility.py` (4 tests):**
+  - Platform detection, resolution, and window flags for macOS.
 
 
 

@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "username": "SARGENT DOFUS",
+  "citizenship_grade": "E",
+  "contract_signed": true,
+  "enlisted_timestamp": "2026-10-11T16:52:13.367270+00:00",
+  "campaign": {
+    "academy_completed": true,
+    "active_mission": "air_superiority",
+    "missions_cleared": 1,
+    "unlocked_stratagems": [
+      1,
+      2,
+      3,
+      4
+    ]
+  },
+  "extra": {}
+}

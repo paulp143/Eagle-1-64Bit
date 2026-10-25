@@ -11,7 +11,7 @@ import json
 import time
 import pygame
 
-from eagle1.paths import DATA_DIR, audio_search_dirs, get_user_data_dir
+from eagle1.paths import DATA_DIR, audio_search_dirs, get_user_data_dir, verify_path_exact_casing
 
 # Default Audio Configuration
 DEFAULT_SETTINGS = {
@@ -61,6 +61,12 @@ SOUND_CHANNELS = {
     "hangar_ambience": [CH_TACTICAL],
     "rearm_crane": [CH_IMPACTS],
     "reentry_burn": [CH_TACTICAL],
+    "radio_chatter": [CH_TACTICAL],
+    "gate_pass": [CH_PICKUPS],
+    "drill_complete": [CH_TACTICAL],
+    "ceremony_fanfare": [CH_TACTICAL],
+    "radio_squelch": [CH_TACTICAL],
+    "radio_beep": [CH_UI, CH_TACTICAL],
 }
 
 # Minimum cooldown interval (in ms) to prevent ear-piercing volume stacking / clipping
@@ -80,6 +86,12 @@ SOUND_MIN_INTERVALS = {
     "rocket_lock": 150,
     "rearm_crane": 200,
     "reentry_burn": 500,
+    "radio_chatter": 100,
+    "gate_pass": 80,
+    "drill_complete": 200,
+    "ceremony_fanfare": 500,
+    "radio_squelch": 80,
+    "radio_beep": 60,
 }
 
 
@@ -354,6 +366,16 @@ class AudioManager:
         except Exception:
             pass
 
+    def play_radio_squelch(self, volume_scale=0.8):
+        """Play military RF transceiver squelch burst."""
+        snd_name = "radio_squelch" if "radio_squelch" in self.sounds else "radio_chatter"
+        self.play_sfx(snd_name, volume_scale=volume_scale)
+
+    def play_radio_beep(self, volume_scale=0.7):
+        """Play tactical dialogue choice confirmation / stance beep."""
+        snd_name = "radio_beep" if "radio_beep" in self.sounds else "ui_click"
+        self.play_sfx(snd_name, volume_scale=volume_scale)
+
     # -------------------------------------------------------------
     # Continuous Engine / Thruster Sound
     # -------------------------------------------------------------
@@ -424,11 +446,11 @@ class AudioManager:
 
         filename = f"{track_name}.wav"
         full_path = os.path.join(self.music_dir, filename)
-        if not os.path.exists(full_path):
+        if not (os.path.exists(full_path) and verify_path_exact_casing(full_path)):
             # Try ogg or mp3 fallback
             for ext in [".ogg", ".mp3"]:
                 alt_path = os.path.join(self.music_dir, f"{track_name}{ext}")
-                if os.path.exists(alt_path):
+                if os.path.exists(alt_path) and verify_path_exact_casing(alt_path):
                     full_path = alt_path
                     break
             else:

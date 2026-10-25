@@ -1,5 +1,7 @@
 """Repository-relative and platform-aware paths for Eagle-1 assets and user data."""
 
+from __future__ import annotations
+
 import os
 from pathlib import Path
 import sys
@@ -81,3 +83,46 @@ def image_search_dirs():
 
 def audio_search_dirs():
     return [AUDIO_DIR, ASSET_AUDIO_DIR]
+
+
+def verify_path_exact_casing(path: Path | str, base_dir: Path | str | None = None) -> bool:
+    """Verify that every component of the path exists and matches on-disk casing exactly.
+
+    Works consistently across case-insensitive filesystems (macOS APFS, Windows NTFS)
+    and case-sensitive filesystems (Linux ext4/btrfs).
+    """
+    if base_dir is None:
+        base_dir = get_base_dir().resolve()
+    else:
+        base_dir = Path(base_dir).resolve()
+
+    path_obj = Path(path)
+    if not path_obj.is_absolute():
+        current = base_dir
+        segments = path_obj.parts
+    else:
+        try:
+            rel = path_obj.relative_to(base_dir)
+            current = base_dir
+            segments = rel.parts
+        except ValueError:
+            current = Path(path_obj.anchor)
+            segments = path_obj.parts[1:]
+
+    for part in segments:
+        if part in ("", "."):
+            continue
+        if part == "..":
+            current = current.parent
+            continue
+        if not current.is_dir():
+            return False
+        try:
+            entries = [e.name for e in current.iterdir()]
+        except (OSError, PermissionError):
+            return False
+        if part not in entries:
+            return False
+        current = current / part
+
+    return current.exists()
