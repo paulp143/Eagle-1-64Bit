@@ -9,11 +9,10 @@
 <meta property="og:description" content="Free fan-made air-combat game in the Helldivers universe. Fly close air support for your squad.">
 <meta property="og:image" content="./assets/gameplay.webp">
 <title>Eagle-1 64Bit</title>
-<meta name="description" content="Eagle-1 64Bit: a free fan-made air-combat game in the Helldivers universe. Fly close air support for your squad. Standalone downloads for Windows, macOS, and Linux.">
+<meta name="description" content="Eagle-1 64Bit: a free fan-made air-combat game in the Helldivers universe. Fly close air support for your squad. Download for Windows.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira+Stencil+One&family=Barlow+Semi+Condensed:wght@400;500;600;700&family=Share+Tech+Mono&display=swap">
-<link rel="stylesheet" href="./style.css">
 <style>
 body{margin:0}
 /* Layout: full-bleed flight-deck hero with a live sortie, then a left-aligned briefing column of HUD-framed panels. One committed dark world. */
@@ -259,7 +258,7 @@ footer a:hover{border-color:var(--ice)}
       <a href="#arsenal">Arsenal</a>
       <a href="#install">Install</a>
     </nav>
-    <a class="btn btn-sm" id="headerDownloadBtn" href="https://github.com/paulp143/Eagle-1-64Bit/releases/latest/download/Eagle-1-Windows.zip" target="_blank" rel="noopener">Download</a>
+    <a class="btn btn-sm" href="https://github.com/paulp143/Eagle-1-64Bit/releases/latest/download/Eagle-1-Windows.zip" target="_blank" rel="noopener">Download</a>
   </div>
 </header>
 
@@ -279,26 +278,20 @@ footer a:hover{border-color:var(--ice)}
 
   <div class="wrap hero-inner">
     <div class="eyebrow">
-      <span class="tag live">v0.2.0 out now</span>
+      <span class="tag live">v0.2.1 out now</span>
       <span class="tag">Free fan game · Helldivers universe</span>
     </div>
     <h1>Eagle<span>-1</span></h1>
     <p class="tagline">Be the jet they call down.</p>
     <p class="lede">Fly Eagle-1 over an Automaton-held battlefield. Dogfight their fighters, answer your ground squad's close-air-support calls, and drop 500&nbsp;kg of ordnance on whatever is pinning them down.</p>
     <div class="cta-row">
-      <a class="btn btn-primary" id="heroDownloadBtn" href="https://github.com/paulp143/Eagle-1-64Bit/releases/latest/download/Eagle-1-Windows.zip" target="_blank" rel="noopener">
+      <a class="btn btn-primary" href="https://github.com/paulp143/Eagle-1-64Bit/releases/latest/download/Eagle-1-Windows.zip" target="_blank" rel="noopener">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M12 3v12"/><path d="M6 10l6 6 6-6"/><path d="M4 20h16"/></svg>
-        <span class="stack"><span id="heroDownloadLabel">Download for Windows</span><span class="meta" id="heroDownloadMeta">v0.2.0 · 39 MB · .zip</span></span>
+        <span class="stack">Download for Windows<span class="meta">v0.2.1 · 39 MB · .zip</span></span>
       </a>
       <a class="btn btn-ghost" href="#install">How to install</a>
     </div>
-    <div class="platform-switch" aria-label="Available operating systems">
-      <span class="label">Platform:</span>
-      <button type="button" class="platform-pill active" data-os="windows" aria-pressed="true">Windows (.zip)</button>
-      <button type="button" class="platform-pill" data-os="mac" aria-pressed="false">macOS (.zip / .dmg)</button>
-      <button type="button" class="platform-pill" data-os="linux" aria-pressed="false">Linux (.tar.gz)</button>
-    </div>
-    <p class="fine">Standalone distributions. No installer required. Or run directly from source.</p>
+    <p class="fine">No installer. Unzip, double-click, fly. Mac &amp; Linux can run it from source.</p>
   </div>
 </section>
 
@@ -409,51 +402,20 @@ footer a:hover{border-color:var(--ice)}
   <section class="block" id="install" style="padding-top:0">
     <div class="wrap">
       <div class="section-head">
-        <span class="label" id="installSectionLabel">Enlistment · Windows</span>
+        <span class="label">Enlistment · Windows</span>
         <h2>Three steps to your first sortie.</h2>
-        <p>No account, no launcher, no installer. Standalone package with the game inside.</p>
+        <p>No account, no launcher, no installer. The download is a folder with the game inside.</p>
       </div>
-
-      <div class="platform-tabs" role="tablist" aria-label="Operating system selection">
-        <button type="button" class="tab-btn active" role="tab" aria-selected="true" data-tab="windows">Windows</button>
-        <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="mac">macOS</button>
-        <button type="button" class="tab-btn" role="tab" aria-selected="false" data-tab="linux">Linux</button>
-      </div>
-
       <div class="install">
         <div>
-          <!-- Windows Panel -->
-          <div class="install-panel active" data-os-panel="windows">
-            <ol class="steps">
-              <li><h3>Download</h3><p>Get <a href="https://github.com/paulp143/Eagle-1-64Bit/releases/latest/download/Eagle-1-Windows.zip" target="_blank" rel="noopener">Eagle-1-Windows.zip</a> from the latest release (39 MB).</p></li>
-              <li><h3>Extract</h3><p>Right-click the zip and choose <strong>Extract All</strong>. Keep the folder together: the game reads its images, audio and save data from it.</p></li>
-              <li><h3>Launch</h3><p>Open the <strong>Eagle-1</strong> folder and double-click <strong>Eagle-1.exe</strong>. Press <kbd>Shift</kbd> on the main menu to start.</p></li>
-            </ol>
-            <p class="warn"><strong>Blue "Windows protected your PC" box?</strong> The game is not code-signed yet, so SmartScreen warns about it. Click <strong>More info</strong>, then <strong>Run anyway</strong>.</p>
-          </div>
-
-          <!-- macOS Panel -->
-          <div class="install-panel" data-os-panel="mac">
-            <ol class="steps">
-              <li><h3>Download</h3><p>Get <a href="https://github.com/paulp143/Eagle-1-64Bit/releases/latest/download/Eagle-1-macOS.zip" target="_blank" rel="noopener">Eagle-1-macOS.zip</a> (42 MB) or the <a href="https://github.com/paulp143/Eagle-1-64Bit/releases/latest/download/Eagle-1-macOS.dmg" target="_blank" rel="noopener">Eagle-1-macOS.dmg</a> disk image.</p></li>
-              <li><h3>Install</h3><p>Unzip the archive (or open the disk image) and drag <strong>Eagle-1.app</strong> into your <strong>/Applications</strong> folder.</p></li>
-              <li><h3>Launch</h3><p>Open <strong>Eagle-1.app</strong>. On first launch, macOS Gatekeeper may prompt verification for unsigned indie games: right-click and choose <strong>Open</strong>, or run <code>xattr -d com.apple.quarantine /Applications/Eagle-1.app</code> in Terminal.</p></li>
-            </ol>
-            <p class="warn"><strong>High-DPI Retina Ready:</strong> Native high-resolution graphics and 60 FPS flight dynamics on Apple Silicon and Intel Macs.</p>
-          </div>
-
-          <!-- Linux Panel -->
-          <div class="install-panel" data-os-panel="linux">
-            <ol class="steps">
-              <li><h3>Download</h3><p>Get <a href="https://github.com/paulp143/Eagle-1-64Bit/releases/latest/download/Eagle-1-Linux.tar.gz" target="_blank" rel="noopener">Eagle-1-Linux.tar.gz</a> from the latest release (41 MB).</p></li>
-              <li><h3>Extract</h3><p>Extract the tarball in terminal: <code>tar -xzf Eagle-1-Linux.tar.gz</code>.</p></li>
-              <li><h3>Launch</h3><p>Run <code>./Eagle-1/Eagle-1</code> or double-click the binary from your file manager.</p></li>
-            </ol>
-            <p class="warn"><strong>Prerequisites:</strong> Requires standard SDL2 libraries. If needed on Ubuntu/Debian: <code>sudo apt install libsdl2-2.0-0 libsdl2-mixer-2.0-0</code>.</p>
-          </div>
-
+          <ol class="steps">
+            <li><h3>Download</h3><p>Get <a href="https://github.com/paulp143/Eagle-1-64Bit/releases/latest/download/Eagle-1-Windows.zip" target="_blank" rel="noopener">Eagle-1-Windows.zip</a> from the latest release (39 MB).</p></li>
+            <li><h3>Extract</h3><p>Right-click the zip and choose <strong>Extract All</strong>. Keep the folder together: the game reads its images, audio and save data from it.</p></li>
+            <li><h3>Launch</h3><p>Open the <strong>Eagle-1</strong> folder and double-click <strong>Eagle-1.exe</strong>. Press <kbd>Shift</kbd> on the main menu to start.</p></li>
+          </ol>
+          <p class="warn"><strong>Blue "Windows protected your PC" box?</strong> The game is not code-signed yet, so SmartScreen warns about it. Click <strong>More info</strong>, then <strong>Run anyway</strong>.</p>
           <details class="source">
-            <summary>Run from source on any OS with Python</summary>
+            <summary>On Mac or Linux? Run it from source</summary>
             <div class="body">
               <p>You need Python 3.9 or newer. Paste this into a terminal:</p>
               <div class="code">
@@ -472,7 +434,7 @@ python run_game.py</pre>
             <div><span>Throttle</span><span class="k"><kbd>W</kbd><kbd>S</kbd></span></div>
             <div><span>Steer</span><span class="k"><kbd>A</kbd><kbd>D</kbd></span></div>
             <div><span>Quad cannons</span><span class="k"><kbd>Space</kbd></span></div>
-            <div><span>Homing rocket</span><span class="k"><kbd>Right-click</kbd> / <kbd>⌘</kbd></span></div>
+            <div><span>Homing rocket</span><span class="k"><kbd>Right-click</kbd></span></div>
             <div><span>Radar cone / 360°</span><span class="k"><kbd>Q</kbd></span></div>
             <div><span>Weapon slot</span><span class="k"><kbd>1</kbd>–<kbd>5</kbd></span></div>
             <div><span>Launch strike</span><span class="k"><kbd>C</kbd></span></div>
@@ -492,19 +454,13 @@ python run_game.py</pre>
   <div class="wrap">
     <div>
       <h2>The squad is on the radio.</h2>
-      <p>Free to play, open source, and about 40 MB away. Download, unpack and answer the call.</p>
+      <p>Free to play, open source, and about 39 MB away. Download, unzip and answer the call.</p>
       <div class="cta-row" style="margin-top:22px">
-        <a class="btn btn-primary" id="finalDownloadBtn" href="https://github.com/paulp143/Eagle-1-64Bit/releases/latest/download/Eagle-1-Windows.zip" target="_blank" rel="noopener">
+        <a class="btn btn-primary" href="https://github.com/paulp143/Eagle-1-64Bit/releases/latest/download/Eagle-1-Windows.zip" target="_blank" rel="noopener">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M12 3v12"/><path d="M6 10l6 6 6-6"/><path d="M4 20h16"/></svg>
-          <span class="stack"><span id="finalDownloadLabel">Download for Windows</span><span class="meta" id="finalDownloadMeta">v0.2.0 · 39 MB · .zip</span></span>
+          <span class="stack">Download for Windows<span class="meta">v0.2.1 · 39 MB · .zip</span></span>
         </a>
         <a class="btn btn-ghost" href="https://github.com/paulp143/Eagle-1-64Bit" target="_blank" rel="noopener">Source on GitHub</a>
-      </div>
-      <div class="platform-alt-links">
-        <span>Available for:</span>
-        <a data-switch-os="windows">Windows (.zip)</a>
-        <a data-switch-os="mac">macOS (.zip / .dmg)</a>
-        <a data-switch-os="linux">Linux (.tar.gz)</a>
       </div>
     </div>
     <img class="ship" src="./assets/eagle1-sprite.png" alt="">
@@ -522,6 +478,198 @@ python run_game.py</pre>
   </div>
 </footer>
 
-<script src="./main.js"></script>
+<script>
+/* ---------- data-driven tables ---------- */
+(function(){
+  const strikes=[
+    {n:"Machine Gun Dive",c:3,px:55,t:"55 px lane · 26 rounds"},
+    {n:"Eagle 500kg Bomb",c:1,px:480,t:"480 px radius",hero:true},
+    {n:"Cluster Bomb",c:3,px:280,t:"280 px · 10 bomblets"},
+    {n:"Napalm Strike",c:2,px:300,t:"300 px fire wall"},
+    {n:"Gas Strike",c:2,px:240,t:"240 px cloud"},
+    {n:"Rocket Pods",c:2,px:null,t:"3 guided missiles"},
+    {n:"EMS Stun Strike",c:2,px:280,t:"280 px · 4.5 s stun"},
+    {n:"Smoke Screen",c:2,px:280,t:"280 px radar cloud"}
+  ];
+  const tb=document.getElementById('strikeRows');
+  tb.innerHTML=strikes.map(s=>{
+    const pips=[0,1,2].map(i=>`<i class="${i<s.c?'':'off'}"></i>`).join('');
+    const foot=s.px?`<div class="bar"><div class="track"><div class="fill" style="width:${(s.px/480*100).toFixed(1)}%"></div></div><span class="val">${s.t}</span></div>`
+                   :`<div class="bar"><span class="val" style="text-align:left">${s.t}</span></div>`;
+    return `<tr class="${s.hero?'hero-row':''}"><td>${s.n}</td><td><span class="pips" aria-label="${s.c} charges">${pips}</span></td><td>${foot}</td></tr>`;
+  }).join('');
+
+  const hpRow=(who,role,hp,max)=>`<li><span class="who">${who}<small>${role}</small></span><span class="hp"><span class="track"><span class="fill" style="width:${(hp/max*100).toFixed(1)}%"></span></span><span class="val">${hp} HP</span></span></li>`;
+  document.getElementById('friendlies').innerHTML=[
+    ["Viper-1","Squad lead · tactical rifle",100],
+    ["Viper-2","Heavy · anti-air suppression",100],
+    ["Viper-3","Scout · long-range marksman",100],
+    ["Viper-4","Medic · keeps the squad standing",100]
+  ].map(r=>hpRow(r[0],r[1],r[2],300)).join('');
+  document.getElementById('hostiles').innerHTML=[
+    ["Trooper","Fast infantry, laser blasters",35],
+    ["Heavy Bomber","Targets your orbital base",75],
+    ["Walker","Armored, rapid dual-pulse lasers",120],
+    ["Fabricator","Builds reinforcements every 8 s",220],
+    ["Factory Strider","Walking fortress, plasma cannon",300]
+  ].map(r=>hpRow(r[0],r[1],r[2],300)).join('');
+
+  const btn=document.getElementById('copyBtn'), code=document.getElementById('srcCode');
+  btn.addEventListener('click',()=>{
+    const done=()=>{btn.textContent='Copied';setTimeout(()=>btn.textContent='Copy',1600)};
+    const select=()=>{const r=document.createRange();r.selectNodeContents(code);const s=getSelection();s.removeAllRanges();s.addRange(r);btn.textContent='Selected · press Ctrl+C';setTimeout(()=>btn.textContent='Copy',2400)};
+    try{navigator.clipboard.writeText(code.textContent).then(done,select)}catch(e){select()}
+  });
+})();
+
+/* ---------- hero sortie animation ---------- */
+(function(){
+  const cvs=document.getElementById('sky'); const ctx=cvs.getContext('2d');
+  const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const flash=document.getElementById('flash'), hudK=document.getElementById('hudKills'), hudS=document.getElementById('hudSpeed'), hudW=document.getElementById('hudWave');
+  const load=src=>new Promise(r=>{const i=new Image();i.onload=()=>r(i);i.onerror=()=>r(null);i.src=src});
+  let W=0,H=0,dpr=1, map,ship,enemy,expl, shipShadow,enemyShadow;
+  function silhouette(img){const c=document.createElement('canvas');c.width=img.width;c.height=img.height;const x=c.getContext('2d');x.drawImage(img,0,0);x.globalCompositeOperation='source-in';x.fillStyle='#000';x.fillRect(0,0,c.width,c.height);return c}
+  function resize(){const r=cvs.getBoundingClientRect();dpr=Math.min(window.devicePixelRatio||1,2);W=r.width;H=r.height;cvs.width=Math.round(W*dpr);cvs.height=Math.round(H*dpr);ctx.setTransform(dpr,0,0,dpr,0,0)}
+
+  const S={t:0,scroll:0,enemies:[],bullets:[],bolts:[],booms:[],sparks:[],trail:[],craters:[],nextEnemy:.6,nextShot:0,nextBomb:4.5,bomb:null,flashA:0,kills:0,ship:{x:0,y:0,a:0,size:96}};
+  const GROUND=70; // px per second the ground scrolls
+  const narrow=()=>W<761;
+  function shipBase(){return narrow()?{x:W*.5,y:Math.min(H*.2,175)}:{x:W*.68,y:H*.56}}
+
+  function spawnEnemy(){
+    const b=shipBase(), spread=narrow()?W*.38:W*.22;
+    S.enemies.push({x:b.x+(Math.random()*2-1)*spread,y:-40,vy:110+Math.random()*60,vx:(Math.random()*2-1)*20,hp:3,size:narrow()?40:50,wob:Math.random()*6,fire:1+Math.random()*1.5});
+  }
+  function boom(x,y,scale){S.booms.push({x,y,f:0,scale});for(let i=0;i<14;i++){const a=Math.random()*6.28,v=60+Math.random()*220;S.sparks.push({x,y,vx:Math.cos(a)*v,vy:Math.sin(a)*v,life:.5+Math.random()*.5,max:1})}}
+
+  function update(dt){
+    S.t+=dt; S.scroll+=GROUND*dt;
+    const b=shipBase(), sh=S.ship;
+    sh.size=Math.max(64,Math.min(120,W*.085));
+    const nx=b.x+Math.sin(S.t*.55)*W*(narrow()?.18:.09)+Math.sin(S.t*1.7)*10;
+    const ny=b.y+Math.sin(S.t*.8)*14;
+    const dx=(nx-sh.x)/Math.max(dt,1e-3);
+    sh.a+=((Math.max(-.35,Math.min(.35,dx*.004)))-sh.a)*Math.min(1,dt*4);
+    sh.bank=Math.max(.72,1-Math.abs(sh.a)*.8);
+    sh.x=nx; sh.y=ny;
+    hudS.textContent=(4.6+Math.sin(S.t*.8)*1.1).toFixed(1);
+
+    // afterburner
+    const s=sh.size, h=s*1.27;
+    for(const side of[-1,1]){
+      const ox=side*s*.16, oy=h*.43;
+      const cx=sh.x+ox*Math.cos(sh.a)-oy*Math.sin(sh.a), cy=sh.y+ox*Math.sin(sh.a)+oy*Math.cos(sh.a);
+      S.trail.push({x:cx+(Math.random()-.5)*3,y:cy,vy:GROUND+120+Math.random()*60,vx:(Math.random()-.5)*20-Math.sin(sh.a)*60,life:.45,max:.45,r:3+Math.random()*3});
+    }
+
+    // enemies
+    S.nextEnemy-=dt; if(S.nextEnemy<=0){spawnEnemy();S.nextEnemy=1.1+Math.random()*1.2}
+    for(const e of S.enemies){e.y+=e.vy*dt;e.x+=e.vx*dt+Math.sin(S.t*2+e.wob)*.6;e.fire-=dt;
+      if(e.fire<=0&&e.y>20&&e.y<sh.y-60){e.fire=1.4+Math.random();S.bolts.push({x:e.x,y:e.y+e.size*.4,vx:(Math.random()-.5)*60,vy:380})}}
+    // shooting: when a hostile is ahead and roughly aligned
+    S.nextShot-=dt;
+    const target=S.enemies.find(e=>e.y<sh.y-40&&e.y>-10&&Math.abs(e.x-sh.x)<s*1.1);
+    if(target&&S.nextShot<=0){S.nextShot=.13;
+      for(const off of[-.34,-.14,.14,.34]){const ox=off*s, oy=-h*.1;
+        S.bullets.push({x:sh.x+ox*Math.cos(sh.a)-oy*Math.sin(sh.a),y:sh.y+ox*Math.sin(sh.a)+oy*Math.cos(sh.a),vx:Math.sin(sh.a)*900,vy:-Math.cos(sh.a)*900})}}
+    for(const u of S.bullets){u.x+=u.vx*dt;u.y+=u.vy*dt;
+      for(const e of S.enemies){if(e.hp>0&&Math.abs(u.x-e.x)<e.size*.45&&Math.abs(u.y-e.y)<e.size*.45){u.dead=1;e.hp--;S.sparks.push({x:u.x,y:u.y,vx:(Math.random()-.5)*120,vy:-40,life:.25,max:.25});
+        if(e.hp<=0){boom(e.x,e.y,1.6);S.kills++;hudK.textContent=S.kills;hudW.textContent=Math.min(5,1+Math.floor(S.kills/8))}break}}}
+    S.enemies=S.enemies.filter(e=>e.hp>0&&e.y<H+80);
+    S.bullets=S.bullets.filter(u=>!u.dead&&u.y>-30);
+    for(const o of S.bolts){o.x+=o.vx*dt;o.y+=o.vy*dt} S.bolts=S.bolts.filter(o=>o.y<H+30);
+
+    // 500kg bomb run
+    S.nextBomb-=dt;
+    if(S.nextBomb<=0&&!S.bomb){S.bomb={x:sh.x+(narrow()?0:-W*.06),y:narrow()?Math.max(70,sh.y-80):sh.y-H*.26,timer:1.3,stage:0};S.nextBomb=9}
+    if(S.bomb){const bb=S.bomb;bb.y+=GROUND*dt;bb.timer-=dt;
+      if(bb.stage===0&&bb.timer<=0){bb.stage=1;bb.timer=1.1;bb.ring=0;S.flashA=.55;
+        boom(bb.x,bb.y,3.2);for(let i=0;i<6;i++){const a=i/6*6.28;boom(bb.x+Math.cos(a)*50,bb.y+Math.sin(a)*38,1.8)}
+        S.craters.push({x:bb.x,y:bb.y,r:Math.min(W,H)*.12});
+        S.enemies.forEach(e=>{if(Math.hypot(e.x-bb.x,e.y-bb.y)<Math.min(W,H)*.45){e.hp=0;boom(e.x,e.y,1.6);S.kills++}});hudK.textContent=S.kills;
+        flash.classList.add('on');setTimeout(()=>flash.classList.remove('on'),1700)}
+      if(bb.stage===1){bb.ring+=dt;if(bb.timer<=0)S.bomb=null}}
+    for(const c of S.craters)c.y+=GROUND*dt; S.craters=S.craters.filter(c=>c.y<H+200);
+    S.flashA=Math.max(0,S.flashA-dt*1.3);
+
+    for(const p of S.trail){p.x+=p.vx*dt;p.y+=p.vy*dt;p.life-=dt} S.trail=S.trail.filter(p=>p.life>0);
+    for(const p of S.sparks){p.x+=p.vx*dt;p.y+=p.vy*dt+GROUND*dt;p.vx*=.96;p.vy*=.96;p.life-=dt} S.sparks=S.sparks.filter(p=>p.life>0);
+    for(const o of S.booms){o.f+=dt*30;o.y+=GROUND*dt} S.booms=S.booms.filter(o=>o.f<23);
+  }
+
+  function drawGround(){
+    if(!map){ctx.fillStyle='#16233a';ctx.fillRect(0,0,W,H);return}
+    const sc=Math.max(W/map.width,H/map.height*.8)*1.08, tw=map.width*sc, th=map.height*sc, x0=(W-tw)/2;
+    const off=S.scroll%(2*th);
+    for(let k=-2;k*th+off<H;k++){
+      const y=off+k*th; if(y+th<0)continue;
+      if(((k%2)+2)%2===1){ctx.save();ctx.translate(0,y+th);ctx.scale(1,-1);ctx.drawImage(map,x0,0,tw,th);ctx.restore()}
+      else ctx.drawImage(map,x0,y,tw,th);
+    }
+    // night-op grade: cool, dim, vignette
+    ctx.fillStyle='rgba(8,14,28,.42)';ctx.fillRect(0,0,W,H);
+    const g=ctx.createRadialGradient(W*.62,H*.5,Math.min(W,H)*.2,W*.62,H*.5,Math.max(W,H)*.8);
+    g.addColorStop(0,'rgba(7,11,20,0)');g.addColorStop(1,'rgba(7,11,20,.75)');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  }
+  function drawSprite(img,shadow,x,y,w,h,a,sx,lift){
+    if(shadow){ctx.save();ctx.globalAlpha=.32;ctx.translate(x+lift,y+lift*1.4);ctx.rotate(a);ctx.scale(sx*.82,.82);ctx.drawImage(shadow,-w/2,-h/2,w,h);ctx.restore()}
+    ctx.save();ctx.translate(x,y);ctx.rotate(a);ctx.scale(sx,1);ctx.drawImage(img,-w/2,-h/2,w,h);ctx.restore();
+  }
+  function draw(){
+    ctx.imageSmoothingEnabled=true;
+    drawGround();
+    for(const c of S.craters){const g=ctx.createRadialGradient(c.x,c.y,0,c.x,c.y,c.r);g.addColorStop(0,'rgba(20,14,10,.75)');g.addColorStop(.6,'rgba(40,28,20,.35)');g.addColorStop(1,'rgba(40,28,20,0)');ctx.fillStyle=g;ctx.beginPath();ctx.ellipse(c.x,c.y,c.r,c.r*.8,0,0,6.28);ctx.fill()}
+    // bomb target reticle
+    if(S.bomb&&S.bomb.stage===0){const bb=S.bomb,r=Math.min(W,H)*.11,p=.6+.4*Math.sin(S.t*18);
+      ctx.save();ctx.strokeStyle=`rgba(226,67,47,${p})`;ctx.lineWidth=2;ctx.setLineDash([8,6]);ctx.beginPath();ctx.ellipse(bb.x,bb.y,r,r*.8,0,0,6.28);ctx.stroke();ctx.setLineDash([]);
+      ctx.beginPath();ctx.moveTo(bb.x-r*1.25,bb.y);ctx.lineTo(bb.x-r*.35,bb.y);ctx.moveTo(bb.x+r*.35,bb.y);ctx.lineTo(bb.x+r*1.25,bb.y);ctx.moveTo(bb.x,bb.y-r);ctx.lineTo(bb.x,bb.y-r*.3);ctx.moveTo(bb.x,bb.y+r*.3);ctx.lineTo(bb.x,bb.y+r);ctx.stroke();
+      ctx.font='12px "Share Tech Mono", monospace';ctx.fillStyle=`rgba(226,67,47,${p})`;ctx.fillText('500KG · TARGET',bb.x+r*.4,bb.y-r*.85);ctx.restore()}
+    if(S.bomb&&S.bomb.stage===1){const bb=S.bomb,k=bb.ring/1.1,R=Math.min(W,H)*.55*Math.sqrt(k);
+      ctx.save();ctx.strokeStyle=`rgba(255,226,170,${(1-k)*.85})`;ctx.lineWidth=6*(1-k)+1;ctx.beginPath();ctx.ellipse(bb.x,bb.y,R,R*.8,0,0,6.28);ctx.stroke();ctx.restore()}
+    // engine trail (additive glow)
+    ctx.save();ctx.globalCompositeOperation='lighter';
+    for(const p of S.trail){const k=p.life/p.max;ctx.fillStyle=`rgba(255,${Math.round(120+110*k)},${Math.round(40*k)},${k*.55})`;ctx.beginPath();ctx.arc(p.x,p.y,p.r*(.4+k),0,6.28);ctx.fill()}
+    ctx.restore();
+    // enemies
+    ctx.imageSmoothingEnabled=false;
+    for(const e of S.enemies){if(enemy)drawSprite(enemy,enemyShadow,e.x,e.y,e.size,e.size*.92,Math.PI,1,26)}
+    // ship
+    const sh=S.ship;if(ship)drawSprite(ship,shipShadow,sh.x,sh.y,sh.size,sh.size*1.27,sh.a,sh.bank,48);
+    ctx.imageSmoothingEnabled=true;
+    // projectiles
+    ctx.save();ctx.globalCompositeOperation='lighter';ctx.lineCap='round';
+    ctx.strokeStyle='rgba(255,214,90,.95)';ctx.lineWidth=2.4;
+    for(const u of S.bullets){ctx.beginPath();ctx.moveTo(u.x,u.y);ctx.lineTo(u.x-u.vx*.016,u.y-u.vy*.016);ctx.stroke()}
+    ctx.strokeStyle='rgba(255,70,50,.95)';ctx.lineWidth=3;
+    for(const o of S.bolts){ctx.beginPath();ctx.moveTo(o.x,o.y);ctx.lineTo(o.x-o.vx*.03,o.y-o.vy*.03);ctx.stroke()}
+    for(const p of S.sparks){const k=p.life/p.max;ctx.fillStyle=`rgba(255,${Math.round(150+90*k)},80,${k})`;ctx.fillRect(p.x-1.5,p.y-1.5,3,3)}
+    ctx.restore();
+    // explosions from the repo spritesheet (23 frames of 64 px)
+    if(expl){ctx.imageSmoothingEnabled=false;for(const o of S.booms){const f=Math.min(22,Math.floor(o.f)),sz=64*o.scale*(narrow()?.8:1);ctx.drawImage(expl,f*64,0,64,64,o.x-sz/2,o.y-sz/2,sz,sz)}ctx.imageSmoothingEnabled=true}
+    if(S.flashA>0){ctx.fillStyle=`rgba(255,240,210,${S.flashA})`;ctx.fillRect(0,0,W,H)}
+  }
+
+  let running=false,visible=true,last=0,raf=0;
+  function frame(ts){const dt=Math.min(.05,(ts-last)/1000||.016);last=ts;update(dt);draw();if(running)raf=requestAnimationFrame(frame)}
+  function setRun(on){if(on&&!running&&!reduce){running=true;last=performance.now();raf=requestAnimationFrame(frame)}else if(!on&&running){running=false;cancelAnimationFrame(raf)}}
+
+  Promise.all([load('./assets/battlefield.webp'),load('./assets/eagle1-sprite.png'),load('./assets/enemy-fighter.png'),load('./assets/explosion-sheet.png')]).then(([m,s,e,x])=>{
+    map=m;ship=s;enemy=e;expl=x;
+    if(ship)shipShadow=silhouette(ship); if(enemy)enemyShadow=silhouette(enemy);
+    resize(); const b=shipBase(); S.ship.x=b.x;S.ship.y=b.y;
+    // settle a few seconds so the first still frame already shows a fight
+    for(let i=0;i<150;i++)update(1/60);
+    draw();
+    if(!reduce){
+      new IntersectionObserver(es=>{visible=es[0].isIntersecting;setRun(visible&&!document.hidden)}).observe(cvs);
+      document.addEventListener('visibilitychange',()=>setRun(visible&&!document.hidden));
+      setRun(true);
+    }
+  });
+  let rt;addEventListener('resize',()=>{clearTimeout(rt);rt=setTimeout(()=>{resize();if(!running)draw()},120)});
+})();
+</script>
+
 </body>
 </html>

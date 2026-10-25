@@ -293,10 +293,17 @@ def load_image(image_path, scale=None, colorkey=None):
 
     if colorkey is not None:
         image.set_colorkey(colorkey)
+        alpha_surf = pygame.Surface(image.get_size(), pygame.SRCALPHA)
+        alpha_surf.blit(image, (0, 0))
+        image = alpha_surf
     if scale is not None:
         image = pygame.transform.scale(image, scale)
     if pygame.display.get_surface() is not None:
-        if colorkey is not None or (len(image.get_masks()) >= 4 and image.get_masks()[3] != 0):
+        if (
+            colorkey is not None
+            or (image.get_flags() & pygame.SRCALPHA)
+            or (len(image.get_masks()) >= 4 and image.get_masks()[3] != 0)
+        ):
             image = image.convert_alpha()
         else:
             image = image.convert()
@@ -424,16 +431,36 @@ class TextBox:
 player_image = load_image(os.path.join("images", "Space-Invaders-Ship.png"), (PLAYER_WIDTH, PLAYER_HEIGHT))
 bullet_image = load_image(os.path.join("images", "bullet.png"), (BULLET_WIDTH, BULLET_HEIGHT))
 rocket_image = load_image(os.path.join("images", "bullet.png"), (ROCKET_WIDTH, ROCKET_HEIGHT))
-light_enemy_image = load_image(os.path.join("images", "enemy1.png"), (LIGHT_ENEMY_WIDTH, LIGHT_ENEMY_HEIGHT), colorkey=(255, 255, 255))
+light_enemy_image = load_image(
+    os.path.join("images", "enemy1.png"),
+    (LIGHT_ENEMY_WIDTH, LIGHT_ENEMY_HEIGHT),
+    colorkey=(255, 255, 255),
+)
 enemy_bullet_image = load_image(os.path.join("images", "enemy_bullet.png"), (BULLET_WIDTH, BULLET_HEIGHT))
 main_menu_image = load_image(os.path.join("images", "20260820_085135933_iOS.webp"), (GAME_WIDTH, GAME_HEIGHT))
 backround_image = load_image(os.path.join("images", "newbackround.png"), (GAME_WIDTH, GAME_HEIGHT))
 
 minimap_bg_image = pygame.transform.scale(backround_image, (MINIMAP_BG_WIDTH, MINIMAP_BG_HEIGHT))
-light_enemy_explosion_image = load_image(os.path.join("images", "light_enemy_explosion.png"), (LIGHT_ENEMY_WIDTH, LIGHT_ENEMY_HEIGHT))
-health_image = load_image(os.path.join("images", "health.png"), (HEALTH_WIDTH, HEALTH_HEIGHT), colorkey=(0, 0, 0))
+light_enemy_explosion_image = load_image(
+    os.path.join("images", "light_enemy_explosion.png"),
+    (LIGHT_ENEMY_WIDTH, LIGHT_ENEMY_HEIGHT),
+)
+health_image = load_image(
+    os.path.join("images", "health.png"),
+    (HEALTH_WIDTH, HEALTH_HEIGHT),
+    colorkey=(0, 0, 0),
+)
 bullet_ui_image = load_image(os.path.join("images", "bullet_ui.png"), (BULLET_UI_WIDTH, BULLET_UI_HEIGHT))
 large_explosion_a_spritesheet = Spritesheet(load_image(os.path.join("images", "LargeExplosionA_spritesheet.png")), 23)
+
+
+def _set_display_mode(size, flags):
+    if os.environ.get("SDL_VIDEODRIVER") == "dummy":
+        return pygame.display.set_mode(size, flags)
+    try:
+        return pygame.display.set_mode(size, flags, vsync=1)
+    except Exception:
+        return pygame.display.set_mode(size, flags)
 
 
 pygame.init()
@@ -454,17 +481,13 @@ speed_font = safe_font("arial", 18, bold=True)
 hud_small_font = safe_font("arial", 13, bold=True)
 profile_manager = PlayerProfileManager()
 clock = pygame.time.Clock()
-
-try:
-    window = pygame.display.set_mode((GAME_WIDTH, GAME_HEIGHT), pygame.RESIZABLE, vsync=1)
-except Exception:
-    window = pygame.display.set_mode((GAME_WIDTH, GAME_HEIGHT), pygame.RESIZABLE)
-
-canvas = pygame.Surface((GAME_WIDTH, GAME_HEIGHT)).convert()
+window = _set_display_mode((GAME_WIDTH, GAME_HEIGHT), pygame.RESIZABLE)
+# Explicit 32-bit RGBX surface with Amask=0 so macOS Cocoa never zeroes dstA when compositing overlapping SRCALPHA sprites
+canvas = pygame.Surface((GAME_WIDTH, GAME_HEIGHT), 0, 32, (0x00FF0000, 0x0000FF00, 0x000000FF, 0))
 
 
 def convert_all_game_assets():
-    """Converts all textures to matching display pixel format with clean per-pixel alpha."""
+    """Converts all textures to matching display pixel format with clean per-pixel alpha and opaque RGBX backgrounds."""
     global player_image, bullet_image, rocket_image, light_enemy_image
     global enemy_bullet_image, main_menu_image, backround_image
     global minimap_bg_image, light_enemy_explosion_image, health_image
@@ -476,27 +499,23 @@ def convert_all_game_assets():
     player_image = player_image.convert_alpha()
     bullet_image = bullet_image.convert_alpha()
     rocket_image = rocket_image.convert_alpha()
-
-    light_enemy_image.set_colorkey((255, 255, 255))
     light_enemy_image = light_enemy_image.convert_alpha()
-
     enemy_bullet_image = enemy_bullet_image.convert_alpha()
-    main_menu_image = main_menu_image.convert()
-    backround_image = backround_image.convert()
-    minimap_bg_image = minimap_bg_image.convert()
+    main_menu_image = main_menu_image.convert(canvas)
+    backround_image = backround_image.convert(canvas)
+    minimap_bg_image = minimap_bg_image.convert(canvas)
     light_enemy_explosion_image = light_enemy_explosion_image.convert_alpha()
-
-    health_image.set_colorkey((0, 0, 0))
     health_image = health_image.convert_alpha()
-
     bullet_ui_image = bullet_ui_image.convert_alpha()
 
     if hasattr(large_explosion_a_spritesheet, "frames"):
         large_explosion_a_spritesheet.frames = [f.convert_alpha() for f in large_explosion_a_spritesheet.frames]
 
+    if "player" in globals() and player is not None:
+        player.original_image = player_image
+
 
 convert_all_game_assets()
-
 frame_number = 23
 frame_width = large_explosion_a_spritesheet.sheet.get_width() / 23
 frame_height = large_explosion_a_spritesheet.sheet.get_height()
@@ -3067,15 +3086,9 @@ def run_game():
                 if (event.key == pygame.K_f and (event.mod & (pygame.KMOD_META | pygame.KMOD_GUI))) or event.key == pygame.K_F11:
                     is_fullscreen = not bool(window.get_flags() & pygame.FULLSCREEN)
                     if is_fullscreen:
-                        try:
-                            window = pygame.display.set_mode((0, 0), pygame.FULLSCREEN | pygame.RESIZABLE, vsync=1)
-                        except Exception:
-                            window = pygame.display.set_mode((0, 0), pygame.FULLSCREEN | pygame.RESIZABLE)
+                        window = _set_display_mode((0, 0), pygame.FULLSCREEN | pygame.RESIZABLE)
                     else:
-                        try:
-                            window = pygame.display.set_mode((GAME_WIDTH, GAME_HEIGHT), pygame.RESIZABLE, vsync=1)
-                        except Exception:
-                            window = pygame.display.set_mode((GAME_WIDTH, GAME_HEIGHT), pygame.RESIZABLE)
+                        window = _set_display_mode((GAME_WIDTH, GAME_HEIGHT), pygame.RESIZABLE)
                     continue
 
                 if game_state == "settings_menu":
