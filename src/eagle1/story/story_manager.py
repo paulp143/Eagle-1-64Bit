@@ -5,12 +5,19 @@ dialogue queues, time dilation during decision beats, and campaign branching.
 """
 
 import logging
+import math
 from typing import Any, Dict, List, Optional
 
 from eagle1.story.campaign_save import CampaignSaveManager, CampaignSaveState
 from eagle1.story.dialogue_db import DialogueNode, DialogueOption, get_dialogue_node
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_LOYALTY: float = 70.0
+MIN_LOYALTY: float = 0.0
+MAX_LOYALTY: float = 100.0
+DECISION_TIME_DILATION: float = 0.4
+NORMAL_TIME_DILATION: float = 1.0
 
 
 class StoryManager:
@@ -24,20 +31,21 @@ class StoryManager:
         self.audio = audio_manager
         self.save_manager = save_manager or CampaignSaveManager()
 
-        self.loyalty: float = 70.0
+        self.loyalty: float = DEFAULT_LOYALTY
         self.current_act: int = 1
         self.current_sortie: int = 1
         self.total_casualties: int = 0
         self.active_dialogue: Optional[DialogueNode] = None
         self.dialogue_history: List[Dict[str, Any]] = []
-        self.time_dilation: float = 1.0
+        self.time_dilation: float = NORMAL_TIME_DILATION
 
         self.load_campaign_state()
 
     def load_campaign_state(self) -> None:
         """Load persistent campaign progress from disk into memory."""
         state = self.save_manager.load_campaign()
-        self.loyalty = max(0.0, min(100.0, state.loyalty))
+        raw_loyalty = state.loyalty if not math.isnan(state.loyalty) else DEFAULT_LOYALTY
+        self.loyalty = max(MIN_LOYALTY, min(MAX_LOYALTY, raw_loyalty))
         self.current_act = state.current_act
         self.current_sortie = state.current_sortie
         self.total_casualties = state.total_casualties
@@ -58,13 +66,27 @@ class StoryManager:
 
     def modify_loyalty(self, delta: float, reason: str = "") -> None:
         """Adjust pilot loyalty with strict [0.0, 100.0] bounds clamping."""
+        if isinstance(delta, bool):
+            logger.warning("Ignored invalid boolean loyalty delta %r (reason: '%s')", delta, reason)
+            return
+
+        try:
+            numeric_delta = float(delta)
+        except (TypeError, ValueError):
+            logger.warning("Ignored invalid loyalty delta %r (reason: '%s')", delta, reason)
+            return
+
+        if math.isnan(numeric_delta):
+            logger.warning("Ignored NaN loyalty delta (reason: '%s')", reason)
+            return
+
         old_val = self.loyalty
-        self.loyalty = max(0.0, min(100.0, self.loyalty + delta))
+        self.loyalty = max(MIN_LOYALTY, min(MAX_LOYALTY, self.loyalty + numeric_delta))
         logger.info(
             "Loyalty modified: %.1f -> %.1f (delta: %+.1f, reason: '%s')",
             old_val,
             self.loyalty,
-            delta,
+            numeric_delta,
             reason,
         )
         self.save_campaign_state()
@@ -82,7 +104,7 @@ class StoryManager:
         """Set or clear the active dialogue beat, adjusting time dilation accordingly."""
         self.active_dialogue = node
         # Slow down time to 0.4 during decision beats to permit reaction without combat stress
-        self.time_dilation = 0.4 if node is not None else 1.0
+        self.time_dilation = DECISION_TIME_DILATION if node is not None else NORMAL_TIME_DILATION
 
     def record_choice(self, node_id: str, stance: str) -> Optional[DialogueOption]:
         """Record pilot choice for a dialogue node, apply delta, and resume time flow."""
@@ -115,7 +137,7 @@ class StoryManager:
         Returns:
             "OBEDIENCE_PURGE" (Loyalty >= 90.0) -> Act III-A: The Zealot
             "DISSIDENT_SURRENDER" (Loyalty <= 15.0) -> Act III-B: The Traitor
-            "COLD_PROTOCOL" (16.0 <= Loyalty <= 89.0) -> Act III-C: The Bureaucrat
+            "COLD_PROTOCOL" (15.0 < Loyalty < 90.0) -> Act III-C: The Bureaucrat
         """
         if self.loyalty >= 90.0:
             return "OBEDIENCE_PURGE"

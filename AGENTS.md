@@ -160,33 +160,34 @@ Verify:
 
 ---
 
-## Strict Git & GitHub CLI (`gh`) User Approval Policy
+## Git & GitHub CLI (`gh`) User Approval Policy
 
-> [!CAUTION]
-> **MANDATORY POLICY**: NEVER execute ANY `git` command OR ANY `gh` command without explicit prior user approval!
-> There are **NO EXCEPTIONS**, whether the command modifies repository state (e.g. `commit`, `push`, `pr create`) or is purely read-only (e.g. `issue view`, `pr list`, `status`, `diff`, `log`, `api`).
-> Autonomous execution of ANY `git` or `gh` command—even for gathering context, answering questions, or inspecting issues/PRs—is strictly forbidden.
+> [!IMPORTANT]
+> **READ-ONLY vs. MUTATING COMMANDS POLICY**:
+> - **Read-Only Commands (Allowed Autonomously)**: Read-only inspection commands using `git` or `gh` may be executed autonomously without prior user approval to inspect status, gather context, review diffs, or check CI/issue/PR information.
+>   - *Allowed autonomous commands include*: `git status`, `git diff`, `git log`, `git show`, `git branch` (list only), `git tag` (list only), `git rev-parse`, `gh issue list`, `gh issue view`, `gh pr list`, `gh pr view`, `gh pr diff`, `gh run list`, `gh run view`, `gh release list`, `gh auth status`, and read-only `gh api` calls.
+> - **Mutating / State-Altering Commands (Strict Prior Approval Required)**: NEVER execute ANY `git` or `gh` command that alters repository state, branches, staging, commits, remote tracking, or GitHub platform resources (issues, PRs, releases, comments, labels) without explicit prior user approval.
+>   - *Requires approval*: `git add`, `git commit`, `git push`, `git pull`, `git fetch`, `git merge`, `git rebase`, `git checkout` / `git switch` (changing branches or discarding files), `git reset`, `git revert`, `git clean`, `git stash`, `git branch -d`/`-m`, `gh pr create`, `gh pr merge`, `gh pr close`, `gh issue create`, `gh issue close`, `gh release create`, etc.
 
-### User Approval Protocol for Git & `gh`
-Before running **ANY** `git` or `gh` command:
+### User Approval Protocol for Mutating Git & `gh` Commands
+Before running **ANY mutating or state-changing** `git` or `gh` command:
 1. **Always ask the user for explicit permission first.**
 2. **Provide a detailed, precise explanation**:
    - **Why** the command is needed right now.
    - **Why exactly this command** (and these exact flags/arguments) was chosen instead of any other command or approach.
-   - **What exact impact** the command will have on files, branches, remotes, or git history (or note that it is read-only).
+   - **What exact impact** the command will have on files, branches, remotes, or git history.
    - Display the exact command line string that is proposed for execution.
-3. **Wait for the user's explicit confirmation** before running the command. Never assume implicit consent or execute commands speculatively to answer a question.
+3. **Wait for the user's explicit confirmation** before running the command. Never assume implicit consent or execute state-modifying commands speculatively.
 
 ---
 
 ## GitHub CLI (`gh`) & Repository Operations Reference
 
-When approved by the user, use the GitHub CLI (`gh`) according to the following guidelines:
+Use the GitHub CLI (`gh`) according to the following guidelines:
 
-### Key Use Cases (Always Require Prior Approval)
-1. **Direct User Commands**: After approval, execute `gh` commands to manage issues, pull requests, runs, or releases.
-2. **Issue & PR Inspection**:
-   - Inspect related issues, feature requirements, or bug reports:
+### Key Use Cases
+1. **Autonomous Issue, PR & Build Inspection (Read-Only)**:
+   - Inspect related issues, feature requirements, or bug reports without prior prompt:
      ```bash
      gh issue list
      gh issue view <issue-number> --comments
@@ -197,22 +198,21 @@ When approved by the user, use the GitHub CLI (`gh`) according to the following 
      gh pr view <pr-number>
      gh pr diff <pr-number>
      ```
-3. **Pull Request Management**:
-   - Create PRs with explicit, non-interactive flags:
-     ```bash
-     gh pr create --title "<type>: <brief summary>" --body "<structured description>"
-     ```
-4. **CI/CD Workflow & Build Inspection**:
    - Check workflow runs and inspect failing logs to diagnose CI test errors:
      ```bash
      gh run list --limit 5
      gh run view <run-id> --log-failed
      ```
-5. **Release & Repository Metadata**:
    - Check latest releases or tags:
      ```bash
      gh release list
      ```
+2. **State-Modifying Operations (Always Require Prior Approval)**:
+   - Create PRs with explicit, non-interactive flags after user approval:
+     ```bash
+     gh pr create --title "<type>: <brief summary>" --body "<structured description>"
+     ```
+   - Merging, closing, or modifying issues/PRs/releases: only after explicit user approval.
 
 ### Execution Best Practices
 - **Non-Interactive Execution**: Always pass necessary parameters (`--title`, `--body`, `--fill`, `-y`) so commands never block on interactive terminal prompts.

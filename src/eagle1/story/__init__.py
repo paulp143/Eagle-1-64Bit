@@ -21,16 +21,28 @@ from eagle1.story.dialogue_db import (
     get_nodes_for_act_and_sortie,
     validate_dialogue_database,
 )
-from eagle1.story.story_manager import StoryManager
+from eagle1.story.story_manager import (
+    DECISION_TIME_DILATION,
+    DEFAULT_LOYALTY,
+    MAX_LOYALTY,
+    MIN_LOYALTY,
+    NORMAL_TIME_DILATION,
+    StoryManager,
+)
 
 __all__ = [
     "BANTER_QUEUES",
     "CampaignSaveManager",
     "CampaignSaveState",
     "CommsHUD",
+    "DECISION_TIME_DILATION",
+    "DEFAULT_LOYALTY",
     "DIALOGUE_DATABASE",
     "DialogueNode",
     "DialogueOption",
+    "MAX_LOYALTY",
+    "MIN_LOYALTY",
+    "NORMAL_TIME_DILATION",
     "StoryManager",
     "VIPER_DIALOGUE_TREES",
     "VIPER_SQUAD_PROFILES",

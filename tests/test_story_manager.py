@@ -1,12 +1,20 @@
 """Tests for StoryManager State Machine, Loyalty Vector, and Dialogue Hooks."""
 
+import math
 from pathlib import Path
 import tempfile
 import pytest
 
 from eagle1.story.campaign_save import CampaignSaveManager
 from eagle1.story.dialogue_db import get_dialogue_node
-from eagle1.story.story_manager import StoryManager
+from eagle1.story.story_manager import (
+    DECISION_TIME_DILATION,
+    DEFAULT_LOYALTY,
+    MAX_LOYALTY,
+    MIN_LOYALTY,
+    NORMAL_TIME_DILATION,
+    StoryManager,
+)
 
 
 @pytest.fixture
@@ -14,6 +22,15 @@ def temp_campaign_dir():
     """Create an isolated temporary directory for story manager tests."""
     with tempfile.TemporaryDirectory() as tmpdir:
         yield Path(tmpdir)
+
+
+def test_story_manager_constants():
+    """Verify core constants match Issue #51 specifications."""
+    assert DEFAULT_LOYALTY == 70.0
+    assert MIN_LOYALTY == 0.0
+    assert MAX_LOYALTY == 100.0
+    assert DECISION_TIME_DILATION == 0.4
+    assert NORMAL_TIME_DILATION == 1.0
 
 
 def test_story_manager_initial_defaults(temp_campaign_dir):
@@ -46,6 +63,69 @@ def test_modify_loyalty_clamping(temp_campaign_dir):
     # Test normal adjustment
     story.modify_loyalty(+45.5)
     assert story.loyalty == pytest.approx(45.5)
+
+
+def test_modify_loyalty_extreme_and_zero_deltas(temp_campaign_dir):
+    """Verify extreme deltas and zero deltas per Issue #51 acceptance criteria."""
+    save_mgr = CampaignSaveManager(data_dir=temp_campaign_dir)
+    story = StoryManager(save_manager=save_mgr)
+
+    # Zero delta leaves loyalty unmodified
+    story.modify_loyalty(0.0, reason="zero_delta")
+    assert story.loyalty == 70.0
+
+    # Extreme positive delta (+1000.0) clamps to 100.0
+    story.modify_loyalty(+1000.0, reason="extreme_pos")
+    assert story.loyalty == 100.0
+
+    # Extreme negative delta (-1000.0) clamps to 0.0
+    story.modify_loyalty(-1000.0, reason="extreme_neg")
+    assert story.loyalty == 0.0
+
+    # Positive infinity clamps to 100.0
+    story.modify_loyalty(float("inf"), reason="inf_pos")
+    assert story.loyalty == 100.0
+
+    # Negative infinity clamps to 0.0
+    story.modify_loyalty(float("-inf"), reason="inf_neg")
+    assert story.loyalty == 0.0
+
+
+def test_modify_loyalty_nan_and_invalid_types(temp_campaign_dir):
+    """Ensure NaN, None, and non-numeric types are rejected gracefully without state corruption."""
+    save_mgr = CampaignSaveManager(data_dir=temp_campaign_dir)
+    story = StoryManager(save_manager=save_mgr)
+
+    # NaN delta
+    story.modify_loyalty(float("nan"), reason="nan_delta")
+    assert not math.isnan(story.loyalty)
+    assert story.loyalty == 70.0
+
+    # None delta
+    story.modify_loyalty(None, reason="none_delta")  # type: ignore[arg-type]
+    assert story.loyalty == 70.0
+
+    # Invalid string delta
+    story.modify_loyalty("invalid", reason="str_delta")  # type: ignore[arg-type]
+    assert story.loyalty == 70.0
+
+    # Boolean delta (True/False should not be treated as int 1/0)
+    story.modify_loyalty(True, reason="bool_delta")  # type: ignore[arg-type]
+    assert story.loyalty == 70.0
+
+
+def test_set_active_dialogue_idempotent_none(temp_campaign_dir):
+    """Setting dialogue to None when already None must safely retain time_dilation = 1.0."""
+    save_mgr = CampaignSaveManager(data_dir=temp_campaign_dir)
+    story = StoryManager(save_manager=save_mgr)
+
+    assert story.active_dialogue is None
+    assert story.time_dilation == 1.0
+
+    # Set to None again
+    story.set_active_dialogue(None)
+    assert story.active_dialogue is None
+    assert story.time_dilation == 1.0
 
 
 def test_casualty_modifiers(temp_campaign_dir):
@@ -131,6 +211,25 @@ def test_record_choice_applies_delta_and_persists(temp_campaign_dir):
     persisted = save_mgr.load_campaign()
     assert persisted.loyalty == pytest.approx(78.0)
     assert len(persisted.choices_made) == 1
+
+
+def test_record_choice_invalid_inputs(temp_campaign_dir):
+    """Verify invalid node_id or invalid stance safely returns None and preserves state."""
+    save_mgr = CampaignSaveManager(data_dir=temp_campaign_dir)
+    story = StoryManager(save_manager=save_mgr)
+    initial_loyalty = story.loyalty
+
+    # Unknown node_id
+    res_unknown_node = story.record_choice("non_existent_node_xyz", "loyal")
+    assert res_unknown_node is None
+    assert story.loyalty == initial_loyalty
+    assert len(story.dialogue_history) == 0
+
+    # Unknown stance on valid node
+    res_unknown_stance = story.record_choice("sortie_1_briefing", "invalid_stance_123")
+    assert res_unknown_stance is None
+    assert story.loyalty == initial_loyalty
+    assert len(story.dialogue_history) == 0
 
 
 def test_save_and_load_persistence_sync(temp_campaign_dir):
