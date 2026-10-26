@@ -1,6 +1,12 @@
 """Campaign Story and Interactive Dialogue System for Eagle-1-64Bit."""
 
-from eagle1.story.campaign_save import CampaignSaveManager, CampaignSaveState
+from eagle1.story.campaign_save import (
+    CAMPAIGN_SAVE_FILENAME,
+    CAMPAIGN_SAVE_VERSION,
+    DEFAULT_CAMPAIGN_FILE,
+    CampaignSaveManager,
+    CampaignSaveState,
+)
 from eagle1.story.comms_hud import CommsHUD
 from eagle1.story.dialogue_data import (
     BANTER_QUEUES,
@@ -32,10 +38,13 @@ from eagle1.story.story_manager import (
 
 __all__ = [
     "BANTER_QUEUES",
+    "CAMPAIGN_SAVE_FILENAME",
+    "CAMPAIGN_SAVE_VERSION",
     "CampaignSaveManager",
     "CampaignSaveState",
     "CommsHUD",
     "DECISION_TIME_DILATION",
+    "DEFAULT_CAMPAIGN_FILE",
     "DEFAULT_LOYALTY",
     "DIALOGUE_DATABASE",
     "DialogueNode",

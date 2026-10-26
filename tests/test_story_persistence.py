@@ -1,10 +1,19 @@
 """Tests for Campaign Story Save Data Model and Persistence Layer."""
 
+import logging
+import os
 from pathlib import Path
 import tempfile
 import pytest
 
-from eagle1.story.campaign_save import CampaignSaveManager, CampaignSaveState
+from eagle1.story.campaign_save import (
+    CAMPAIGN_SAVE_FILENAME,
+    CAMPAIGN_SAVE_VERSION,
+    DEFAULT_CAMPAIGN_FILE,
+    CampaignSaveManager,
+    CampaignSaveState,
+)
+from eagle1.story.story_manager import StoryManager
 
 
 @pytest.fixture
@@ -12,6 +21,13 @@ def temp_campaign_dir():
     """Create an isolated temporary directory for campaign saves."""
     with tempfile.TemporaryDirectory() as tmpdir:
         yield Path(tmpdir)
+
+
+def test_campaign_save_constants():
+    """Verify core constants match Issue #52 specifications."""
+    assert CAMPAIGN_SAVE_VERSION == 1
+    assert CAMPAIGN_SAVE_FILENAME == "campaign_save.json"
+    assert DEFAULT_CAMPAIGN_FILE == "campaign_save.json"
 
 
 def test_default_campaign_save_state():
@@ -24,6 +40,7 @@ def test_default_campaign_save_state():
     assert state.loyalty == 70.0
     assert state.total_casualties == 0
     assert state.choices_made == []
+    assert state.extra == {}
 
 
 def test_save_and_load_round_trip(temp_campaign_dir):
@@ -59,10 +76,11 @@ def test_save_and_load_round_trip(temp_campaign_dir):
     assert loaded.choices_made[1]["choice"] == "loyal"
 
 
-def test_load_missing_file_returns_default(temp_campaign_dir):
-    """When save file does not exist, return a pristine default CampaignSaveState."""
+def test_load_missing_file_returns_default_without_warning(temp_campaign_dir, caplog):
+    """When save file does not exist, return a default CampaignSaveState without logging warnings."""
     manager = CampaignSaveManager(data_dir=temp_campaign_dir)
-    loaded = manager.load_campaign()
+    with caplog.at_level(logging.WARNING):
+        loaded = manager.load_campaign()
 
     assert loaded.campaign_active is True
     assert loaded.loyalty == 70.0
@@ -70,20 +88,109 @@ def test_load_missing_file_returns_default(temp_campaign_dir):
     assert loaded.current_sortie == 1
     assert loaded.total_casualties == 0
     assert loaded.choices_made == []
+    assert len(caplog.records) == 0
 
 
-def test_load_corrupted_json_recovers_gracefully(temp_campaign_dir):
-    """When save file contains invalid or corrupted JSON, fall back to default state."""
+def test_load_corrupted_or_truncated_json_recovers_with_warning(temp_campaign_dir, caplog):
+    """When save file contains corrupted, empty, truncated or non-dict JSON, log warning and return default."""
     manager = CampaignSaveManager(data_dir=temp_campaign_dir)
     save_path = manager.get_save_path()
     save_path.parent.mkdir(parents=True, exist_ok=True)
-    save_path.write_text("{corrupt: json content [[", encoding="utf-8")
 
-    loaded = manager.load_campaign()
+    # Test invalid JSON syntax
+    save_path.write_text("{corrupt: json content [[", encoding="utf-8")
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        loaded = manager.load_campaign()
     assert loaded.campaign_active is True
     assert loaded.loyalty == 70.0
     assert loaded.current_act == 1
     assert loaded.current_sortie == 1
+    assert any("Failed to load campaign save" in r.message for r in caplog.records)
+
+    # Test empty file
+    save_path.write_text("", encoding="utf-8")
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        loaded_empty = manager.load_campaign()
+    assert loaded_empty.loyalty == 70.0
+    assert any("Failed to load campaign save" in r.message for r in caplog.records)
+
+    # Test truncated JSON
+    save_path.write_text('{"loyalty": 50.0', encoding="utf-8")
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        loaded_trunc = manager.load_campaign()
+    assert loaded_trunc.loyalty == 70.0
+    assert any("Failed to load campaign save" in r.message for r in caplog.records)
+
+    # Test valid JSON but non-dict root (e.g. array)
+    save_path.write_text("[]", encoding="utf-8")
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        loaded_list = manager.load_campaign()
+    assert loaded_list.loyalty == 70.0
+    assert any("Invalid campaign save root type" in r.message for r in caplog.records)
+
+
+def test_load_partial_and_malformed_fields_fallback_gracefully(temp_campaign_dir):
+    """Ensure partial JSON and malformed field types fall back cleanly to defaults without crashes."""
+    manager = CampaignSaveManager(data_dir=temp_campaign_dir)
+    save_path = manager.get_save_path()
+    save_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Partial keys: only loyalty specified
+    save_path.write_text('{"loyalty": 55.0}', encoding="utf-8")
+    loaded = manager.load_campaign()
+    assert loaded.loyalty == pytest.approx(55.0)
+    assert loaded.version == 1
+    assert loaded.campaign_active is True
+    assert loaded.current_act == 1
+    assert loaded.current_sortie == 1
+    assert loaded.total_casualties == 0
+    assert loaded.choices_made == []
+    assert loaded.extra == {}
+
+    # Malformed field types
+    malformed_json = (
+        '{"version": "invalid", "campaign_active": null, "loyalty": true, '
+        '"current_act": -5, "current_sortie": "abc", "total_casualties": -10, '
+        '"choices_made": [123, null, {"node": "ok"}], "extra": "not_a_dict"}'
+    )
+    save_path.write_text(malformed_json, encoding="utf-8")
+    loaded_malformed = manager.load_campaign()
+    assert loaded_malformed.version == 1
+    assert loaded_malformed.campaign_active is True
+    assert loaded_malformed.loyalty == 70.0
+    assert loaded_malformed.current_act == 1
+    assert loaded_malformed.current_sortie == 1
+    assert loaded_malformed.total_casualties == 0
+    assert loaded_malformed.choices_made == [{"node": "ok"}]
+    assert loaded_malformed.extra == {}
+
+    # Test NaN and infinite loyalty in dict
+    nan_state = CampaignSaveState.from_dict({"loyalty": float("nan")})
+    assert nan_state.loyalty == 70.0
+
+    pos_inf_state = CampaignSaveState.from_dict({"loyalty": float("inf")})
+    assert pos_inf_state.loyalty == 100.0
+
+    neg_inf_state = CampaignSaveState.from_dict({"loyalty": float("-inf")})
+    assert neg_inf_state.loyalty == 0.0
+
+    # Test OverflowError protection on integer fields
+    overflow_state = CampaignSaveState.from_dict(
+        {
+            "version": float("inf"),
+            "current_act": float("inf"),
+            "current_sortie": float("-inf"),
+            "total_casualties": 1e1000,
+        }
+    )
+    assert overflow_state.version == 1
+    assert overflow_state.current_act == 1
+    assert overflow_state.current_sortie == 1
+    assert overflow_state.total_casualties == 0
 
 
 def test_loyalty_clamping_on_load(temp_campaign_dir):
@@ -101,6 +208,81 @@ def test_loyalty_clamping_on_load(temp_campaign_dir):
     assert loaded2.loyalty == 0.0
 
 
+def test_atomic_write_leaves_no_tmp_and_preserves_existing_on_failure(
+    temp_campaign_dir, monkeypatch
+):
+    """Verify atomic write cleans up .tmp on failure and preserves preexisting valid save."""
+    manager = CampaignSaveManager(data_dir=temp_campaign_dir)
+    save_path = manager.get_save_path()
+    tmp_path = save_path.with_suffix(".tmp")
+
+    # Save a valid state
+    initial_state = CampaignSaveState(loyalty=82.0, current_sortie=2)
+    assert manager.save_campaign(initial_state) is True
+    assert save_path.exists()
+    assert not tmp_path.exists()
+
+    # Simulate atomic rename failure
+    def fake_replace(src, dst):
+        raise OSError("Simulated disk replacement error")
+
+    monkeypatch.setattr(os, "replace", fake_replace)
+
+    # Attempt save that fails during atomic replace
+    failed_state = CampaignSaveState(loyalty=10.0, current_sortie=5)
+    success = manager.save_campaign(failed_state)
+    assert success is False
+
+    # Ensure no leftover temporary file exists
+    assert not tmp_path.exists()
+
+    # Ensure preexisting save remains intact with original loyalty
+    loaded = manager.load_campaign()
+    assert loaded.loyalty == pytest.approx(82.0)
+    assert loaded.current_sortie == 2
+
+
+def test_save_does_not_corrupt_highscore_or_audio_settings(temp_campaign_dir):
+    """Verify saving campaign state never touches highscore.txt or audio_settings.json."""
+    highscore_path = temp_campaign_dir / "highscore.txt"
+    audio_path = temp_campaign_dir / "audio_settings.json"
+
+    highscore_path.write_text("99950\n", encoding="utf-8")
+    audio_path.write_text('{"master_volume": 0.8}\n', encoding="utf-8")
+
+    manager = CampaignSaveManager(data_dir=temp_campaign_dir)
+    manager.save_campaign(CampaignSaveState(loyalty=45.0, current_sortie=3))
+    manager.load_campaign()
+    manager.reset_campaign()
+
+    assert highscore_path.read_text(encoding="utf-8") == "99950\n"
+    assert audio_path.read_text(encoding="utf-8") == '{"master_volume": 0.8}\n'
+
+
+def test_story_manager_persistence_and_advance_sortie(temp_campaign_dir):
+    """Verify StoryManager persistence sync and advance_sortie functionality."""
+    manager = CampaignSaveManager(data_dir=temp_campaign_dir)
+    story1 = StoryManager(save_manager=manager)
+
+    assert story1.current_act == 1
+    assert story1.current_sortie == 1
+
+    # Advance sortie by 1
+    assert story1.advance_sortie() is True
+    assert story1.current_act == 1
+    assert story1.current_sortie == 2
+
+    # Advance to specific act and sortie coordinates
+    assert story1.advance_sortie(act=2, sortie=4) is True
+    assert story1.current_act == 2
+    assert story1.current_sortie == 4
+
+    # New StoryManager with same save_manager reloads advanced progress
+    story2 = StoryManager(save_manager=manager)
+    assert story2.current_act == 2
+    assert story2.current_sortie == 4
+
+
 def test_reset_campaign_overwrites_with_default(temp_campaign_dir):
     """Verify reset_campaign resets state to initial baseline and saves to disk."""
     manager = CampaignSaveManager(data_dir=temp_campaign_dir)
@@ -114,3 +296,50 @@ def test_reset_campaign_overwrites_with_default(temp_campaign_dir):
     assert loaded.loyalty == 70.0
     assert loaded.current_sortie == 1
 
+
+def test_path_traversal_defense_in_get_save_path(temp_campaign_dir):
+    """Verify that filename path traversal attempts are safely restricted to basename."""
+    manager = CampaignSaveManager(filename="../../evil.json", data_dir=temp_campaign_dir)
+    save_path = manager.get_save_path()
+    assert save_path.parent.resolve() == temp_campaign_dir.resolve()
+    assert save_path.name == "evil.json"
+
+
+def test_story_manager_preserves_campaign_active_and_extra(temp_campaign_dir):
+    """Verify StoryManager preserves campaign_active, extra metadata, and supports reset_campaign."""
+    manager = CampaignSaveManager(data_dir=temp_campaign_dir)
+    # Write custom state with extra metadata and campaign_active=False
+    custom_state = CampaignSaveState(
+        campaign_active=False,
+        loyalty=62.0,
+        extra={"mod_tag": "custom_v1", "difficulty": "hard"},
+    )
+    manager.save_campaign(custom_state)
+
+    story = StoryManager(save_manager=manager)
+    assert story.campaign_active is False
+    assert story.extra == {"mod_tag": "custom_v1", "difficulty": "hard"}
+    assert story.loyalty == pytest.approx(62.0)
+
+    # Modify and save through StoryManager
+    story.extra["checkpoint"] = "alpha"
+    assert story.save_campaign_state() is True
+
+    # Reload in fresh instance
+    story2 = StoryManager(save_manager=manager)
+    assert story2.campaign_active is False
+    assert story2.extra == {
+        "mod_tag": "custom_v1",
+        "difficulty": "hard",
+        "checkpoint": "alpha",
+    }
+
+    # Reset via StoryManager convenience method
+    reset_state = story2.reset_campaign()
+    assert reset_state.campaign_active is True
+    assert reset_state.loyalty == 70.0
+    assert story2.campaign_active is True
+    assert story2.extra == {}
+    assert story2.loyalty == 70.0
+    assert story2.active_dialogue is None
+    assert story2.time_dilation == 1.0
