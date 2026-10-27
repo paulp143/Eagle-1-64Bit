@@ -24,6 +24,15 @@ def test_story_package_exports():
     assert hasattr(story, "get_dialogue_node")
     assert hasattr(story, "get_nodes_for_act_and_sortie")
     assert hasattr(story, "validate_dialogue_database")
+    assert hasattr(story, "THRESHOLD_OBEDIENCE_PURGE")
+    assert hasattr(story, "THRESHOLD_DISSIDENT_SURRENDER")
+    assert hasattr(story, "BRANCH_OBEDIENCE_PURGE")
+    assert hasattr(story, "BRANCH_DISSIDENT_SURRENDER")
+    assert hasattr(story, "BRANCH_COLD_PROTOCOL")
+    assert hasattr(story, "ENDING_BRANCH_OBEDIENCE_PURGE")
+    assert hasattr(story, "ENDING_BRANCH_DISSIDENT_SURRENDER")
+    assert hasattr(story, "ENDING_BRANCH_COLD_PROTOCOL")
+    assert hasattr(story, "VALID_STANCES")
 
 
 def test_headless_story_instantiation(tmp_path):

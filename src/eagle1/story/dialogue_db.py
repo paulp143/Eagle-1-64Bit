@@ -90,7 +90,7 @@ DIALOGUE_DATABASE: Dict[str, DialogueNode] = {
                 key_name="1",
                 key_code=pygame.K_1,
                 label="[1. LOYAL] Understood, Command. Mission objectives supersede squad comfort.",
-                loyalty_delta=+6.0,
+                loyalty_delta=+8.0,
                 response="Apex: 'That's the spirit, Eagle! We'll hold the line with our bare teeth if we have to!'",
             ),
             "neutral": DialogueOption(
@@ -106,7 +106,7 @@ DIALOGUE_DATABASE: Dict[str, DialogueNode] = {
                 key_name="3",
                 key_code=pygame.K_3,
                 label="[3. DISSIDENT] Negative, Command! Viper 4 is calling for suppression—breaking vector to cover flank!",
-                loyalty_delta=-6.0,
+                loyalty_delta=-8.0,
                 response="Braker: 'Damn... someone up there actually gives a damn about us. Thanks, Val.'",
             ),
         },
@@ -192,6 +192,10 @@ def validate_dialogue_database(db: Dict[str, DialogueNode]) -> bool:
         loyal_opt = node.options["loyal"]
         if loyal_opt.loyalty_delta <= 0.0:
             raise ValueError(f"Loyal option must have positive delta in node '{node_id}'.")
+
+        neutral_opt = node.options["neutral"]
+        if not (-1.0 <= neutral_opt.loyalty_delta <= 1.0):
+            raise ValueError(f"Neutral option delta must be within [-1.0, 1.0] in node '{node_id}'.")
 
         dissident_opt = node.options["dissident"]
         if dissident_opt.loyalty_delta >= 0.0:

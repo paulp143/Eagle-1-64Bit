@@ -6,7 +6,7 @@ dialogue queues, time dilation during decision beats, and campaign branching.
 
 import logging
 import math
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from eagle1.story.campaign_save import (
     CAMPAIGN_SAVE_VERSION,
@@ -22,6 +22,19 @@ MIN_LOYALTY: float = 0.0
 MAX_LOYALTY: float = 100.0
 DECISION_TIME_DILATION: float = 0.4
 NORMAL_TIME_DILATION: float = 1.0
+
+THRESHOLD_OBEDIENCE_PURGE: float = 90.0
+THRESHOLD_DISSIDENT_SURRENDER: float = 15.0
+
+BRANCH_OBEDIENCE_PURGE: str = "OBEDIENCE_PURGE"
+BRANCH_DISSIDENT_SURRENDER: str = "DISSIDENT_SURRENDER"
+BRANCH_COLD_PROTOCOL: str = "COLD_PROTOCOL"
+
+ENDING_BRANCH_OBEDIENCE_PURGE: str = BRANCH_OBEDIENCE_PURGE
+ENDING_BRANCH_DISSIDENT_SURRENDER: str = BRANCH_DISSIDENT_SURRENDER
+ENDING_BRANCH_COLD_PROTOCOL: str = BRANCH_COLD_PROTOCOL
+
+VALID_STANCES: Tuple[str, ...] = ("loyal", "neutral", "dissident")
 
 
 class StoryManager:
@@ -98,7 +111,7 @@ class StoryManager:
                     pass
         return self.save_campaign_state()
 
-    def modify_loyalty(self, delta: float, reason: str = "") -> None:
+    def modify_loyalty(self, delta: float, reason: str = "", auto_save: bool = True) -> None:
         """Adjust pilot loyalty with strict [0.0, 100.0] bounds clamping."""
         if isinstance(delta, bool):
             logger.warning("Ignored invalid boolean loyalty delta %r (reason: '%s')", delta, reason)
@@ -123,7 +136,8 @@ class StoryManager:
             numeric_delta,
             reason,
         )
-        self.save_campaign_state()
+        if auto_save:
+            self.save_campaign_state()
 
     def on_helldiver_death(self, helldiver_id: int) -> None:
         """Record allied Helldiver casualty, eroding pilot loyalty by -3.5."""
@@ -142,23 +156,45 @@ class StoryManager:
 
     def record_choice(self, node_id: str, stance: str) -> Optional[DialogueOption]:
         """Record pilot choice for a dialogue node, apply delta, and resume time flow."""
+        if not isinstance(node_id, str) or not node_id.strip():
+            logger.warning("Attempted to record choice for invalid node_id %r", node_id)
+            return None
+
+        if not isinstance(stance, str) or not stance.strip():
+            logger.warning("Attempted to record choice with invalid stance %r for node '%s'", stance, node_id)
+            return None
+
         node = get_dialogue_node(node_id)
         if not node:
             logger.warning("Attempted to record choice for unknown node '%s'", node_id)
             return None
 
-        if stance not in node.options:
-            logger.warning("Stance '%s' not found in options for node '%s'", stance, node_id)
-            return None
+        canonical_stance = (
+            stance
+            if stance in node.options
+            else stance.strip().strip("[]").strip().lower()
+        )
+        if canonical_stance not in node.options:
+            # Check numeric key shortcut ("1", "2", "3")
+            stripped_key = stance.strip()
+            key_match = next(
+                (k for k, opt in node.options.items() if opt.key_name == stripped_key),
+                None,
+            )
+            if key_match:
+                canonical_stance = key_match
+            else:
+                logger.warning("Stance '%s' not found in options for node '%s'", stance, node_id)
+                return None
 
-        option = node.options[stance]
+        option = node.options[canonical_stance]
         choice_record = {
             "node": node_id,
-            "stance": stance,
+            "stance": canonical_stance,
             "loyalty_delta": option.loyalty_delta,
         }
         self.dialogue_history.append(choice_record)
-        self.modify_loyalty(option.loyalty_delta, reason=f"choice:{node_id}:{stance}")
+        self.modify_loyalty(option.loyalty_delta, reason=f"choice:{node_id}:{canonical_stance}")
 
         if self.active_dialogue and self.active_dialogue.node_id == node_id:
             self.set_active_dialogue(None)
@@ -173,10 +209,12 @@ class StoryManager:
             "DISSIDENT_SURRENDER" (Loyalty <= 15.0) -> Act III-B: The Traitor
             "COLD_PROTOCOL" (15.0 < Loyalty < 90.0) -> Act III-C: The Bureaucrat
         """
-        if self.loyalty >= 90.0:
-            return "OBEDIENCE_PURGE"
-        elif self.loyalty <= 15.0:
-            return "DISSIDENT_SURRENDER"
+        if not isinstance(self.loyalty, (int, float)) or math.isnan(self.loyalty):
+            return BRANCH_COLD_PROTOCOL
+        if self.loyalty >= THRESHOLD_OBEDIENCE_PURGE:
+            return BRANCH_OBEDIENCE_PURGE
+        elif self.loyalty <= THRESHOLD_DISSIDENT_SURRENDER:
+            return BRANCH_DISSIDENT_SURRENDER
         else:
-            return "COLD_PROTOCOL"
+            return BRANCH_COLD_PROTOCOL
 

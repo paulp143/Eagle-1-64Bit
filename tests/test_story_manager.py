@@ -1,19 +1,29 @@
 """Tests for StoryManager State Machine, Loyalty Vector, and Dialogue Hooks."""
 
+import logging
 import math
 from pathlib import Path
 import tempfile
 import pytest
 
 from eagle1.story.campaign_save import CampaignSaveManager
-from eagle1.story.dialogue_db import get_dialogue_node
+from eagle1.story.dialogue_db import DIALOGUE_DATABASE, get_dialogue_node
 from eagle1.story.story_manager import (
+    BRANCH_COLD_PROTOCOL,
+    BRANCH_DISSIDENT_SURRENDER,
+    BRANCH_OBEDIENCE_PURGE,
     DECISION_TIME_DILATION,
     DEFAULT_LOYALTY,
+    ENDING_BRANCH_COLD_PROTOCOL,
+    ENDING_BRANCH_DISSIDENT_SURRENDER,
+    ENDING_BRANCH_OBEDIENCE_PURGE,
     MAX_LOYALTY,
     MIN_LOYALTY,
     NORMAL_TIME_DILATION,
     StoryManager,
+    THRESHOLD_DISSIDENT_SURRENDER,
+    THRESHOLD_OBEDIENCE_PURGE,
+    VALID_STANCES,
 )
 
 
@@ -25,12 +35,25 @@ def temp_campaign_dir():
 
 
 def test_story_manager_constants():
-    """Verify core constants match Issue #51 specifications."""
+    """Verify core constants match Issue #51 and Issue #54 specifications."""
     assert DEFAULT_LOYALTY == 70.0
     assert MIN_LOYALTY == 0.0
     assert MAX_LOYALTY == 100.0
     assert DECISION_TIME_DILATION == 0.4
     assert NORMAL_TIME_DILATION == 1.0
+
+    assert THRESHOLD_OBEDIENCE_PURGE == 90.0
+    assert THRESHOLD_DISSIDENT_SURRENDER == 15.0
+
+    assert BRANCH_OBEDIENCE_PURGE == "OBEDIENCE_PURGE"
+    assert BRANCH_DISSIDENT_SURRENDER == "DISSIDENT_SURRENDER"
+    assert BRANCH_COLD_PROTOCOL == "COLD_PROTOCOL"
+
+    assert ENDING_BRANCH_OBEDIENCE_PURGE == "OBEDIENCE_PURGE"
+    assert ENDING_BRANCH_DISSIDENT_SURRENDER == "DISSIDENT_SURRENDER"
+    assert ENDING_BRANCH_COLD_PROTOCOL == "COLD_PROTOCOL"
+
+    assert VALID_STANCES == ("loyal", "neutral", "dissident")
 
 
 def test_story_manager_initial_defaults(temp_campaign_dir):
@@ -146,29 +169,41 @@ def test_casualty_modifiers(temp_campaign_dir):
 
 
 def test_ending_branch_thresholds(temp_campaign_dir):
-    """Verify ending branch selection matches tripartite thresholds in spec."""
+    """Verify ending branch selection matches tripartite thresholds in Issue #54 spec."""
     save_mgr = CampaignSaveManager(data_dir=temp_campaign_dir)
     story = StoryManager(save_manager=save_mgr)
 
+    # Dissident path: <= 15.0
+    story.loyalty = 0.0
+    assert story.get_ending_branch() == BRANCH_DISSIDENT_SURRENDER
+    story.loyalty = 15.0
+    assert story.get_ending_branch() == BRANCH_DISSIDENT_SURRENDER
+
+    # Cold protocol path: 15.0 < loyalty < 90.0 (exact boundaries)
+    story.loyalty = 15.0001
+    assert story.get_ending_branch() == BRANCH_COLD_PROTOCOL
+    story.loyalty = 15.01
+    assert story.get_ending_branch() == BRANCH_COLD_PROTOCOL
+    story.loyalty = 50.0
+    assert story.get_ending_branch() == BRANCH_COLD_PROTOCOL
+    story.loyalty = 70.0
+    assert story.get_ending_branch() == BRANCH_COLD_PROTOCOL
+    story.loyalty = 89.0
+    assert story.get_ending_branch() == BRANCH_COLD_PROTOCOL
+    story.loyalty = 89.99
+    assert story.get_ending_branch() == BRANCH_COLD_PROTOCOL
+    story.loyalty = 89.999
+    assert story.get_ending_branch() == BRANCH_COLD_PROTOCOL
+
     # Zealot path: >= 90.0
     story.loyalty = 90.0
-    assert story.get_ending_branch() == "OBEDIENCE_PURGE"
+    assert story.get_ending_branch() == BRANCH_OBEDIENCE_PURGE
     story.loyalty = 100.0
-    assert story.get_ending_branch() == "OBEDIENCE_PURGE"
+    assert story.get_ending_branch() == BRANCH_OBEDIENCE_PURGE
 
-    # Dissident path: <= 15.0
-    story.loyalty = 15.0
-    assert story.get_ending_branch() == "DISSIDENT_SURRENDER"
-    story.loyalty = 0.0
-    assert story.get_ending_branch() == "DISSIDENT_SURRENDER"
-
-    # Cold protocol path: 15.1 to 89.9
-    story.loyalty = 16.0
-    assert story.get_ending_branch() == "COLD_PROTOCOL"
-    story.loyalty = 70.0
-    assert story.get_ending_branch() == "COLD_PROTOCOL"
-    story.loyalty = 89.0
-    assert story.get_ending_branch() == "COLD_PROTOCOL"
+    # Guard against NaN loyalty
+    story.loyalty = float("nan")
+    assert story.get_ending_branch() == BRANCH_COLD_PROTOCOL
 
 
 def test_active_dialogue_controls_time_dilation(temp_campaign_dir):
@@ -213,23 +248,95 @@ def test_record_choice_applies_delta_and_persists(temp_campaign_dir):
     assert len(persisted.choices_made) == 1
 
 
-def test_record_choice_invalid_inputs(temp_campaign_dir):
-    """Verify invalid node_id or invalid stance safely returns None and preserves state."""
+def test_record_choice_all_stances_and_multipliers(temp_campaign_dir):
+    """Verify all dialogue nodes satisfy multiplier ranges and choice normalizations work."""
+    # Verify multiplier ranges across all built-in dialogue nodes
+    for node_id, node in DIALOGUE_DATABASE.items():
+        loyal_delta = node.options["loyal"].loyalty_delta
+        neutral_delta = node.options["neutral"].loyalty_delta
+        dissident_delta = node.options["dissident"].loyalty_delta
+
+        assert 8.0 <= loyal_delta <= 12.0, f"Loyal delta in {node_id} outside [+8.0, +12.0]: {loyal_delta}"
+        assert -1.0 <= neutral_delta <= 1.0, f"Neutral delta in {node_id} outside [-1.0, +1.0]: {neutral_delta}"
+        assert -12.0 <= dissident_delta <= -8.0, f"Dissident delta in {node_id} outside [-12.0, -8.0]: {dissident_delta}"
+
+    save_mgr = CampaignSaveManager(data_dir=temp_campaign_dir)
+    story = StoryManager(save_manager=save_mgr)
+
+    # Test bracketed and uppercase stance normalization: "[LOYAL]"
+    opt1 = story.record_choice("sortie_1_briefing", "[LOYAL]")
+    assert opt1 is not None
+    assert opt1.stance == "loyal"
+    assert story.loyalty == pytest.approx(78.0)
+    assert story.dialogue_history[-1]["stance"] == "loyal"
+
+    # Test uppercase stance: "NEUTRAL"
+    opt2 = story.record_choice("sortie_1_briefing", "NEUTRAL")
+    assert opt2 is not None
+    assert opt2.stance == "neutral"
+    assert story.loyalty == pytest.approx(78.0)  # delta 0.0
+    assert story.dialogue_history[-1]["stance"] == "neutral"
+
+    # Test whitespace-padded lowercase stance: " [dissident] "
+    opt3 = story.record_choice("sortie_1_briefing", " [dissident] ")
+    assert opt3 is not None
+    assert opt3.stance == "dissident"
+    assert story.loyalty == pytest.approx(70.0)  # 78.0 - 8.0
+    assert story.dialogue_history[-1]["stance"] == "dissident"
+
+    # Test numeric key shortcut: "1" (loyal)
+    opt_key1 = story.record_choice("sortie_1_briefing", "1")
+    assert opt_key1 is not None
+    assert opt_key1.stance == "loyal"
+    assert story.loyalty == pytest.approx(78.0)
+    assert story.dialogue_history[-1]["stance"] == "loyal"
+
+    # Active dialogue matching node_id is cleared
+    node_briefing = get_dialogue_node("sortie_1_briefing")
+    story.set_active_dialogue(node_briefing)
+    story.record_choice("sortie_1_briefing", "loyal")
+    assert story.active_dialogue is None
+    assert story.time_dilation == 1.0
+
+    # Active dialogue for DIFFERENT node is preserved
+    node_inflight = get_dialogue_node("sortie_1_inflight")
+    story.set_active_dialogue(node_inflight)
+    story.record_choice("sortie_1_briefing", "neutral")
+    assert story.active_dialogue == node_inflight
+    assert story.time_dilation == 0.4
+
+
+def test_record_choice_invalid_inputs(temp_campaign_dir, caplog):
+    """Verify invalid node_id or invalid stance safely logs warning, returns None, and preserves state."""
     save_mgr = CampaignSaveManager(data_dir=temp_campaign_dir)
     story = StoryManager(save_manager=save_mgr)
     initial_loyalty = story.loyalty
 
-    # Unknown node_id
-    res_unknown_node = story.record_choice("non_existent_node_xyz", "loyal")
-    assert res_unknown_node is None
-    assert story.loyalty == initial_loyalty
-    assert len(story.dialogue_history) == 0
+    with caplog.at_level(logging.WARNING):
+        # Unknown node_id
+        res_unknown_node = story.record_choice("non_existent_node_xyz", "loyal")
+        assert res_unknown_node is None
+        assert story.loyalty == initial_loyalty
+        assert len(story.dialogue_history) == 0
 
-    # Unknown stance on valid node
-    res_unknown_stance = story.record_choice("sortie_1_briefing", "invalid_stance_123")
-    assert res_unknown_stance is None
-    assert story.loyalty == initial_loyalty
-    assert len(story.dialogue_history) == 0
+        # Invalid node_id types
+        assert story.record_choice(None, "loyal") is None  # type: ignore[arg-type]
+        assert story.record_choice("", "loyal") is None
+        assert story.record_choice(123, "loyal") is None  # type: ignore[arg-type]
+        assert story.record_choice([], "loyal") is None  # type: ignore[arg-type]
+
+        # Unknown stance on valid node
+        res_unknown_stance = story.record_choice("sortie_1_briefing", "invalid_stance_123")
+        assert res_unknown_stance is None
+        assert story.loyalty == initial_loyalty
+        assert len(story.dialogue_history) == 0
+
+        # Invalid stance types
+        assert story.record_choice("sortie_1_briefing", None) is None  # type: ignore[arg-type]
+        assert story.record_choice("sortie_1_briefing", "") is None
+        assert story.record_choice("sortie_1_briefing", []) is None  # type: ignore[arg-type]
+
+    assert len(caplog.records) > 0
 
 
 def test_save_and_load_persistence_sync(temp_campaign_dir):
