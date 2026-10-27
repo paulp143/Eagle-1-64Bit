@@ -1,4 +1,4 @@
-"""Tests for Task 2: Health, TTK, Directional Armor, and Anti-Kamikaze Collision Physics."""
+"""Tests for Task 2: Health, TTK, Directional Armor, and Kamikaze Collision Physics."""
 
 import math
 import pytest
@@ -38,8 +38,8 @@ def test_directional_armor_head_on_vs_tail_chase():
     assert front_dmg < side_dmg < rear_dmg
 
 
-def test_aerial_collision_does_not_instakill_and_separates():
-    """Verify mid-air collision bounces craft apart and does not insta-kill Light_Enemy."""
+def test_aerial_collision_one_hit_kills_enemy_and_separates():
+    """Verify mid-air collision one-hit destroys Light_Enemy, bounces craft apart, and returns True."""
     p = Player()
     p.pos_x = 1000.0
     p.pos_y = 1000.0
@@ -49,13 +49,14 @@ def test_aerial_collision_does_not_instakill_and_separates():
     p.velocity_y = 6.5
 
     enemy = Light_Enemy(x=1005, y=1005)
-    initial_enemy_hp = enemy.health
 
-    resolve_aerial_collision(p, enemy, current_time_ms=1000)
+    hit = resolve_aerial_collision(p, enemy, current_time_ms=1000)
 
-    # Enemy survives collision with majority of health intact
-    assert enemy.health > 0
-    assert enemy.health >= initial_enemy_hp - 8
+    # Collision returns True to trigger screen shake and hit sparks
+    assert hit is True
+
+    # Enemy is destroyed in one hit (health <= 0)
+    assert enemy.health <= 0
 
     # Aircraft are physically pushed apart to prevent multi-frame overlap grinding
     dist_after = math.hypot(p.pos_x - enemy.pos_x, p.pos_y - enemy.pos_y)
@@ -66,16 +67,18 @@ def test_aerial_collision_does_not_instakill_and_separates():
 
 
 def test_aerial_collision_cooldown_prevents_invincibility_grinding():
-    """Verify repeated collision checks within cooldown window do not drain enemy HP."""
+    """Verify repeated collision checks within cooldown window do not deal additional damage."""
     p = Player()
     p.pos_x = 1000.0
     p.pos_y = 1000.0
     enemy = Light_Enemy(x=1000, y=1000)
 
-    resolve_aerial_collision(p, enemy, current_time_ms=1000)
+    hit1 = resolve_aerial_collision(p, enemy, current_time_ms=1000)
+    assert hit1 is True
     hp_after_first = enemy.health
 
-    # Immediate second call within 500ms cooldown should not deal additional damage
-    resolve_aerial_collision(p, enemy, current_time_ms=1100)
+    # Immediate second call within 500ms cooldown should return False and not deal additional damage
+    hit2 = resolve_aerial_collision(p, enemy, current_time_ms=1100)
+    assert hit2 is False
     assert enemy.health == hp_after_first
 

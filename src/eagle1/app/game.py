@@ -50,7 +50,7 @@ PLAYER_HEIGHT = 61
 PLAYER_MAX_HEALTH = 5
 PLAYER_MAX_BULLETS = 200
 PLAYER_RELOAD_TIME = 5000
-PLAYER_ATTACK_DAMAGE_KAMIKAZE = 6
+PLAYER_ATTACK_DAMAGE_KAMIKAZE = 25
 PLAYER_INVINCIBLE_TIME = 1000
 PLAYER_MAX_SHIELD = 20
 PLAYER_MIN_SPEED = 2.0
@@ -127,16 +127,18 @@ def calculate_directional_gun_damage(
 def resolve_aerial_collision(player_obj, enemy_obj, current_time_ms=None):
     """Resolve mid-air collision with physical bounce-back, momentum loss, and hull trauma.
 
-    Prevents instant kamikaze kills and stops multi-frame overlap damage grinding during
-    player invulnerability frames.
+    Deals lethal kamikaze impact damage to one-hit destroy standard enemy aircraft on ramming,
+    while separating craft and applying collision cooldown to prevent multi-frame grinding.
     """
     now = current_time_ms if current_time_ms is not None else pygame.time.get_ticks()
     last_hit = getattr(enemy_obj, "last_collision_time", -99999)
 
+    e_w = getattr(enemy_obj, "width", LIGHT_ENEMY_WIDTH)
+    e_h = getattr(enemy_obj, "height", LIGHT_ENEMY_HEIGHT)
     p_cx = player_obj.pos_x + PLAYER_WIDTH / 2
     p_cy = player_obj.pos_y + PLAYER_HEIGHT / 2
-    e_cx = enemy_obj.pos_x + LIGHT_ENEMY_WIDTH / 2
-    e_cy = enemy_obj.pos_y + LIGHT_ENEMY_HEIGHT / 2
+    e_cx = enemy_obj.pos_x + e_w / 2
+    e_cy = enemy_obj.pos_y + e_h / 2
 
     dx = p_cx - e_cx
     dy = p_cy - e_cy
@@ -153,8 +155,8 @@ def resolve_aerial_collision(player_obj, enemy_obj, current_time_ms=None):
     player_obj.x = int(player_obj.pos_x)
     player_obj.y = int(player_obj.pos_y)
 
-    enemy_obj.pos_x = max(50.0, min(float(MAP_WIDTH - LIGHT_ENEMY_WIDTH - 50.0), enemy_obj.pos_x - nx * push_half))
-    enemy_obj.pos_y = max(50.0, min(float(MAP_HEIGHT - LIGHT_ENEMY_HEIGHT - 50.0), enemy_obj.pos_y - ny * push_half))
+    enemy_obj.pos_x = max(50.0, min(float(MAP_WIDTH - e_w - 50.0), enemy_obj.pos_x - nx * push_half))
+    enemy_obj.pos_y = max(50.0, min(float(MAP_HEIGHT - e_h - 50.0), enemy_obj.pos_y - ny * push_half))
     enemy_obj.x = int(enemy_obj.pos_x)
     enemy_obj.y = int(enemy_obj.pos_y)
 
@@ -164,7 +166,9 @@ def resolve_aerial_collision(player_obj, enemy_obj, current_time_ms=None):
     if now - last_hit >= COLLISION_COOLDOWN_MS:
         enemy_obj.last_collision_time = now
         enemy_obj.health -= getattr(player_obj, "kamikaze_attack_damage", PLAYER_ATTACK_DAMAGE_KAMIKAZE)
-        player_obj.take_damage(16.0)
+        player_obj.take_damage(12.0)
+        return True
+    return False
 
 BULLET_WIDTH = 9
 BULLET_HEIGHT = 12

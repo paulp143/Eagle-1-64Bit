@@ -334,7 +334,7 @@ class HelpMenu:
                 "name": "Hull Impact Collision",
                 "type": "Emergency Melee Contact",
                 "trigger": "Ramming into an enemy aircraft (Light enemies will strafe to evade)",
-                "damage": "4 DMG dealt to enemy aircraft  |  Self-Damage: 12 DMG absorbed by shield first",
+                "damage": "25 DMG (One-Hit Elimination) dealt to enemy aircraft  |  Self-Damage: 12 DMG absorbed by shield first",
                 "range": "0 px (Direct physical contact; causes physical separation recoil)",
                 "cooldown": "Immediate upon contact  |  Triggers 1.0s temporary invincibility",
                 "capacity": "Absorbed by shield pool (20 max) before damaging hull structure",
