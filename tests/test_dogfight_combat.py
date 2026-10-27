@@ -8,6 +8,7 @@ from eagle1.app.game import (
     Light_Enemy,
     Player,
     calculate_directional_gun_damage,
+    calculate_turn_rate,
     resolve_aerial_collision,
 )
 
@@ -81,4 +82,46 @@ def test_aerial_collision_cooldown_prevents_invincibility_grinding():
     hit2 = resolve_aerial_collision(p, enemy, current_time_ms=1100)
     assert hit2 is False
     assert enemy.health == hp_after_first
+
+
+def test_calculate_turn_rate_stall_corner_overspeed_curve():
+    """Verify aerodynamic curve multipliers at stall, corner peak, max speed, and overspeed."""
+    base_rate = 2.0
+    # 1. Stall speed (<= 2.0)
+    assert calculate_turn_rate(1.5, base_rate) == pytest.approx(base_rate * 0.80)
+    assert calculate_turn_rate(2.0, base_rate) == pytest.approx(base_rate * 0.80)
+
+    # 2. Corner speed peak (4.5)
+    assert calculate_turn_rate(4.5, base_rate) == pytest.approx(base_rate * 1.35)
+
+    # 3. Max speed (7.0)
+    assert calculate_turn_rate(7.0, base_rate) == pytest.approx(base_rate * 0.75)
+
+    # 4. Overspeed (> 7.0)
+    assert calculate_turn_rate(10.0, base_rate) == pytest.approx(base_rate * (0.75 - 0.10))
+
+
+def test_resolve_aerial_collision_exact_coincident_centers():
+    """Verify coincident center positions (dist < 0.001) fallback to heading normal without error."""
+    p = Player()
+    p.pos_x = 1000.0
+    p.pos_y = 1000.0
+    p.angle = 90.0
+
+    # Align enemy center exactly with player center
+    # p_cx = 1000 + 48/2 = 1024; p_cy = 1000 + 61/2 = 1030.5
+    # e_x = 1024 - 50/2 = 999; e_y = 1030.5 - 46/2 = 1007.5
+    enemy = Light_Enemy(x=999, y=1007.5)
+
+    hit = resolve_aerial_collision(p, enemy, current_time_ms=1000)
+    assert hit is True
+    # Craft should be pushed apart cleanly
+    sep = math.hypot(p.pos_x - enemy.pos_x, p.pos_y - enemy.pos_y)
+    assert sep >= 40.0
+
+
+def test_directional_gun_damage_zero_velocity_bullet():
+    """Verify zero-velocity bullet does not raise ZeroDivisionError and returns base damage."""
+    dmg = calculate_directional_gun_damage(base_damage=5.0, bullet_dx=0.0, bullet_dy=0.0, enemy_angle=45.0)
+    assert dmg == 5.0
 

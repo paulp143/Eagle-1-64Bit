@@ -102,7 +102,7 @@ def calculate_directional_gun_damage(
 
     Enemy forward unit vector is (sin(rad), cos(rad)).
     - Dot product >= +0.35 (rear ~140° tail cone / engines): 1.50x critical damage.
-    - Dot product <= -0.50 (frontal 120° nose armor): 0.65x deflected damage.
+    - Dot product <= -0.50 (frontal 120° nose armor): 0.50x deflected damage.
     - Side / beam aspect (-0.50 < dot < +0.35): 1.15x fuselage damage.
     """
     b_mag = math.hypot(bullet_dx, bullet_dy)
@@ -122,6 +122,28 @@ def calculate_directional_gun_damage(
         return float(base_damage) * 0.50
     else:
         return float(base_damage) * 1.15
+
+
+def compute_bfm_evade_sign(
+    dx: float,
+    dy: float,
+    p_fx: float,
+    p_fy: float,
+    p_speed: float,
+    default_dir: int = 1,
+) -> int:
+    """Return +1 or -1 to steer away from the player's projected flight path."""
+    los_angle = math.degrees(math.atan2(dx, dy))
+    fut_dx = dx + p_fx * (p_speed * 18.0)
+    fut_dy = dy + p_fy * (p_speed * 18.0)
+    rad_pos = math.radians(los_angle + 80.0)
+    rad_neg = math.radians(los_angle - 80.0)
+    step = CORNER_SPEED * 18.0
+    dist_pos = math.hypot(fut_dx - math.sin(rad_pos) * step, fut_dy - math.cos(rad_pos) * step)
+    dist_neg = math.hypot(fut_dx - math.sin(rad_neg) * step, fut_dy - math.cos(rad_neg) * step)
+    if abs(dist_pos - dist_neg) > 6.0:
+        return 1 if dist_pos > dist_neg else -1
+    return 1 if default_dir >= 0 else -1
 
 
 def resolve_aerial_collision(player_obj, enemy_obj, current_time_ms=None):
@@ -1567,6 +1589,7 @@ class Light_Enemy(pygame.Rect):
                 p_rad = math.radians(getattr(target, "angle", 0.0))
                 p_fx = -math.sin(p_rad)
                 p_fy = -math.cos(p_rad)
+                p_speed = float(getattr(target, "velocity_x", CORNER_SPEED))
 
                 e_rad = math.radians(self.angle)
                 e_fx = math.sin(e_rad)
@@ -1575,29 +1598,40 @@ class Light_Enemy(pygame.Rect):
                 # +1.0 = pointing directly at opponent; -1.0 = pointing directly away
                 enemy_closing_dot = e_fx * los_x + e_fy * los_y
                 player_closing_dot = -(p_fx * los_x + p_fy * los_y)
-                evade_sign = 1 if getattr(self, "orbit_direction", 1) >= 0 else -1
+                evade_sign = compute_bfm_evade_sign(
+                    dx, dy, p_fx, p_fy, p_speed, getattr(self, "orbit_direction", 1)
+                )
 
                 if self.jink_cooldown_timer > 0:
                     self.jink_cooldown_timer -= 1
 
-                if self.bfm_commit_timer > 0:
+                sq_id = getattr(self, "squadron_id", 0) or 0
+
+                if dist_to_player < 195.0 and enemy_closing_dot > -0.15:
+                    # 0. Emergency close-range anti-ramming break (< 195 px from any closing aspect)
+                    self.bfm_mode = "MERGE_BREAK"
+                    self.bfm_commit_timer = max(self.bfm_commit_timer, 22)
+                    los_angle = math.degrees(math.atan2(dx, dy))
+                    self.speed = CORNER_SPEED if sq_id % 2 == 0 else CORNER_SPEED * 1.15
+                    target_angle = (los_angle + evade_sign * 95.0) % 360
+                elif self.bfm_commit_timer > 0:
                     # Stay committed to current break heading so enemy passes through the merge
                     # instead of orbiting in a tiny circle
                     self.bfm_commit_timer -= 1
                     target_angle = self.target_heading
-                elif dist_to_player < 280.0 and enemy_closing_dot > 0.35 and player_closing_dot > 0.35:
-                    # 1. MERGE_BREAK: True head-on merge -> commit to a lateral pass-through slice
+                elif dist_to_player < 340.0 and enemy_closing_dot > 0.25 and player_closing_dot > 0.20:
+                    # 1. MERGE_BREAK: Head-on / forward-quarter merge -> lateral pass-through slice
                     self.bfm_mode = "MERGE_BREAK"
                     self.bfm_commit_timer = 32
                     los_angle = math.degrees(math.atan2(dx, dy))
-                    if self.squadron_id % 2 == 0:
+                    if sq_id % 2 == 0:
                         # 1-Circle Radius Fighter: brake to Corner Speed and cut inside the turn
                         self.speed = CORNER_SPEED
-                        target_angle = (los_angle + evade_sign * 50.0) % 360
+                        target_angle = (los_angle + evade_sign * 65.0) % 360
                     else:
                         # 2-Circle Rate Fighter: extend through merge at high speed for rate flow
                         self.speed = CORNER_SPEED * 1.15
-                        target_angle = (los_angle + evade_sign * 70.0) % 360
+                        target_angle = (los_angle + evade_sign * 80.0) % 360
                 elif (
                     dist_to_player < 380.0
                     and enemy_closing_dot < -0.30
@@ -1613,19 +1647,28 @@ class Light_Enemy(pygame.Rect):
                     away_angle = math.degrees(math.atan2(-dx, -dy))
                     target_angle = (away_angle + evade_sign * 65.0) % 360
                 elif dist_to_player < 420.0 and player_closing_dot < -0.35:
-                    # 3. WEZ_ATTACK: Slotted behind player's tail -> pull lead pursuit for gun burst
+                    # 3. WEZ_ATTACK: Slotted behind player's tail -> pull lead pursuit and throttle at close range
                     self.bfm_mode = "WEZ_ATTACK"
-                    self.speed = CORNER_SPEED
+                    if dist_to_player < 260.0:
+                        self.speed = max(PLAYER_MIN_SPEED, min(CORNER_SPEED, p_speed * 0.90))
+                    else:
+                        self.speed = CORNER_SPEED
                     lead_x = pcx + p_fx * 40.0
                     lead_y = pcy + p_fy * 40.0
                     target_angle = math.degrees(math.atan2(lead_x - cx, lead_y - cy))
                 else:
-                    # 4. TAIL_STALK: Lag pursuit aiming behind player's tail (scales down at close range)
+                    # 4. TAIL_STALK: Lag pursuit behind tail, or lateral offset when approaching from the front
                     self.bfm_mode = "TAIL_STALK"
                     self.speed = CORNER_SPEED if dist_to_player < 550.0 else ENEMY_AGRO_SPEED * 1.35
-                    lag_offset = min(140.0, dist_to_player * 0.30)
-                    tail_x = pcx - p_fx * lag_offset
-                    tail_y = pcy - p_fy * lag_offset
+                    lag_offset = min(140.0, max(75.0, dist_to_player * 0.30))
+                    if player_closing_dot > 0.20:
+                        perp_x = los_y * evade_sign
+                        perp_y = -los_x * evade_sign
+                        tail_x = pcx + perp_x * 120.0
+                        tail_y = pcy + perp_y * 120.0
+                    else:
+                        tail_x = pcx - p_fx * lag_offset
+                        tail_y = pcy - p_fy * lag_offset
                     target_angle = math.degrees(math.atan2(tail_x - cx, tail_y - cy))
             else:
                 self.bfm_mode = "PATROL"
@@ -1648,7 +1691,8 @@ class Light_Enemy(pygame.Rect):
             # Rotate enemy sprite so it turns to face heading
             prev_angle = self.angle
             angle_diff = (target_angle - self.angle + 180) % 360 - 180
-            effective_turn_rate = self.get_effective_turn_rate() * speed_factor
+            turn_mult = 1.85 if (self.bfm_mode == "MERGE_BREAK" and dist_to_player < 280.0) else 1.0
+            effective_turn_rate = self.get_effective_turn_rate() * turn_mult * speed_factor
             if abs(angle_diff) <= effective_turn_rate:
                 self.angle = target_angle
             elif angle_diff > 0:
