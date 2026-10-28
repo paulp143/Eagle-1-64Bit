@@ -2317,7 +2317,7 @@ def move():
     # Update Wave progression or Academy Tutorial
     if active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL:
         keys = pygame.key.get_pressed()
-        academy_manager.update(1.0 / 60.0, player, keys, ground_support_manager)
+        academy_manager.update(1.0 / 60.0 * comms_scale, player, keys, ground_support_manager)
         if academy_manager.is_completed:
             trigger_mission_complete()
             return
@@ -2373,6 +2373,8 @@ def respawn(mission_config=None, selected_stratagems=None):
     player.shield = PLAYER_MAX_SHIELD
     explosion_group.empty()
     combat_juice.reset()
+    if comms_hud is not None:
+        comms_hud.dismiss()
     powerup_manager.reset(player)
     ground_support_manager.reset(active_mission_config, selected_stratagems=selected_stratagems)
     audio_manager.play_music("gameplay_normal")
@@ -2950,7 +2952,7 @@ def run_game():
                     add_highscore(player.score)
                 running = False
                 break
-            if comms_hud.is_active and event.type == pygame.KEYDOWN:
+            if game_state == "" and player.health > 0 and comms_hud.is_active and event.type == pygame.KEYDOWN:
                 if comms_hud.handle_event(event):
                     continue
             if event.type == SHOOTING_END:
@@ -3338,7 +3340,7 @@ def run_game():
         if not running:
             break
 
-        comms_hud.update(1.0 / 60.0)
+        comms_hud.update(1.0 / 60.0 if (game_state == "" and player.health > 0) else 0.0)
         keys = pygame.key.get_pressed()
 
         if game_state == "main_menu":

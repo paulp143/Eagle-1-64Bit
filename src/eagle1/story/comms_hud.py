@@ -159,6 +159,9 @@ class CommsHUD:
         self.typewriter_chars = 0.0
         self.target_time_dilation = 1.0
 
+        if self.story_manager and node.options and self.story_manager.active_dialogue != node:
+            self.story_manager.set_active_dialogue(node)
+
         # Audio squelch
         if self.audio and hasattr(self.audio, "play_radio_squelch"):
             self.audio.play_radio_squelch()
@@ -214,6 +217,12 @@ class CommsHUD:
 
     def update(self, dt: float) -> None:
         """Update typewriter text, timers, audio waveforms, and time dilation."""
+        if not self.is_active and self.story_manager and self.story_manager.active_dialogue is not None:
+            self.trigger_transmission(self.story_manager.active_dialogue)
+
+        if dt <= 0.0:
+            return
+
         if not self.is_active:
             self.target_time_dilation = 1.0
             self._update_time_dilation(dt)
@@ -331,6 +340,10 @@ class CommsHUD:
         self.selected_option = None
         self.response_text = None
         self.target_time_dilation = 1.0
+        self.current_time_dilation = 1.0
+
+        if self.story_manager and self.story_manager.active_dialogue is not None:
+            self.story_manager.set_active_dialogue(None)
 
         if self.audio and hasattr(self.audio, "play_radio_squelch"):
             self.audio.play_radio_squelch()
