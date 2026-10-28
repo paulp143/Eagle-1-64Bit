@@ -33,6 +33,15 @@ def test_story_package_exports():
     assert hasattr(story, "ENDING_BRANCH_DISSIDENT_SURRENDER")
     assert hasattr(story, "ENDING_BRANCH_COLD_PROTOCOL")
     assert hasattr(story, "VALID_STANCES")
+    assert hasattr(story, "SuperDestroyerView")
+    assert hasattr(story, "HUB_ZONES")
+    assert hasattr(story, "ZONE_BRIDGE")
+    assert hasattr(story, "ZONE_READY_ROOM")
+    assert hasattr(story, "ZONE_HANGAR")
+    assert hasattr(story, "ZONE_METADATA")
+    assert hasattr(story, "PATRIOTISM_COLOR_ZEALOT")
+    assert hasattr(story, "PATRIOTISM_COLOR_NOMINAL")
+    assert hasattr(story, "PATRIOTISM_COLOR_DISSIDENT")
 
 
 def test_headless_story_instantiation(tmp_path):
