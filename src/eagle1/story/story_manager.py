@@ -10,6 +10,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from eagle1.story.campaign_save import (
     CAMPAIGN_SAVE_VERSION,
+    MAX_CAMPAIGN_ACT,
+    MAX_CAMPAIGN_SORTIE,
     CampaignSaveManager,
     CampaignSaveState,
 )
@@ -22,9 +24,6 @@ MIN_LOYALTY: float = 0.0
 MAX_LOYALTY: float = 100.0
 DECISION_TIME_DILATION: float = 0.4
 NORMAL_TIME_DILATION: float = 1.0
-
-MAX_CAMPAIGN_ACT: int = 10
-MAX_CAMPAIGN_SORTIE: int = 100
 
 THRESHOLD_OBEDIENCE_PURGE: float = 90.0
 THRESHOLD_DISSIDENT_SURRENDER: float = 15.0
@@ -68,8 +67,23 @@ class StoryManager:
         state = self.save_manager.load_campaign()
         raw_loyalty = state.loyalty if not math.isnan(state.loyalty) else DEFAULT_LOYALTY
         self.loyalty = max(MIN_LOYALTY, min(MAX_LOYALTY, raw_loyalty))
-        self.current_act = state.current_act
-        self.current_sortie = state.current_sortie
+
+        if isinstance(state.current_act, bool) or state.current_act is None:
+            self.current_act = 1
+        else:
+            try:
+                self.current_act = max(1, min(MAX_CAMPAIGN_ACT, int(state.current_act)))
+            except (ValueError, TypeError, OverflowError):
+                self.current_act = 1
+
+        if isinstance(state.current_sortie, bool) or state.current_sortie is None:
+            self.current_sortie = 1
+        else:
+            try:
+                self.current_sortie = max(1, min(MAX_CAMPAIGN_SORTIE, int(state.current_sortie)))
+            except (ValueError, TypeError, OverflowError):
+                self.current_sortie = 1
+
         self.total_casualties = state.total_casualties
         self.campaign_active = state.campaign_active
         self.extra = dict(state.extra)
@@ -105,12 +119,12 @@ class StoryManager:
             if act is not None and not isinstance(act, bool):
                 try:
                     self.current_act = max(1, min(MAX_CAMPAIGN_ACT, int(act)))
-                except (ValueError, TypeError):
+                except (ValueError, TypeError, OverflowError):
                     pass
             if sortie is not None and not isinstance(sortie, bool):
                 try:
                     self.current_sortie = max(1, min(MAX_CAMPAIGN_SORTIE, int(sortie)))
-                except (ValueError, TypeError):
+                except (ValueError, TypeError, OverflowError):
                     pass
         return self.save_campaign_state()
 

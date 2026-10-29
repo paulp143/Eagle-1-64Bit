@@ -4,6 +4,8 @@ from eagle1.story.campaign_save import (
     CAMPAIGN_SAVE_FILENAME,
     CAMPAIGN_SAVE_VERSION,
     DEFAULT_CAMPAIGN_FILE,
+    MAX_CAMPAIGN_ACT,
+    MAX_CAMPAIGN_SORTIE,
     CampaignSaveManager,
     CampaignSaveState,
 )
@@ -39,8 +41,6 @@ from eagle1.story.story_manager import (
     ENDING_BRANCH_COLD_PROTOCOL,
     ENDING_BRANCH_DISSIDENT_SURRENDER,
     ENDING_BRANCH_OBEDIENCE_PURGE,
-    MAX_CAMPAIGN_ACT,
-    MAX_CAMPAIGN_SORTIE,
     MAX_LOYALTY,
     MIN_LOYALTY,
     NORMAL_TIME_DILATION,
