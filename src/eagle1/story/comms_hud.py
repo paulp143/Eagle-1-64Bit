@@ -62,6 +62,8 @@ class CommsHUD:
         self.box_height: int = 150
         self.box_x: int = (self.screen_width - self.box_width) // 2
         self.box_y: int = 16
+        self.max_chars_line: int = 100
+        self.max_body_lines: int = 4
 
         # Color Palette (Super Earth Military Aviator Theme)
         self.color_bg = (12, 18, 28, 230)
@@ -84,6 +86,7 @@ class CommsHUD:
         self._cached_loc_surf: Optional[pygame.Surface] = None
         self._cached_option_cards: Dict[str, Tuple[pygame.Surface, pygame.Surface]] = {}
         self._cached_body_key: Tuple[str, int] = ("", -1)
+        self._cached_body_lines: List[str] = []
         self._cached_body_surfs: List[pygame.Surface] = []
         self._waveform_points: List[Tuple[int, float]] = [(0, 0.0)] * 56
 
@@ -117,6 +120,7 @@ class CommsHUD:
     def _rebuild_node_surface_cache(self) -> None:
         """Pre-render static text surfaces for the active DialogueNode to avoid per-frame allocations."""
         self._cached_body_key = ("", -1)
+        self._cached_body_lines = []
         self._cached_body_surfs = []
         if not self.current_node:
             self._cached_speaker_surf = None
@@ -383,6 +387,25 @@ class CommsHUD:
         self._portrait_cache[portrait_path] = None
         return None
 
+    def _wrap_body_lines(self, text: str) -> List[str]:
+        """Split and wrap body text into lines bounded by max_chars_line and max_body_lines."""
+        if not text:
+            return []
+        lines: List[str] = []
+        words = text.split(" ")
+        cur_line = ""
+        for w in words:
+            if not cur_line:
+                cur_line = w
+            elif len(cur_line) + 1 + len(w) <= self.max_chars_line:
+                cur_line = f"{cur_line} {w}"
+            else:
+                lines.append(cur_line)
+                cur_line = w
+        if cur_line:
+            lines.append(cur_line)
+        return lines[: self.max_body_lines]
+
     def render(self, surface: pygame.Surface) -> None:
         """Render the complete tactical radio HUD overlay on the target surface."""
         if not self.is_active or not self.current_node:
@@ -445,24 +468,15 @@ class CommsHUD:
         if body_key != self._cached_body_key:
             self._cached_body_key = body_key
             visible_text = active_full_text[:visible_len]
-            max_chars_line = 85
-            lines = []
-            words = visible_text.split(" ") if visible_text else []
-            cur_line = ""
-            for w in words:
-                if len(cur_line) + len(w) + 1 <= max_chars_line:
-                    cur_line = f"{cur_line} {w}".strip()
-                else:
-                    lines.append(cur_line)
-                    cur_line = w
-            if cur_line:
-                lines.append(cur_line)
+            self._cached_body_lines = self._wrap_body_lines(visible_text)
             self._cached_body_surfs = [
-                self.font_body.render(line, True, self.color_text) for line in lines[:3]
+                self.font_body.render(line, True, self.color_text)
+                for line in self._cached_body_lines
             ]
 
+        line_spacing = 14 if len(self._cached_body_surfs) > 3 else 16
         for idx, txt_surf in enumerate(self._cached_body_surfs):
-            surface.blit(txt_surf, (header_x, body_y + idx * 16))
+            surface.blit(txt_surf, (header_x, body_y + idx * line_spacing))
 
         # 5. Choice Options Cards (Rendered when choice is active)
         if self.is_waiting_for_choice and self.current_node.options:

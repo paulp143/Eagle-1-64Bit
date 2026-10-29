@@ -26,6 +26,8 @@ pygame.display.set_mode((1280, 720))
 
 from eagle1.story.campaign_save import CampaignSaveManager
 from eagle1.story.comms_hud import CommsHUD
+from eagle1.story.dialogue_data import VIPER_DIALOGUE_TREES
+from eagle1.story.dialogue_db import DIALOGUE_DATABASE
 from eagle1.story.story_manager import StoryManager
 
 
@@ -245,6 +247,54 @@ class TestCommsHUD(unittest.TestCase):
             self.assertIs(s1, s2)
         self.assertIs(self.hud._cached_option_cards["loyal"][0], option_cards["loyal"][0])
         self.assertIs(self.hud._cached_option_cards["loyal"][1], option_cards["loyal"][1])
+
+    def test_all_dialogue_prompts_and_responses_wrap_without_truncation(self):
+        """All registered Act I, Viper Squad, and hub dialogue prompts and responses must wrap without truncation."""
+        canvas = pygame.Surface((1280, 720))
+        all_nodes = {**DIALOGUE_DATABASE, **VIPER_DIALOGUE_TREES}
+        max_available_width = self.hud.box_width - 92 - 14  # 754 px
+
+        for node_id, node in all_nodes.items():
+            with self.subTest(node_id=node_id):
+                self.hud.trigger_transmission(node)
+                self.hud.typewriter_chars = float(len(node.prompt))
+                self.hud.render(canvas)
+
+                # Verify full prompt is preserved across wrapped lines without dropping trailing words
+                reconstructed = " ".join(self.hud._cached_body_lines)
+                self.assertEqual(
+                    reconstructed,
+                    node.prompt,
+                    f"Prompt truncated for node '{node_id}': got '{reconstructed}'",
+                )
+                self.assertLessEqual(len(self.hud._cached_body_surfs), self.hud.max_body_lines)
+                self.assertEqual(len(self.hud._cached_body_surfs), len(self.hud._cached_body_lines))
+
+                for surf in self.hud._cached_body_surfs:
+                    self.assertLessEqual(surf.get_width(), max_available_width)
+
+                # Check all option responses for this node as well
+                for stance, opt in node.options.items():
+                    resp_text = f"[{node.speaker}]: {opt.response}"
+                    wrapped_resp = self.hud._wrap_body_lines(resp_text)
+                    self.assertEqual(" ".join(wrapped_resp), resp_text)
+
+        # Explicitly verify sortie_1_briefing fits in 3 lines and retains its closing question
+        self.hud.trigger_transmission("sortie_1_briefing")
+        self.hud.typewriter_chars = float(len(self.hud.current_node.prompt))
+        self.hud.render(canvas)
+        self.assertEqual(len(self.hud._cached_body_lines), 3)
+        self.assertTrue(
+            self.hud._cached_body_lines[-1].endswith("spirit feel prior to launch, Lieutenant?")
+        )
+
+    def test_wrap_body_lines_edge_cases(self):
+        """Verify _wrap_body_lines handles empty strings, single long tokens, and 4-line clamping."""
+        self.assertEqual(self.hud._wrap_body_lines(""), [])
+        long_token = "A" * 120
+        self.assertEqual(self.hud._wrap_body_lines(long_token), [long_token])
+        five_lines_text = " ".join(["word" * 20] * 5)
+        self.assertEqual(len(self.hud._wrap_body_lines(five_lines_text)), self.hud.max_body_lines)
 
 
 if __name__ == "__main__":
