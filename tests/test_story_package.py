@@ -42,6 +42,13 @@ def test_story_package_exports():
     assert hasattr(story, "PATRIOTISM_COLOR_ZEALOT")
     assert hasattr(story, "PATRIOTISM_COLOR_NOMINAL")
     assert hasattr(story, "PATRIOTISM_COLOR_DISSIDENT")
+    assert hasattr(story, "ShipNPCProfile")
+    assert hasattr(story, "SHIP_NPC_PROFILES")
+    assert hasattr(story, "get_ship_npc_profile")
+
+    for symbol in story.__all__:
+        assert hasattr(story, symbol), f"Symbol '{symbol}' in __all__ is not exported"
+    assert story.__all__ == sorted(story.__all__)
 
 
 def test_headless_story_instantiation(tmp_path):

@@ -23,6 +23,9 @@ MAX_LOYALTY: float = 100.0
 DECISION_TIME_DILATION: float = 0.4
 NORMAL_TIME_DILATION: float = 1.0
 
+MAX_CAMPAIGN_ACT: int = 10
+MAX_CAMPAIGN_SORTIE: int = 100
+
 THRESHOLD_OBEDIENCE_PURGE: float = 90.0
 THRESHOLD_DISSIDENT_SURRENDER: float = 15.0
 
@@ -97,16 +100,16 @@ class StoryManager:
     def advance_sortie(self, act: Optional[int] = None, sortie: Optional[int] = None) -> bool:
         """Advance to next sortie or specific act/sortie coordinates and persist."""
         if act is None and sortie is None:
-            self.current_sortie += 1
+            self.current_sortie = min(MAX_CAMPAIGN_SORTIE, self.current_sortie + 1)
         else:
             if act is not None and not isinstance(act, bool):
                 try:
-                    self.current_act = max(1, int(act))
+                    self.current_act = max(1, min(MAX_CAMPAIGN_ACT, int(act)))
                 except (ValueError, TypeError):
                     pass
             if sortie is not None and not isinstance(sortie, bool):
                 try:
-                    self.current_sortie = max(1, int(sortie))
+                    self.current_sortie = max(1, min(MAX_CAMPAIGN_SORTIE, int(sortie)))
                 except (ValueError, TypeError):
                     pass
         return self.save_campaign_state()
@@ -188,15 +191,18 @@ class StoryManager:
                 return None
 
         option = node.options[canonical_stance]
+        canonical_node_id = node.node_id
         choice_record = {
-            "node": node_id,
+            "node": canonical_node_id,
             "stance": canonical_stance,
             "loyalty_delta": option.loyalty_delta,
+            "act": self.current_act,
+            "sortie": self.current_sortie,
         }
         self.dialogue_history.append(choice_record)
-        self.modify_loyalty(option.loyalty_delta, reason=f"choice:{node_id}:{canonical_stance}")
+        self.modify_loyalty(option.loyalty_delta, reason=f"choice:{canonical_node_id}:{canonical_stance}")
 
-        if self.active_dialogue and self.active_dialogue.node_id == node_id:
+        if self.active_dialogue and self.active_dialogue.node_id == canonical_node_id:
             self.set_active_dialogue(None)
 
         return option

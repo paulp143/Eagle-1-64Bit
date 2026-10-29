@@ -11,6 +11,7 @@ Renders an interactive military radio HUD overlay during active flight operation
 from __future__ import annotations
 
 import math
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 import pygame
 
@@ -351,16 +352,26 @@ class CommsHUD:
         self._rebuild_node_surface_cache()
 
     def _get_portrait_surface(self, portrait_path: Optional[str]) -> Optional[pygame.Surface]:
-        """Load and cache a 64x64 speaker portrait surface safely."""
-        if not portrait_path:
+        """Load and cache a 64x64 speaker portrait surface safely within project root."""
+        if not portrait_path or not isinstance(portrait_path, str) or not portrait_path.strip():
             return None
 
         if portrait_path in self._portrait_cache:
             return self._portrait_cache[portrait_path]
 
         try:
-            full_path = get_base_dir() / portrait_path
-            if full_path.exists() and verify_path_exact_casing(portrait_path):
+            rel_candidate = Path(portrait_path.strip())
+            if rel_candidate.is_absolute():
+                self._portrait_cache[portrait_path] = None
+                return None
+
+            base_dir = get_base_dir().resolve()
+            full_path = (base_dir / rel_candidate).resolve()
+            if not full_path.is_relative_to(base_dir):
+                self._portrait_cache[portrait_path] = None
+                return None
+
+            if full_path.exists() and full_path.is_file() and verify_path_exact_casing(portrait_path.strip()):
                 img = pygame.image.load(str(full_path)).convert_alpha()
                 if img.get_size() != (64, 64):
                     img = pygame.transform.smoothscale(img, (64, 64))

@@ -12,9 +12,18 @@ from __future__ import annotations
 
 import math
 import random
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 import pygame
 
+from eagle1.story.dialogue_data import get_debrief_dialogue_node
+from eagle1.story.dialogue_db import (
+    SHIP_NPC_PROFILES,
+    DialogueNode,
+    DialogueOption,
+    ShipNPCProfile,
+    get_dialogue_node,
+    get_ship_npc_profile,
+)
 from eagle1.story.story_manager import (
     MAX_LOYALTY,
     MIN_LOYALTY,
@@ -81,10 +90,13 @@ class SuperDestroyerView:
         self.ambient_timer: float = 0.0
         self._dialogue_open: bool = False
 
-        # Post-sortie statistics placeholder for upcoming sub-issues
+        # Post-sortie statistics and morale tracking
         self.last_casualties_count: int = 0
         self.last_squad_wiped: bool = False
         self.last_hull_ratio: float = 1.0
+        self._post_sortie_stats_recorded: bool = False
+        self._completed_nodes_by_sortie: Dict[Tuple[int, int], Set[str]] = {}
+        self.npc_card_rects: Dict[str, pygame.Rect] = {}
 
         # Geometry & Layout
         self._init_layout_rects()
@@ -119,6 +131,28 @@ class SuperDestroyerView:
 
         self.content_panel_rect = pygame.Rect(40, 140, self.screen_width - 80, 510)
         self.footer_rect = pygame.Rect(0, self.screen_height - 56, self.screen_width, 56)
+
+        # Pre-compute NPC interactive card rectangles per zone
+        self.npc_card_rects = {}
+        inner_x = self.content_panel_rect.x + 20
+        inner_y = self.content_panel_rect.y + 60
+        inner_w = self.content_panel_rect.width - 40
+        inner_h = self.content_panel_rect.height - 80
+
+        # Bridge: 2 stations
+        card_w_b = (inner_w - 40) // 2
+        self.npc_card_rects["npc_reiner"] = pygame.Rect(inner_x + 15, inner_y + 120, card_w_b, 180)
+        self.npc_card_rects["npc_vance"] = pygame.Rect(inner_x + 25 + card_w_b, inner_y + 120, card_w_b, 180)
+
+        # Ready Room: 4 pod slots
+        slot_w = (inner_w - 60) // 4
+        for i in range(4):
+            vid = f"viper_{i+1}"
+            sx = inner_x + 12 + i * (slot_w + 12)
+            self.npc_card_rects[vid] = pygame.Rect(sx, inner_y + 40, slot_w, inner_h - 80)
+
+        # Hangar: Ortiz workshop
+        self.npc_card_rects["npc_ortiz"] = pygame.Rect(inner_x + 30, inner_y + 100, (inner_w - 60) // 2, 200)
 
     def _init_fonts(self) -> None:
         """Initialize and cache fonts safely across desktop and headless environments."""
@@ -246,6 +280,17 @@ class SuperDestroyerView:
                 (140, 175, 205),
             )
 
+        # Pre-render static NPC labels
+        for npc_id, profile in SHIP_NPC_PROFILES.items():
+            if self.font_tab_title:
+                self._cached_static_texts[f"npc_name_{npc_id}"] = self.font_tab_title.render(
+                    profile.name, True, profile.theme_color
+                )
+            if self.font_tab_sub:
+                self._cached_static_texts[f"npc_role_{npc_id}"] = self.font_tab_sub.render(
+                    profile.role.upper(), True, (160, 190, 215)
+                )
+
         # Dynamic text caches (keyed by state)
         self._cached_dynamic_surfaces: Dict[str, Tuple[Any, pygame.Surface]] = {}
 
@@ -353,6 +398,149 @@ class SuperDestroyerView:
         pygame.draw.rect(surface, (80, 110, 140), self.patriotism_bar_rect, width=1)
 
     # -------------------------------------------------------------------------
+    # Shipboard NPC Profiles & Morale Engine (Issue #58)
+    # -------------------------------------------------------------------------
+    def get_zone_npcs(self, zone_id: Optional[str] = None) -> List[ShipNPCProfile]:
+        """Retrieve character profiles located in the specified or active deck zone."""
+        target_zone = self.active_zone if zone_id is None else zone_id
+        if isinstance(target_zone, bool) or not isinstance(target_zone, str):
+            return []
+        clean_zone = target_zone.strip().lower()
+        if clean_zone not in HUB_ZONES:
+            return []
+        return [prof for prof in SHIP_NPC_PROFILES.values() if prof.zone == clean_zone]
+
+    def set_last_sortie_stats(
+        self,
+        casualties_count: int = 0,
+        squad_wiped: bool = False,
+        hull_ratio: float = 1.0,
+    ) -> None:
+        """Record post-sortie combat statistics for character morale and diagnostics."""
+        if isinstance(casualties_count, bool) or not isinstance(casualties_count, (int, float)):
+            c_count = 0
+        else:
+            c_count = max(0, int(casualties_count))
+
+        self.last_casualties_count = c_count
+        self.last_squad_wiped = bool(squad_wiped) or (c_count >= 4)
+
+        if isinstance(hull_ratio, bool) or not isinstance(hull_ratio, (int, float)) or math.isnan(float(hull_ratio)):
+            h_ratio = 1.0
+        else:
+            h_ratio = max(0.0, min(1.0, float(hull_ratio)))
+        self.last_hull_ratio = h_ratio
+
+        self._post_sortie_stats_recorded = True
+
+    def get_ready_room_morale_state(self) -> str:
+        """Determine the current Viper Squad morale state ('replacements', 'casualties', 'flawless')."""
+        if self.last_squad_wiped or self.last_casualties_count >= 4:
+            return "replacements"
+        elif self.last_casualties_count > 0:
+            return "casualties"
+        else:
+            return "flawless"
+
+    def resolve_npc_dialogue(self, npc_id: str) -> Optional[DialogueNode]:
+        """Resolve the active dialogue beat for an NPC based on campaign progress and morale."""
+        if npc_id is None or isinstance(npc_id, bool) or not isinstance(npc_id, str):
+            return None
+
+        clean_id = npc_id.strip().lower()
+        if not clean_id:
+            return None
+
+        # Direct shortcuts for Ready Room / Hangar debriefs
+        if clean_id in ("viper_squad", "ready_room_debrief", "viper_debrief"):
+            return get_debrief_dialogue_node(self.last_casualties_count, self.last_squad_wiped)
+        if clean_id == "sortie_1_hangar_debrief":
+            return get_dialogue_node("sortie_1_hangar_debrief")
+
+        profile = get_ship_npc_profile(clean_id)
+        if profile is None:
+            return None
+
+        act = max(1, int(getattr(self.story_manager, "current_act", 1)))
+        sortie = max(1, int(getattr(self.story_manager, "current_sortie", 1)))
+
+        # Bridge Personnel
+        if profile.npc_id == "npc_reiner":
+            if act >= 2 or sortie >= 2:
+                return get_dialogue_node("bridge_reiner_scrutiny")
+            return get_dialogue_node("sortie_1_briefing")
+
+        if profile.npc_id == "npc_vance":
+            return get_dialogue_node("bridge_vance_logistics")
+
+        # Hangar Personnel
+        if profile.npc_id == "npc_ortiz":
+            return get_dialogue_node("hangar_ortiz_maintenance")
+
+        # Ready Room (Viper Squad)
+        if profile.zone == ZONE_READY_ROOM:
+            if self.last_squad_wiped or self.last_casualties_count >= 4:
+                return get_debrief_dialogue_node(self.last_casualties_count, True)
+            if self.last_casualties_count > 0:
+                return get_debrief_dialogue_node(self.last_casualties_count, False)
+            if self._post_sortie_stats_recorded or sortie > 1:
+                return get_debrief_dialogue_node(0, False)
+            return get_dialogue_node(profile.default_node_id)
+
+        return get_dialogue_node(profile.default_node_id)
+
+    def _get_current_sortie_key(self) -> Tuple[int, int]:
+        """Return the (act, sortie) tuple for current sortie tracking."""
+        act = max(1, int(getattr(self.story_manager, "current_act", 1)))
+        sortie = max(1, int(getattr(self.story_manager, "current_sortie", 1)))
+        return (act, sortie)
+
+    def mark_node_completed(self, node_id: str) -> None:
+        """Mark a dialogue node as completed in the current sortie."""
+        if isinstance(node_id, str) and node_id.strip():
+            key = self._get_current_sortie_key()
+            self._completed_nodes_by_sortie.setdefault(key, set()).add(node_id.strip())
+
+    def is_node_completed_in_current_sortie(self, node_id: str) -> bool:
+        """Check whether a dialogue node has already been completed in the current sortie."""
+        if node_id is None or isinstance(node_id, bool) or not isinstance(node_id, str):
+            return False
+
+        clean_node_id = node_id.strip()
+        if not clean_node_id:
+            return False
+
+        key = self._get_current_sortie_key()
+        if clean_node_id in self._completed_nodes_by_sortie.get(key, set()):
+            return True
+
+        act, sortie = key
+        history = getattr(self.story_manager, "dialogue_history", [])
+        for entry in history:
+            if isinstance(entry, dict) and entry.get("node") == clean_node_id:
+                if "sortie" in entry:
+                    entry_act = entry.get("act", 1)
+                    entry_sortie = entry.get("sortie", 1)
+                    if entry_act == act and entry_sortie == sortie:
+                        return True
+                else:
+                    if (act, sortie) == (1, 1):
+                        return True
+
+        return False
+
+    def record_npc_choice(self, node_id: str, stance: str) -> Optional[DialogueOption]:
+        """Record pilot stance choice on an NPC dialogue node, guarding against duplicate farming."""
+        if self.is_node_completed_in_current_sortie(node_id):
+            return None
+
+        option = self.story_manager.record_choice(node_id, stance)
+        if option is not None:
+            self.mark_node_completed(node_id)
+
+        return option
+
+    # -------------------------------------------------------------------------
     # Zone Navigation & Event Engine (Task 2 Implementation)
     # -------------------------------------------------------------------------
     def select_zone(self, zone_id_or_index: str | int) -> bool:
@@ -433,6 +621,17 @@ class SuperDestroyerView:
                 if rect.collidepoint(pos):
                     self.select_zone(zone_id)
                     return {"action": "select_zone", "zone": self.active_zone}
+
+            for npc in self.get_zone_npcs():
+                card_rect = self.npc_card_rects.get(npc.npc_id)
+                if card_rect is not None and card_rect.collidepoint(pos):
+                    self._play_ui_sound("ui_click")
+                    node = self.resolve_npc_dialogue(npc.npc_id)
+                    return {
+                        "action": "interact_npc",
+                        "npc_id": npc.npc_id,
+                        "node": node,
+                    }
 
         elif event.type == pygame.KEYDOWN:
             if event.key in (pygame.K_a, pygame.K_LEFT):
@@ -535,7 +734,7 @@ class SuperDestroyerView:
         )
         pygame.draw.rect(surface, (25, 40, 60), inner_rect, width=1)
 
-        # Subtle zone-specific tactical markings
+        # Subtle zone-specific tactical markings & NPC personnel cards
         if self.active_zone == ZONE_BRIDGE:
             # Observation reticle & tactical grid lines
             cx = inner_rect.centerx
@@ -543,18 +742,77 @@ class SuperDestroyerView:
             pygame.draw.line(surface, (35, 60, 85), (cx - 120, cy), (cx + 120, cy), 1)
             pygame.draw.line(surface, (35, 60, 85), (cx, cy - 80), (cx, cy + 80), 1)
             pygame.draw.circle(surface, (45, 80, 115), (cx, cy), 50, width=1)
+
+            # Draw Bridge NPC personnel cards
+            for npc_id in ("npc_reiner", "npc_vance"):
+                crect = self.npc_card_rects.get(npc_id)
+                if crect:
+                    pygame.draw.rect(surface, (16, 24, 38), crect)
+                    pygame.draw.rect(surface, (45, 75, 105), crect, width=1)
+                    nsurf = self._cached_static_texts.get(f"npc_name_{npc_id}")
+                    rsurf = self._cached_static_texts.get(f"npc_role_{npc_id}")
+                    if nsurf:
+                        surface.blit(nsurf, (crect.x + 14, crect.y + 12))
+                    if rsurf:
+                        surface.blit(rsurf, (crect.x + 16, crect.y + 36))
+
         elif self.active_zone == ZONE_READY_ROOM:
-            # 4 Pod staging slots wireframe
-            slot_w = (inner_rect.width - 60) // 4
+            # Morale badge
+            morale_state = self.get_ready_room_morale_state()
+            cached_morale = self._cached_dynamic_surfaces.get("ready_room_morale")
+            if cached_morale and cached_morale[0] == morale_state:
+                morale_surf = cached_morale[1]
+            else:
+                m_label = f"SQUAD MORALE // {morale_state.upper()}"
+                m_col = (
+                    PATRIOTISM_COLOR_ZEALOT
+                    if morale_state == "flawless"
+                    else (
+                        PATRIOTISM_COLOR_NOMINAL
+                        if morale_state == "casualties"
+                        else PATRIOTISM_COLOR_DISSIDENT
+                    )
+                )
+                morale_surf = (
+                    self.font_badge.render(m_label, True, m_col) if self.font_badge else None
+                )
+                if morale_surf:
+                    self._cached_dynamic_surfaces["ready_room_morale"] = (morale_state, morale_surf)
+
+            if morale_surf:
+                surface.blit(morale_surf, (inner_rect.x + 14, inner_rect.y + 12))
+
+            # 4 Pod staging slots with Viper Squad personnel
             for i in range(4):
-                slot_x = inner_rect.x + 12 + i * (slot_w + 12)
-                slot_rect = pygame.Rect(slot_x, inner_rect.y + 40, slot_w, inner_rect.height - 80)
-                pygame.draw.rect(surface, (28, 48, 70), slot_rect, width=1)
+                vid = f"viper_{i+1}"
+                crect = self.npc_card_rects.get(vid)
+                if crect:
+                    pygame.draw.rect(surface, (18, 28, 44), crect)
+                    pygame.draw.rect(surface, (35, 55, 80), crect, width=1)
+                    nsurf = self._cached_static_texts.get(f"npc_name_{vid}")
+                    rsurf = self._cached_static_texts.get(f"npc_role_{vid}")
+                    if nsurf:
+                        surface.blit(nsurf, (crect.x + 10, crect.y + 14))
+                    if rsurf:
+                        surface.blit(rsurf, (crect.x + 10, crect.y + 38))
+
         elif self.active_zone == ZONE_HANGAR:
             # Catapult rail guide stripes
             cy = inner_rect.centery
             pygame.draw.line(surface, (255, 215, 50), (inner_rect.x + 40, cy - 20), (inner_rect.right - 40, cy - 20), 2)
             pygame.draw.line(surface, (255, 215, 50), (inner_rect.x + 40, cy + 20), (inner_rect.right - 40, cy + 20), 2)
+
+            # Draw Chief Ortiz station card
+            crect = self.npc_card_rects.get("npc_ortiz")
+            if crect:
+                pygame.draw.rect(surface, (16, 24, 38), crect)
+                pygame.draw.rect(surface, (243, 156, 18), crect, width=1)
+                nsurf = self._cached_static_texts.get("npc_name_npc_ortiz")
+                rsurf = self._cached_static_texts.get("npc_role_npc_ortiz")
+                if nsurf:
+                    surface.blit(nsurf, (crect.x + 14, crect.y + 14))
+                if rsurf:
+                    surface.blit(rsurf, (crect.x + 16, crect.y + 38))
 
     def _draw_footer_bar(self, surface: pygame.Surface) -> None:
         """Render the bottom control and shortcut prompt bar."""
