@@ -548,6 +548,7 @@ def test_mouse_click_on_npc_cards_triggers_interact_npc_across_zones(story_mgr):
     assert res_reiner["npc_id"] == "npc_reiner"
     assert res_reiner["node"].node_id == "sortie_1_briefing"
     audio_mock.play_sfx.assert_called_with("ui_click")
+    view.close_dialogue()
 
     # Bridge: Click Vance
     audio_mock.reset_mock()
@@ -559,6 +560,7 @@ def test_mouse_click_on_npc_cards_triggers_interact_npc_across_zones(story_mgr):
     assert res_vance["npc_id"] == "npc_vance"
     assert res_vance["node"].node_id == "bridge_vance_logistics"
     audio_mock.play_sfx.assert_called_with("ui_click")
+    view.close_dialogue()
 
     # 2. Ready Room: Click Viper 1 .. 4
     view.select_zone(ZONE_READY_ROOM)
@@ -571,6 +573,7 @@ def test_mouse_click_on_npc_cards_triggers_interact_npc_across_zones(story_mgr):
         assert res_v["action"] == "interact_npc"
         assert res_v["npc_id"] == vid
         assert res_v["node"].node_id == f"viper_{i}_deck_briefing"
+        view.close_dialogue()
 
     # 3. Hangar: Click Ortiz
     view.select_zone(ZONE_HANGAR)
@@ -581,6 +584,7 @@ def test_mouse_click_on_npc_cards_triggers_interact_npc_across_zones(story_mgr):
     assert res_ortiz["action"] == "interact_npc"
     assert res_ortiz["npc_id"] == "npc_ortiz"
     assert res_ortiz["node"].node_id == "hangar_ortiz_maintenance"
+    view.close_dialogue()
 
     # Right clicks or clicks outside return None
     click_right = pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=3, pos=ortiz_rect.center)
@@ -670,5 +674,371 @@ def test_resolve_npc_dialogue_shortcut_aliases_and_sortie_boundaries(story_mgr):
     node_r2_s1 = view.resolve_npc_dialogue("npc_reiner")
     assert node_r2_s1 is not None
     assert node_r2_s1.node_id == "bridge_reiner_scrutiny"
+
+
+# -----------------------------------------------------------------------------
+# Issue #59: Interactive Dialogue Modal, Typewriter & Portrait Tests
+# -----------------------------------------------------------------------------
+
+def test_dialogue_modal_opens_on_npc_click_and_blocks_zone_navigation(story_mgr):
+    """Verify opening dialogue modal traps navigation hotkeys, zone tab clicks, and supports set_dialogue_open."""
+    audio_mock = MagicMock()
+    view = SuperDestroyerView(story_manager=story_mgr, audio_manager=audio_mock)
+
+    # 1. Click Reiner to open dialogue modal
+    reiner_rect = view.npc_card_rects["npc_reiner"]
+    click_evt = pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=reiner_rect.center)
+    res = view.handle_event(click_evt)
+    assert res is not None
+    assert res["action"] == "interact_npc"
+    assert view.is_dialogue_open is True
+    assert view.active_npc_id == "npc_reiner"
+    assert view.active_dialogue_node is not None
+    assert view.active_dialogue_node.node_id == "sortie_1_briefing"
+
+    # 2. Verify zone navigation keys and launch hotkey are strictly trapped/blocked
+    for key in (pygame.K_a, pygame.K_d, pygame.K_LEFT, pygame.K_RIGHT, pygame.K_l):
+        evt = pygame.event.Event(pygame.KEYDOWN, key=key)
+        assert view.handle_event(evt) is None
+    assert view.active_zone == ZONE_BRIDGE
+
+    # 3. Verify clicks on zone tabs are ignored while dialogue modal is open
+    ready_tab_rect = view.zone_tab_rects[ZONE_READY_ROOM]
+    click_tab = pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=ready_tab_rect.center)
+    assert view.handle_event(click_tab) is None
+    assert view.active_zone == ZONE_BRIDGE
+
+    # 4. Issue #63: Test public set_dialogue_open API
+    view.set_dialogue_open(False)
+    assert view.is_dialogue_open is False
+    view.set_dialogue_open(True)
+    assert view.is_dialogue_open is True
+    view.close_dialogue()
+    assert view.is_dialogue_open is False
+
+
+def test_dialogue_typewriter_advances_and_space_skips_to_full_text(story_mgr):
+    """Verify typewriter advances proportionally with dt and Spacebar immediately skips to full prompt."""
+    view = SuperDestroyerView(story_manager=story_mgr)
+    node = view.open_npc_dialogue("npc_vance")
+    assert node is not None
+    assert view.is_dialogue_open is True
+    assert view.typewriter_chars == 0.0
+    full_len = float(len(node.prompt))
+
+    # Advance typewriter with dt
+    view.update(0.1)
+    assert 0.0 < view.typewriter_chars < full_len
+
+    # Press SPACE: skips typewriter to complete length
+    evt_space = pygame.event.Event(pygame.KEYDOWN, key=pygame.K_SPACE)
+    res = view.handle_event(evt_space)
+    assert res == {"action": "skip_typewriter"}
+    assert view.typewriter_chars == full_len
+    # Modal remains open awaiting stance choice
+    assert view.is_dialogue_open is True
+    assert view.selected_option is None
+
+
+def test_dialogue_stance_selection_via_keyboard_and_mouse_updates_loyalty_and_shows_response(story_mgr):
+    """Verify keyboard numbers [1-3] and mouse clicks choose stances, record choices, and display responses."""
+    audio_mock = MagicMock()
+    view = SuperDestroyerView(story_manager=story_mgr, audio_manager=audio_mock)
+
+    # 1. Keyboard selection on Vance: Press 1 for LOYAL
+    node = view.open_npc_dialogue("npc_vance")
+    assert node is not None
+    initial_loyalty = story_mgr.loyalty  # 70.0
+    evt_1 = pygame.event.Event(pygame.KEYDOWN, key=pygame.K_1)
+    res_1 = view.handle_event(evt_1)
+    assert res_1 is not None
+    assert res_1["action"] == "dialogue_choice"
+    assert res_1["stance"] == "loyal"
+    assert res_1["loyalty_delta"] == 8.0
+    assert story_mgr.loyalty == pytest.approx(initial_loyalty + 8.0)
+    assert view.selected_option is not None
+    assert view.selected_option.stance == "loyal"
+    assert view.response_text == view.selected_option.response
+    assert view.dialogue_completed_mode is True
+
+    # Press ESC to close dialogue
+    evt_esc = pygame.event.Event(pygame.KEYDOWN, key=pygame.K_ESCAPE)
+    res_esc = view.handle_event(evt_esc)
+    assert res_esc == {"action": "close_dialogue"}
+    assert view.is_dialogue_open is False
+
+    # 2. Mouse selection on Ortiz: Click Dissident option card
+    view.select_zone(ZONE_HANGAR)
+    node_ortiz = view.open_npc_dialogue("npc_ortiz")
+    assert node_ortiz is not None
+    current_loyalty = story_mgr.loyalty  # 78.0
+    dissident_rect = view.modal_option_rects["dissident"]
+    click_dissident = pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=dissident_rect.center)
+    res_dis = view.handle_event(click_dissident)
+    assert res_dis is not None
+    assert res_dis["action"] == "dialogue_choice"
+    assert res_dis["stance"] == "dissident"
+    assert res_dis["loyalty_delta"] == -8.0
+    assert story_mgr.loyalty == pytest.approx(current_loyalty - 8.0)
+    assert view.selected_option.stance == "dissident"
+
+    # Click Continue button to close modal
+    click_cont = pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=view.modal_continue_rect.center)
+    res_cont = view.handle_event(click_cont)
+    assert res_cont == {"action": "close_dialogue"}
+    assert view.is_dialogue_open is False
+
+
+def test_dialogue_completed_node_opens_in_readonly_review_mode_without_farming(story_mgr):
+    """Verify previously completed nodes open in read-only review mode without allowing duplicate score changes."""
+    view = SuperDestroyerView(story_manager=story_mgr)
+
+    # Complete Vance dialogue
+    view.open_npc_dialogue("npc_vance")
+    view.select_dialogue_stance("neutral")
+    assert story_mgr.loyalty == pytest.approx(70.0)
+    view.close_dialogue()
+
+    # Re-open Vance dialogue in same sortie
+    node = view.open_npc_dialogue("npc_vance")
+    assert node is not None
+    assert view.is_dialogue_open is True
+    assert view.dialogue_completed_mode is True
+    assert view.response_text is not None
+    assert view.typewriter_chars == len(node.prompt)
+
+    # Trying to pick stance 1 or clicking option card does nothing
+    evt_1 = pygame.event.Event(pygame.KEYDOWN, key=pygame.K_1)
+    assert view.handle_event(evt_1) is None
+    click_opt = pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=view.modal_option_rects["loyal"].center)
+    assert view.handle_event(click_opt) is None
+    assert story_mgr.loyalty == pytest.approx(70.0)
+
+    # Pressing SPACE or ENTER closes the completed review modal
+    evt_space = pygame.event.Event(pygame.KEYDOWN, key=pygame.K_SPACE)
+    assert view.handle_event(evt_space) == {"action": "close_dialogue"}
+    assert view.is_dialogue_open is False
+
+
+def test_dialogue_modal_portrait_caching_and_zero_per_frame_allocations(story_mgr):
+    """Verify portrait caching, procedural military fallbacks, and 0 surface allocations during modal draw."""
+    view = SuperDestroyerView(story_manager=story_mgr)
+
+    # Test portraits for all 7 NPCs
+    for npc_id in ("npc_reiner", "npc_vance", "npc_ortiz", "viper_1", "viper_2", "viper_3", "viper_4"):
+        prof = get_ship_npc_profile(npc_id)
+        assert prof is not None
+        surf = view._get_or_create_portrait_surface(prof.portrait_path, prof.npc_id, (128, 128))
+        assert isinstance(surf, pygame.Surface)
+        assert surf.get_size() == (128, 128)
+
+    # Path traversal and invalid inputs fallback cleanly
+    fallback_surf = view._get_or_create_portrait_surface("../../../etc/passwd", "unknown_npc", (128, 128))
+    assert isinstance(fallback_surf, pygame.Surface)
+    assert fallback_surf.get_size() == (128, 128)
+
+    # Zero per-frame allocations during steady-state rendering with modal open
+    view.open_npc_dialogue("npc_reiner")
+    screen = pygame.Surface((1280, 720))
+
+    # Warmup
+    view.update(0.016)
+    view.draw(screen)
+
+    # Fast forward typewriter to full prompt
+    view.typewriter_chars = float(len(view.active_dialogue_node.prompt))
+    view.draw(screen)
+
+    with patch("eagle1.story.super_destroyer_view.pygame.Surface") as mock_surface:
+        for _ in range(30):
+            view.update(0.016)
+            view.draw(screen)
+        assert mock_surface.call_count == 0
+
+
+def test_set_last_sortie_stats_handles_nan_and_inf_casualties(story_mgr):
+    """Verify set_last_sortie_stats defensively guards against NaN and Infinity casualties (Issue #64)."""
+    view = SuperDestroyerView(story_manager=story_mgr)
+
+    view.set_last_sortie_stats(casualties_count=float("nan"))
+    assert view.last_casualties_count == 0
+
+    view.set_last_sortie_stats(casualties_count=float("inf"))
+    assert view.last_casualties_count == 0
+
+    view.set_last_sortie_stats(casualties_count=float("-inf"))
+    assert view.last_casualties_count == 0
+
+
+def test_dialogue_modal_guarantees_zero_layout_overlaps_across_all_nodes(story_mgr):
+    """Verify that all textboxes, option cards, portraits, and buttons have 0 overlapping bounding boxes."""
+    from eagle1.ui.layout import validate_rects_no_overlap
+
+    view = SuperDestroyerView(story_manager=story_mgr)
+    for npc_id in ("npc_reiner", "npc_vance", "npc_ortiz", "viper_1", "viper_2", "viper_3", "viper_4"):
+        view.open_npc_dialogue(npc_id)
+        assert view.is_dialogue_open is True
+
+        rects = [
+            view.modal_portrait_rect,
+            view.modal_prompt_rect,
+            view.modal_continue_rect,
+        ]
+        if view.response_text and view.modal_response_rect.height > 0:
+            rects.append(view.modal_response_rect)
+        for opt_rect in view.modal_option_rects.values():
+            rects.append(opt_rect)
+
+        collisions = validate_rects_no_overlap(rects)
+        assert collisions == [], f"Collisions detected for NPC {npc_id}: {collisions}"
+
+        # Test also after stance choice (response visible)
+        view.select_dialogue_stance("loyal")
+        rects_after = [
+            view.modal_portrait_rect,
+            view.modal_prompt_rect,
+            view.modal_continue_rect,
+        ]
+        if view.modal_response_rect.height > 0:
+            rects_after.append(view.modal_response_rect)
+        for opt_rect in view.modal_option_rects.values():
+            rects_after.append(opt_rect)
+
+        collisions_after = validate_rects_no_overlap(rects_after)
+        assert collisions_after == [], f"Collisions detected after choice for NPC {npc_id}: {collisions_after}"
+
+        # Verify internal horizontal separation in option cards (Two-Row Layout)
+        for stance in ("loyal", "neutral", "dissident"):
+            tag_surf = view._modal_text_cache.get(f"opt_tag_{stance}")
+            delta_surf = view._modal_text_cache.get(f"opt_delta_{stance}")
+            body_surf = view._modal_text_cache.get(f"opt_body_{stance}")
+            assert tag_surf is not None
+            assert delta_surf is not None
+            assert body_surf is not None
+
+            # On Row 1, tag (left) and delta (right) must have positive gap
+            opt_w = view.modal_option_rects[stance].width
+            gap = (opt_w - delta_surf.get_width() - 14) - (14 + tag_surf.get_width())
+            assert gap > 100, f"Horizontal collision on Row 1 of {stance} option card! Gap: {gap}px"
+
+        # Verify internal horizontal separation in Response panel
+        if view.response_text:
+            hdr_surf = view._modal_text_cache.get("response_header")
+            resp_delta_surf = view._modal_text_cache.get("response_delta")
+            if hdr_surf and resp_delta_surf:
+                resp_w = view.modal_response_rect.width
+                resp_gap = (resp_w - resp_delta_surf.get_width() - 14) - (14 + hdr_surf.get_width())
+                assert resp_gap > 100, f"Horizontal collision on Row 1 of response panel! Gap: {resp_gap}px"
+
+        view.close_dialogue()
+
+
+def test_wrap_text_to_width_clamping_and_unbroken_words(story_mgr):
+    """Verify _wrap_text_to_width handles empty input, max lines clamping, and long words."""
+    view = SuperDestroyerView(story_manager=story_mgr)
+
+    # Empty text
+    assert view._wrap_text_to_width("", view.font_modal_prompt, 400) == []
+
+    # None font fallback
+    assert view._wrap_text_to_width("Hello world", None, 400) == ["Hello world"]
+
+    # Max lines clamping
+    long_passage = "One two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty"
+    lines = view._wrap_text_to_width(long_passage, view.font_modal_prompt, max_width=150, max_lines=3)
+    assert len(lines) == 3
+
+    # Long unbroken word wider than max_width
+    unbroken = "ANTIAIRSUPERDESTROYERTACCOMmsPROTOCOLOVERRIDE123456789"
+    lines2 = view._wrap_text_to_width(unbroken, view.font_modal_prompt, max_width=100)
+    assert len(lines2) == 1
+    assert lines2[0] == unbroken
+
+
+def test_dialogue_modal_zero_overlaps_all_database_nodes_and_all_stances(story_mgr):
+    """Verify that every node in DIALOGUE_DATABASE across all 3 stances never violates zero-overlap invariants."""
+    from eagle1.story.dialogue_db import DIALOGUE_DATABASE
+    from eagle1.ui.layout import validate_rects_no_overlap
+
+    view = SuperDestroyerView(story_manager=story_mgr)
+
+    for node_id, node in DIALOGUE_DATABASE.items():
+        # Set node directly
+        view._dialogue_open = True
+        view.active_npc_id = node.speaker.lower()
+        view.active_dialogue_node = node
+        view.typewriter_chars = float(len(node.prompt))
+        view.dialogue_completed_mode = False
+        view.selected_option = None
+        view.selected_stance = None
+        view.response_text = None
+        view._rebuild_modal_cache()
+
+        rects = [
+            view.modal_portrait_rect,
+            view.modal_prompt_rect,
+            view.modal_continue_rect,
+        ]
+        for opt_rect in view.modal_option_rects.values():
+            rects.append(opt_rect)
+
+        colls = validate_rects_no_overlap(rects)
+        assert colls == [], f"Collision on node {node_id} before choice: {colls}"
+
+        # Test each stance choice
+        for stance in ("loyal", "neutral", "dissident"):
+            if stance in node.options:
+                view.select_dialogue_stance(stance)
+                rects_after = [
+                    view.modal_portrait_rect,
+                    view.modal_prompt_rect,
+                    view.modal_continue_rect,
+                ]
+                if view.modal_response_rect.height > 0:
+                    rects_after.append(view.modal_response_rect)
+                for opt_rect in view.modal_option_rects.values():
+                    rects_after.append(opt_rect)
+
+                colls_after = validate_rects_no_overlap(rects_after)
+                assert colls_after == [], f"Collision on node {node_id} with stance {stance}: {colls_after}"
+
+        view.close_dialogue()
+
+
+def test_dialogue_modal_click_priority_over_background_npc_cards(story_mgr):
+    """Verify clicking on modal option cards takes strict precedence over underlying deck NPC cards."""
+    view = SuperDestroyerView(story_manager=story_mgr)
+    view.select_zone("bridge")
+    # Open dialogue with Reiner
+    view.open_npc_dialogue("npc_reiner")
+    assert view.is_dialogue_open is True
+    assert view.active_npc_id == "npc_reiner"
+
+    # Click on the neutral option card (which is in the vicinity of Vance's background deck card)
+    click_pos = view.modal_option_rects["neutral"].center
+    event = pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=click_pos)
+    res = view.handle_event(event)
+
+    # Must record choice for Reiner, NOT switch to Vance!
+    assert res is not None
+    assert res.get("action") == "dialogue_choice"
+    assert res.get("stance") == "neutral"
+    assert view.active_npc_id == "npc_reiner"
+
+
+def test_update_dt_inf_and_bool_safety(story_mgr):
+    """Verify update defensively handles inf, nan, and boolean dt values without crashing."""
+    view = SuperDestroyerView(story_manager=story_mgr)
+
+    # These must not raise exceptions
+    view.update(float("inf"))
+    view.update(float("-inf"))
+    view.update(float("nan"))
+    view.update(True)  # type: ignore
+    view.update(False)  # type: ignore
+    view.update(0.016)
+    assert view.ambient_timer > 0.0
+
+
 
 

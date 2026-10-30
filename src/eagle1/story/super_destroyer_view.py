@@ -15,6 +15,8 @@ import random
 from typing import Any, Dict, List, Optional, Set, Tuple
 import pygame
 
+from eagle1.paths import get_base_dir, verify_path_exact_casing
+from eagle1.ui.layout import VerticalStackLayout, validate_rects_no_overlap
 from eagle1.story.dialogue_data import get_debrief_dialogue_node
 from eagle1.story.dialogue_db import (
     SHIP_NPC_PROFILES,
@@ -98,6 +100,22 @@ class SuperDestroyerView:
         self._completed_nodes_by_sortie: Dict[Tuple[int, int], Set[str]] = {}
         self.npc_card_rects: Dict[str, pygame.Rect] = {}
 
+        # Dialogue Modal State (Issue #59)
+        self.active_npc_id: Optional[str] = None
+        self.active_dialogue_node: Optional[DialogueNode] = None
+        self.typewriter_chars: float = 0.0
+        self.typewriter_speed: float = 65.0
+        self.selected_option: Optional[DialogueOption] = None
+        self.selected_stance: Optional[str] = None
+        self.response_text: Optional[str] = None
+        self.dialogue_completed_mode: bool = False
+        self.hovered_stance: Optional[str] = None
+        self.hovered_continue: bool = False
+        self._portrait_cache: Dict[Tuple[str, str, Tuple[int, int]], pygame.Surface] = {}
+        self._modal_text_cache: Dict[str, Any] = {}
+        self._modal_prompt_lines: List[str] = []
+        self._modal_prompt_full_lines: List[pygame.Surface] = []
+
         # Geometry & Layout
         self._init_layout_rects()
 
@@ -114,6 +132,14 @@ class SuperDestroyerView:
     def is_dialogue_open(self) -> bool:
         """Return whether an interactive dialogue modal is active."""
         return self._dialogue_open
+
+    def set_dialogue_open(self, is_open: bool) -> None:
+        """Set whether the dialogue modal is open or closed (Issue #63)."""
+        open_val = bool(is_open)
+        if not open_val:
+            self.close_dialogue()
+        else:
+            self._dialogue_open = True
 
     def _init_layout_rects(self) -> None:
         """Pre-compute layout geometry in screen coordinates."""
@@ -154,6 +180,18 @@ class SuperDestroyerView:
         # Hangar: Ortiz workshop
         self.npc_card_rects["npc_ortiz"] = pygame.Rect(inner_x + 30, inner_y + 100, (inner_w - 60) // 2, 200)
 
+        # Dialogue Modal Geometry (Issue #59: 1000x540 centered on 1280x720)
+        self.modal_rect = pygame.Rect(140, 90, 1000, 540)
+        self.modal_portrait_rect = pygame.Rect(self.modal_rect.x + 28, self.modal_rect.y + 24, 128, 128)
+        self.modal_prompt_rect = pygame.Rect(self.modal_rect.x + 28, self.modal_rect.y + 172, self.modal_rect.width - 56, 88)
+        self.modal_response_rect = pygame.Rect(self.modal_rect.x + 28, self.modal_rect.y + 268, self.modal_rect.width - 56, 52)
+        self.modal_option_rects: Dict[str, pygame.Rect] = {
+            "loyal": pygame.Rect(self.modal_rect.x + 28, self.modal_rect.y + 328, self.modal_rect.width - 56, 38),
+            "neutral": pygame.Rect(self.modal_rect.x + 28, self.modal_rect.y + 372, self.modal_rect.width - 56, 38),
+            "dissident": pygame.Rect(self.modal_rect.x + 28, self.modal_rect.y + 416, self.modal_rect.width - 56, 38),
+        }
+        self.modal_continue_rect = pygame.Rect(self.modal_rect.right - 240, self.modal_rect.bottom - 46, 212, 34)
+
     def _init_fonts(self) -> None:
         """Initialize and cache fonts safely across desktop and headless environments."""
         if not pygame.font.get_init():
@@ -184,6 +222,14 @@ class SuperDestroyerView:
         self.font_deck_code = _safe_sys_font("consolas,courier,monospace", 14, bold=True)
         self.font_deck_desc = _safe_sys_font("arial,sans-serif", 15)
         self.font_footer = _safe_sys_font("consolas,courier,monospace", 12, bold=True)
+
+        # Modal Fonts
+        self.font_modal_title = _safe_sys_font("impact,arialblack,arial", 20, bold=True)
+        self.font_modal_role = _safe_sys_font("consolas,courier,monospace", 11, bold=True)
+        self.font_modal_prompt = _safe_sys_font("consolas,courier,monospace", 14)
+        self.font_modal_option = _safe_sys_font("consolas,courier,monospace", 13, bold=True)
+        self.font_modal_response = _safe_sys_font("consolas,courier,monospace", 13)
+        self.font_modal_btn = _safe_sys_font("consolas,courier,monospace", 12, bold=True)
 
     def _init_cached_surfaces(self) -> None:
         """Pre-allocate all static background surfaces and panels to ensure 60 FPS."""
@@ -291,8 +337,291 @@ class SuperDestroyerView:
                     profile.role.upper(), True, (160, 190, 215)
                 )
 
+        # 5. Dialogue Modal Pre-rendered Surfaces (Issue #59)
+        self.modal_backdrop_surface = pygame.Surface((self.screen_width, self.screen_height), pygame.SRCALPHA)
+        self.modal_backdrop_surface.fill((6, 10, 18, 215))
+
+        # Solid opaque modal window to prevent underlying deck text bleed-through
+        self.modal_bg_surface = pygame.Surface((self.modal_rect.width, self.modal_rect.height))
+        self.modal_bg_surface.fill((10, 15, 24))
+        pygame.draw.rect(self.modal_bg_surface, (45, 75, 105), (0, 0, self.modal_rect.width, self.modal_rect.height), width=1)
+        mcw = 20
+        mw, mh = self.modal_rect.width, self.modal_rect.height
+        pygame.draw.lines(self.modal_bg_surface, (255, 215, 50), False, [(0, mcw), (0, 0), (mcw, 0)], 2)
+        pygame.draw.lines(self.modal_bg_surface, (255, 215, 50), False, [(mw - mcw, 0), (mw - 1, 0), (mw - 1, mcw)], 2)
+        pygame.draw.lines(self.modal_bg_surface, (255, 215, 50), False, [(0, mh - mcw), (0, mh - 1), (mcw, mh - 1)], 2)
+        pygame.draw.lines(self.modal_bg_surface, (255, 215, 50), False, [(mw - mcw, mh - 1), (mw - 1, mh - 1), (mw - 1, mh - mcw)], 2)
+
         # Dynamic text caches (keyed by state)
         self._cached_dynamic_surfaces: Dict[str, Tuple[Any, pygame.Surface]] = {}
+
+        # Pre-warm NPC portraits
+        for profile in SHIP_NPC_PROFILES.values():
+            self._get_or_create_portrait_surface(profile.portrait_path, profile.npc_id, (128, 128))
+
+    def _get_or_create_portrait_surface(
+        self,
+        portrait_path: Optional[str],
+        npc_id: Optional[str] = None,
+        size: Tuple[int, int] = (128, 128),
+    ) -> pygame.Surface:
+        """Retrieve cached character portrait surface or generate a procedural military insignia."""
+        clean_npc = (npc_id or "").strip().lower()
+        clean_path = str(portrait_path or "").strip()
+        cache_key = (clean_path, clean_npc, size)
+        if cache_key in self._portrait_cache:
+            return self._portrait_cache[cache_key]
+
+        surf: Optional[pygame.Surface] = None
+        ALLOWED_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg"}
+        if clean_path:
+            try:
+                from pathlib import Path
+                base_dir = Path(get_base_dir()).resolve()
+                candidate = (base_dir / clean_path).resolve()
+                if (
+                    candidate.is_relative_to(base_dir)
+                    and candidate.suffix.lower() in ALLOWED_IMAGE_EXTENSIONS
+                    and candidate.is_file()
+                    and verify_path_exact_casing(str(candidate))
+                ):
+                    loaded = pygame.image.load(str(candidate))
+                    if loaded:
+                        surf = pygame.transform.smoothscale(loaded.convert_alpha(), size)
+            except Exception:
+                surf = None
+
+        if surf is None:
+            surf = pygame.Surface(size, pygame.SRCALPHA)
+            surf.fill((16, 24, 38, 255))
+            for y in range(0, size[1], 4):
+                pygame.draw.line(surf, (22, 34, 52), (0, y), (size[0], y), 1)
+
+            profile = get_ship_npc_profile(clean_npc) if clean_npc else None
+            theme_col = profile.theme_color if profile else (0, 210, 255)
+            pygame.draw.rect(surf, theme_col, (0, 0, size[0], size[1]), width=2)
+
+            f_badge = self.font_badge or (pygame.font.Font(None, 12) if pygame.font.get_init() else None)
+            cx, cy = size[0] // 2, size[1] // 2
+
+            if clean_npc == "npc_reiner":
+                pts = [
+                    (cx, cy - 35),
+                    (cx + 30, cy - 20),
+                    (cx + 25, cy + 20),
+                    (cx, cy + 35),
+                    (cx - 25, cy + 20),
+                    (cx - 30, cy - 20),
+                ]
+                pygame.draw.polygon(surf, (40, 30, 10), pts)
+                pygame.draw.polygon(surf, (255, 215, 50), pts, width=2)
+                pygame.draw.circle(surf, (255, 215, 50), (cx, cy), 8)
+                if f_badge:
+                    txt = f_badge.render("COMMISSAR", True, (255, 215, 50))
+                    surf.blit(txt, (cx - txt.get_width() // 2, size[1] - 20))
+            elif clean_npc == "npc_vance":
+                pts = [(cx, cy - 32), (cx + 28, cy), (cx, cy + 32), (cx - 28, cy)]
+                pygame.draw.polygon(surf, (10, 30, 45), pts)
+                pygame.draw.polygon(surf, (0, 220, 255), pts, width=2)
+                pygame.draw.line(surf, (0, 220, 255), (cx, cy - 20), (cx, cy + 20), 2)
+                pygame.draw.line(surf, (0, 220, 255), (cx - 20, cy), (cx + 20, cy), 2)
+                if f_badge:
+                    txt = f_badge.render("COMMAND", True, (0, 220, 255))
+                    surf.blit(txt, (cx - txt.get_width() // 2, size[1] - 20))
+            elif clean_npc == "npc_ortiz":
+                pygame.draw.circle(surf, (40, 25, 10), (cx, cy), 30)
+                pygame.draw.circle(surf, (243, 156, 18), (cx, cy), 30, width=2)
+                for angle_deg in range(0, 360, 45):
+                    rad = math.radians(angle_deg)
+                    px = cx + int(math.cos(rad) * 32)
+                    py = cy + int(math.sin(rad) * 32)
+                    pygame.draw.circle(surf, (243, 156, 18), (px, py), 4)
+                if f_badge:
+                    txt = f_badge.render("CHIEF ENG", True, (243, 156, 18))
+                    surf.blit(txt, (cx - txt.get_width() // 2, size[1] - 20))
+            else:
+                pts = [(cx, cy - 28), (cx + 24, cy), (cx, cy + 28), (cx - 24, cy)]
+                pygame.draw.polygon(surf, (15, 25, 35), pts)
+                pygame.draw.polygon(surf, theme_col, pts, width=2)
+                if f_badge:
+                    short_label = clean_npc.upper()[:8]
+                    txt = f_badge.render(short_label, True, theme_col)
+                    surf.blit(txt, (cx - txt.get_width() // 2, size[1] - 20))
+
+        self._portrait_cache[cache_key] = surf
+        return surf
+
+    def _wrap_text_to_width(
+        self,
+        text: str,
+        font: Optional[pygame.font.Font],
+        max_width: int,
+        max_lines: int = 6,
+    ) -> List[str]:
+        """Wrap text into lines fitting within max_width using the provided font."""
+        if not text or not font:
+            return [text] if text else []
+        words = text.split(" ")
+        lines: List[str] = []
+        current_line: List[str] = []
+
+        for word in words:
+            test_line = " ".join(current_line + [word])
+            try:
+                width, _ = font.size(test_line)
+            except Exception:
+                width = len(test_line) * 8
+            if width <= max_width:
+                current_line.append(word)
+            else:
+                if current_line:
+                    lines.append(" ".join(current_line))
+                    current_line = [word]
+                    if len(lines) >= max_lines:
+                        break
+                else:
+                    lines.append(word)
+                    if len(lines) >= max_lines:
+                        break
+
+        if current_line and len(lines) < max_lines:
+            lines.append(" ".join(current_line))
+
+        return lines
+
+    def _rebuild_modal_cache(self) -> None:
+        """Pre-render and cache all text surfaces for the active dialogue modal using VerticalStackLayout."""
+        self._modal_text_cache.clear()
+        self._modal_prompt_lines = []
+        self._modal_prompt_full_lines = []
+
+        if not self.active_dialogue_node:
+            return
+
+        node = self.active_dialogue_node
+        prof = get_ship_npc_profile(self.active_npc_id)
+        theme_col = prof.theme_color if prof else (0, 220, 255)
+
+        # 1. Header Area: Speaker Name & Role/Location (rendered to the right of the 128x128 portrait)
+        spk_name = (prof.name if prof else node.speaker).upper()
+        if self.font_modal_title:
+            self._modal_text_cache["speaker_name"] = self.font_modal_title.render(spk_name, True, theme_col)
+
+        loc_str = node.location.upper()
+        role_str = f"{prof.role.upper()} // {loc_str}" if prof else loc_str
+        if self.font_modal_role:
+            self._modal_text_cache["speaker_role"] = self.font_modal_role.render(role_str, True, (140, 175, 205))
+
+        # Mode status badge
+        if self.dialogue_completed_mode:
+            badge_text = "STATUS // ARCHIVED SORTIE DEBRIEF [READ-ONLY]"
+            b_col = (140, 175, 205)
+        else:
+            badge_text = "STATUS // AWAITING PILOT IDEOLOGICAL DIRECTIVE"
+            b_col = (255, 215, 50)
+        if self.font_badge:
+            self._modal_text_cache["mode_badge"] = self.font_badge.render(badge_text, True, b_col)
+
+        # 2. Sequential Vertical Stack for Content Zone (strictly below the header divider)
+        content_top = self.modal_rect.y + 168
+        content_bottom = self.modal_rect.bottom - 52
+        content_bounds = pygame.Rect(
+            self.modal_rect.x + 28,
+            content_top,
+            self.modal_rect.width - 56,
+            content_bottom - content_top,
+        )
+
+        stack = VerticalStackLayout(content_bounds, padding=0, default_gap=8)
+
+        # Wrap Prompt Text into content bounds width
+        prompt_w = content_bounds.width - 24
+        self._modal_prompt_lines = self._wrap_text_to_width(node.prompt, self.font_modal_prompt, prompt_w, max_lines=4)
+        lh_prompt = self.font_modal_prompt.get_linesize() if self.font_modal_prompt else 18
+        self.modal_prompt_rect = stack.add_text_slot(
+            line_count=len(self._modal_prompt_lines) or 1,
+            line_height=lh_prompt,
+            padding_y=8,
+        )
+        if self.font_modal_prompt:
+            self._modal_prompt_full_lines = [
+                self.font_modal_prompt.render(line, True, (220, 235, 250))
+                for line in self._modal_prompt_lines
+            ]
+
+        # Response Text Slot (if active)
+        if self.response_text:
+            resp_w = content_bounds.width - 24
+            resp_lines = self._wrap_text_to_width(self.response_text, self.font_modal_response, resp_w, max_lines=2)
+            lh_resp = self.font_modal_response.get_linesize() if self.font_modal_response else 18
+            resp_panel_h = 22 + (len(resp_lines) or 1) * lh_resp + 10
+            self.modal_response_rect = stack.add_slot(height=resp_panel_h, gap=8)
+            if self.font_modal_response:
+                self._modal_text_cache["response_lines"] = [
+                    self.font_modal_response.render(line, True, (240, 245, 255))
+                    for line in resp_lines
+                ]
+            spk_hdr = f">> REACTION // {spk_name}"
+            if self.font_modal_role:
+                self._modal_text_cache["response_header"] = self.font_modal_role.render(spk_hdr, True, (0, 220, 255))
+            if self.selected_option:
+                d = self.selected_option.loyalty_delta
+                d_col = (255, 215, 50) if d > 0 else ((0, 220, 255) if d == 0 else (231, 76, 60))
+                d_sign = "+" if d > 0 else ""
+                d_str = f"PATRIOTISM DELTA: {d_sign}{d:0.1f}%"
+                if self.font_modal_btn:
+                    self._modal_text_cache["response_delta"] = self.font_modal_btn.render(d_str, True, d_col)
+        else:
+            self.modal_response_rect = pygame.Rect(content_bounds.x, stack.cursor_y, 0, 0)
+
+        # Stance Option Cards (Two-Row Layout: Row 1 = Tag + Delta, Row 2 = Dialogue Statement)
+        option_h = 42 if self.response_text else 46
+        card_gap = 5 if self.response_text else 6
+        for stance in ("loyal", "neutral", "dissident"):
+            opt_rect = stack.add_slot(height=option_h, gap=card_gap)
+            self.modal_option_rects[stance] = opt_rect
+
+            opt = node.options.get(stance)
+            if opt:
+                col = (255, 215, 50) if stance == "loyal" else ((0, 220, 255) if stance == "neutral" else (231, 76, 60))
+                delta_sign = "+" if opt.loyalty_delta > 0 else ""
+                delta_text = f"[{delta_sign}{opt.loyalty_delta:0.1f}% PATRIOTISM]" if opt.loyalty_delta != 0 else "[0.0% PATRIOTISM]"
+
+                raw_label = opt.label
+                if "]" in raw_label:
+                    tag_part, body_part = raw_label.split("]", 1)
+                    tag_text = (tag_part + "]").strip()
+                    body_text = body_part.strip()
+                else:
+                    tag_text = f"[{opt.key_name}. {opt.stance.upper()}]"
+                    body_text = raw_label.strip()
+
+                if self.font_modal_btn:
+                    self._modal_text_cache[f"opt_tag_{stance}"] = self.font_modal_btn.render(tag_text, True, col)
+                    self._modal_text_cache[f"opt_delta_{stance}"] = self.font_modal_btn.render(delta_text, True, col)
+                if self.font_modal_option:
+                    self._modal_text_cache[f"opt_body_{stance}"] = self.font_modal_option.render(body_text, True, (220, 235, 250))
+
+        # Continue / End Transmission Button (Bottom right)
+        self.modal_continue_rect = pygame.Rect(
+            self.modal_rect.right - 240,
+            self.modal_rect.bottom - 46,
+            212,
+            34,
+        )
+        btn_label = (
+            "[SPACE / ENTER / ESC] END TRANSMISSION"
+            if (self.dialogue_completed_mode or self.selected_option is not None)
+            else "[ESC] CANCEL"
+        )
+        if self.font_modal_btn:
+            self._modal_text_cache["continue_btn"] = self.font_modal_btn.render(btn_label, True, (255, 255, 255))
+
+        # Mathematical guarantee: zero overlaps across all dynamically allocated slots AND continue button!
+        stack.assert_no_overlaps()
+        btn_coll = validate_rects_no_overlap(stack.allocated_rects + [self.modal_continue_rect])
+        if btn_coll:
+            raise AssertionError(f"Modal continue button collision with content stack: {btn_coll}")
 
     def _get_sanitized_loyalty(self) -> float:
         """Read and sanitize story_manager.loyalty with bounds and NaN safety."""
@@ -417,7 +746,12 @@ class SuperDestroyerView:
         hull_ratio: float = 1.0,
     ) -> None:
         """Record post-sortie combat statistics for character morale and diagnostics."""
-        if isinstance(casualties_count, bool) or not isinstance(casualties_count, (int, float)):
+        if (
+            isinstance(casualties_count, bool)
+            or not isinstance(casualties_count, (int, float))
+            or math.isnan(float(casualties_count))
+            or math.isinf(float(casualties_count))
+        ):
             c_count = 0
         else:
             c_count = max(0, int(casualties_count))
@@ -541,6 +875,88 @@ class SuperDestroyerView:
         return option
 
     # -------------------------------------------------------------------------
+    # Shipboard Dialogue Modal Controls (Issue #59)
+    # -------------------------------------------------------------------------
+    def open_npc_dialogue(self, npc_id: str) -> Optional[DialogueNode]:
+        """Open the interactive dialogue modal for an NPC and initialize typewriter state."""
+        node = self.resolve_npc_dialogue(npc_id)
+        if node is None:
+            return None
+
+        prof = get_ship_npc_profile(npc_id)
+        self.active_npc_id = prof.npc_id if prof else npc_id.strip().lower()
+        self.active_dialogue_node = node
+        self._dialogue_open = True
+        self.hovered_stance = None
+        self.hovered_continue = False
+
+        if self.is_node_completed_in_current_sortie(node.node_id):
+            self.dialogue_completed_mode = True
+            # Find previous stance recorded in dialogue history
+            prev_stance = "neutral"
+            history = getattr(self.story_manager, "dialogue_history", [])
+            for entry in reversed(history):
+                if isinstance(entry, dict) and entry.get("node") == node.node_id:
+                    prev_stance = entry.get("stance", "neutral")
+                    break
+            self.selected_stance = prev_stance
+            self.selected_option = node.options.get(prev_stance)
+            self.response_text = self.selected_option.response if self.selected_option else ""
+            self.typewriter_chars = float(len(node.prompt))
+        else:
+            self.dialogue_completed_mode = False
+            self.selected_stance = None
+            self.selected_option = None
+            self.response_text = None
+            self.typewriter_chars = 0.0
+
+        self._rebuild_modal_cache()
+        return node
+
+    def select_dialogue_stance(self, stance: str) -> Optional[DialogueOption]:
+        """Choose an ideological stance in the active dialogue modal and apply loyalty delta."""
+        if (
+            not self._dialogue_open
+            or self.active_dialogue_node is None
+            or self.dialogue_completed_mode
+            or self.selected_option is not None
+        ):
+            return None
+
+        clean_stance = (stance or "").strip().lower()
+        opt = self.record_npc_choice(self.active_dialogue_node.node_id, clean_stance)
+        if opt is None:
+            return None
+
+        self.selected_stance = opt.stance
+        self.selected_option = opt
+        self.response_text = opt.response
+        self.dialogue_completed_mode = True
+        self.typewriter_chars = float(len(self.active_dialogue_node.prompt))
+        self._play_ui_sound("ui_click")
+        self._rebuild_modal_cache()
+        return opt
+
+    def close_dialogue(self) -> None:
+        """Close the active dialogue modal and restore normal deck navigation."""
+        self._dialogue_open = False
+        self.active_npc_id = None
+        self.active_dialogue_node = None
+        self.selected_option = None
+        self.selected_stance = None
+        self.response_text = None
+        self.dialogue_completed_mode = False
+        self.typewriter_chars = 0.0
+        self.hovered_stance = None
+        self.hovered_continue = False
+        self._modal_text_cache.clear()
+        self._modal_prompt_lines.clear()
+        self._modal_prompt_full_lines.clear()
+        keys_to_clear = [k for k in self._cached_dynamic_surfaces if k.startswith("typewriter_")]
+        for k in keys_to_clear:
+            self._cached_dynamic_surfaces.pop(k, None)
+
+    # -------------------------------------------------------------------------
     # Zone Navigation & Event Engine (Task 2 Implementation)
     # -------------------------------------------------------------------------
     def select_zone(self, zone_id_or_index: str | int) -> bool:
@@ -564,6 +980,7 @@ class SuperDestroyerView:
             return False
 
         if target_index is not None and target_index != self._zone_index:
+            self.close_dialogue()
             self._zone_index = target_index
             self._play_ui_sound("ui_click")
             return True
@@ -591,20 +1008,116 @@ class SuperDestroyerView:
 
     def update(self, dt: float) -> None:
         """Advance ambient animations and UI timers."""
-        if dt > 0.0 and not math.isnan(dt):
+        if (
+            not isinstance(dt, bool)
+            and isinstance(dt, (int, float))
+            and math.isfinite(dt)
+            and 0.0 < dt < 10.0
+        ):
             self.ambient_timer = (self.ambient_timer + float(dt)) % 3600.0
+            if self._dialogue_open and self.active_dialogue_node is not None:
+                target_len = float(len(self.active_dialogue_node.prompt))
+                if self.typewriter_chars < target_len:
+                    self.typewriter_chars = min(
+                        target_len,
+                        self.typewriter_chars + self.typewriter_speed * float(dt),
+                    )
 
     def handle_event(
         self,
         event: pygame.event.Event,
         mouse_pos: Optional[Tuple[int, int]] = None,
     ) -> Optional[Dict[str, Any]]:
-        """Process keyboard hotkeys and mouse clicks for hub navigation."""
-        if self._dialogue_open:
-            return None
-
+        """Process keyboard hotkeys and mouse clicks for hub navigation and dialogue modal."""
         pos = mouse_pos if mouse_pos is not None else getattr(event, "pos", None)
 
+        if self._dialogue_open:
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    self.close_dialogue()
+                    return {"action": "close_dialogue"}
+                elif event.key in (pygame.K_SPACE, pygame.K_RETURN, pygame.K_KP_ENTER):
+                    if self.active_dialogue_node and self.typewriter_chars < len(self.active_dialogue_node.prompt):
+                        self.typewriter_chars = float(len(self.active_dialogue_node.prompt))
+                        return {"action": "skip_typewriter"}
+                    elif self.dialogue_completed_mode or self.selected_option is not None:
+                        self.close_dialogue()
+                        return {"action": "close_dialogue"}
+                    return None
+                elif event.key in (pygame.K_1, pygame.K_KP1, pygame.K_2, pygame.K_KP2, pygame.K_3, pygame.K_KP3):
+                    if not self.dialogue_completed_mode and self.selected_option is None:
+                        stance_map = {
+                            pygame.K_1: "loyal",
+                            pygame.K_KP1: "loyal",
+                            pygame.K_2: "neutral",
+                            pygame.K_KP2: "neutral",
+                            pygame.K_3: "dissident",
+                            pygame.K_KP3: "dissident",
+                        }
+                        stance_key = stance_map.get(event.key, "neutral")
+                        if self.active_dialogue_node:
+                            self.typewriter_chars = float(len(self.active_dialogue_node.prompt))
+                        opt = self.select_dialogue_stance(stance_key)
+                        if opt is not None and self.active_dialogue_node is not None:
+                            return {
+                                "action": "dialogue_choice",
+                                "node_id": self.active_dialogue_node.node_id,
+                                "stance": opt.stance,
+                                "loyalty_delta": opt.loyalty_delta,
+                                "option": opt,
+                            }
+                    return None
+                # Block all other keyboard shortcuts while modal is open
+                return None
+
+            elif event.type == pygame.MOUSEMOTION and pos is not None:
+                new_stance = None
+                for stance_key, rect in self.modal_option_rects.items():
+                    if rect.collidepoint(pos):
+                        new_stance = stance_key
+                        break
+                self.hovered_stance = new_stance
+                self.hovered_continue = bool(self.modal_continue_rect.collidepoint(pos))
+
+            elif event.type == pygame.MOUSEBUTTONDOWN and getattr(event, "button", 1) == 1 and pos is not None:
+                # 1. Continue button click
+                if (self.dialogue_completed_mode or self.selected_option is not None) and self.modal_continue_rect.collidepoint(pos):
+                    self.close_dialogue()
+                    return {"action": "close_dialogue"}
+
+                # 2. Stance option card click (strict priority over any background elements)
+                if not self.dialogue_completed_mode and self.selected_option is None:
+                    for stance_key, rect in self.modal_option_rects.items():
+                        if rect.collidepoint(pos):
+                            if self.active_dialogue_node:
+                                self.typewriter_chars = float(len(self.active_dialogue_node.prompt))
+                            opt = self.select_dialogue_stance(stance_key)
+                            if opt is not None and self.active_dialogue_node is not None:
+                                return {
+                                    "action": "dialogue_choice",
+                                    "node_id": self.active_dialogue_node.node_id,
+                                    "stance": opt.stance,
+                                    "loyalty_delta": opt.loyalty_delta,
+                                    "option": opt,
+                                }
+
+                # 3. Only switch NPC if clicking on a deck card strictly OUTSIDE the modal window
+                if not self.modal_rect.collidepoint(pos):
+                    for npc in self.get_zone_npcs():
+                        if npc.npc_id != self.active_npc_id:
+                            card_rect = self.npc_card_rects.get(npc.npc_id)
+                            if card_rect is not None and card_rect.collidepoint(pos):
+                                self._play_ui_sound("ui_click")
+                                node = self.open_npc_dialogue(npc.npc_id)
+                                return {
+                                    "action": "interact_npc",
+                                    "npc_id": npc.npc_id,
+                                    "node": node,
+                                }
+
+            return None
+
+        # --- Standard Hub Deck Event Processing (Modal closed) ---
         if event.type == pygame.MOUSEMOTION and pos is not None:
             new_hover = None
             for zone_id, rect in self.zone_tab_rects.items():
@@ -626,7 +1139,7 @@ class SuperDestroyerView:
                 card_rect = self.npc_card_rects.get(npc.npc_id)
                 if card_rect is not None and card_rect.collidepoint(pos):
                     self._play_ui_sound("ui_click")
-                    node = self.resolve_npc_dialogue(npc.npc_id)
+                    node = self.open_npc_dialogue(npc.npc_id)
                     return {
                         "action": "interact_npc",
                         "npc_id": npc.npc_id,
@@ -649,6 +1162,16 @@ class SuperDestroyerView:
             elif event.key in (pygame.K_3, pygame.K_KP3):
                 self.select_zone(ZONE_HANGAR)
                 return {"action": "select_zone", "zone": self.active_zone}
+            elif event.key in (pygame.K_e,):
+                zone_npcs = self.get_zone_npcs()
+                if zone_npcs:
+                    self._play_ui_sound("ui_click")
+                    node = self.open_npc_dialogue(zone_npcs[0].npc_id)
+                    return {
+                        "action": "interact_npc",
+                        "npc_id": zone_npcs[0].npc_id,
+                        "node": node,
+                    }
             elif event.key == pygame.K_ESCAPE:
                 return {"action": "main_menu"}
 
@@ -719,11 +1242,12 @@ class SuperDestroyerView:
             self._cached_dynamic_surfaces["deck_banner"] = (deck_key, (code_surf, desc_surf))  # type: ignore
 
         rx = self.content_panel_rect.x + 24
-        ry = self.content_panel_rect.y + 18
+        ry = self.content_panel_rect.y + 16
         if code_surf:
             surface.blit(code_surf, (rx, ry))
+            ry += code_surf.get_height() + 4
         if desc_surf:
-            surface.blit(desc_surf, (rx, ry + 24))
+            surface.blit(desc_surf, (rx, ry))
 
         # Tactical deck wireframe accents (drawn directly onto surface, 0 allocation)
         inner_rect = pygame.Rect(
@@ -749,12 +1273,14 @@ class SuperDestroyerView:
                 if crect:
                     pygame.draw.rect(surface, (16, 24, 38), crect)
                     pygame.draw.rect(surface, (45, 75, 105), crect, width=1)
+                    card_y = crect.y + 12
                     nsurf = self._cached_static_texts.get(f"npc_name_{npc_id}")
                     rsurf = self._cached_static_texts.get(f"npc_role_{npc_id}")
                     if nsurf:
-                        surface.blit(nsurf, (crect.x + 14, crect.y + 12))
+                        surface.blit(nsurf, (crect.x + 14, card_y))
+                        card_y += nsurf.get_height() + 4
                     if rsurf:
-                        surface.blit(rsurf, (crect.x + 16, crect.y + 36))
+                        surface.blit(rsurf, (crect.x + 16, card_y))
 
         elif self.active_zone == ZONE_READY_ROOM:
             # Morale badge
@@ -789,12 +1315,14 @@ class SuperDestroyerView:
                 if crect:
                     pygame.draw.rect(surface, (18, 28, 44), crect)
                     pygame.draw.rect(surface, (35, 55, 80), crect, width=1)
+                    card_y = crect.y + 14
                     nsurf = self._cached_static_texts.get(f"npc_name_{vid}")
                     rsurf = self._cached_static_texts.get(f"npc_role_{vid}")
                     if nsurf:
-                        surface.blit(nsurf, (crect.x + 10, crect.y + 14))
+                        surface.blit(nsurf, (crect.x + 10, card_y))
+                        card_y += nsurf.get_height() + 4
                     if rsurf:
-                        surface.blit(rsurf, (crect.x + 10, crect.y + 38))
+                        surface.blit(rsurf, (crect.x + 10, card_y))
 
         elif self.active_zone == ZONE_HANGAR:
             # Catapult rail guide stripes
@@ -807,12 +1335,14 @@ class SuperDestroyerView:
             if crect:
                 pygame.draw.rect(surface, (16, 24, 38), crect)
                 pygame.draw.rect(surface, (243, 156, 18), crect, width=1)
+                card_y = crect.y + 14
                 nsurf = self._cached_static_texts.get("npc_name_npc_ortiz")
                 rsurf = self._cached_static_texts.get("npc_role_npc_ortiz")
                 if nsurf:
-                    surface.blit(nsurf, (crect.x + 14, crect.y + 14))
+                    surface.blit(nsurf, (crect.x + 14, card_y))
+                    card_y += nsurf.get_height() + 4
                 if rsurf:
-                    surface.blit(rsurf, (crect.x + 16, crect.y + 38))
+                    surface.blit(rsurf, (crect.x + 16, card_y))
 
     def _draw_footer_bar(self, surface: pygame.Surface) -> None:
         """Render the bottom control and shortcut prompt bar."""
@@ -857,3 +1387,148 @@ class SuperDestroyerView:
 
         # 6. Bottom Footer Bar
         self._draw_footer_bar(surface)
+
+        # 7. Dialogue Modal Overlay (Issue #59)
+        if self._dialogue_open and self.active_dialogue_node is not None:
+            self._draw_dialogue_modal(surface)
+
+    def _draw_dialogue_modal(self, surface: pygame.Surface) -> None:
+        """Render the 3-choice interactive dialogue modal and typewriter prompt with 0 per-frame allocations."""
+        if not self._dialogue_open or self.active_dialogue_node is None:
+            return
+
+        # 1. Darkened backdrop & Modal frame
+        surface.blit(self.modal_backdrop_surface, (0, 0))
+        surface.blit(self.modal_bg_surface, self.modal_rect.topleft)
+
+        prof = get_ship_npc_profile(self.active_npc_id)
+        theme_col = prof.theme_color if prof else (0, 220, 255)
+
+        # 2. Portrait
+        portrait_surf = self._get_or_create_portrait_surface(
+            prof.portrait_path if prof else None,
+            prof.npc_id if prof else self.active_npc_id,
+            (128, 128),
+        )
+        surface.blit(portrait_surf, self.modal_portrait_rect.topleft)
+        pygame.draw.rect(surface, theme_col, self.modal_portrait_rect, width=2)
+
+        # 3. Header info & mode status (Right of portrait)
+        info_x = self.modal_portrait_rect.right + 20
+        spk_surf = self._modal_text_cache.get("speaker_name")
+        if spk_surf:
+            surface.blit(spk_surf, (info_x, self.modal_portrait_rect.y + 4))
+
+        role_surf = self._modal_text_cache.get("speaker_role")
+        if role_surf:
+            surface.blit(role_surf, (info_x, self.modal_portrait_rect.y + 32))
+
+        badge_surf = self._modal_text_cache.get("mode_badge")
+        if badge_surf:
+            surface.blit(badge_surf, (info_x, self.modal_portrait_rect.y + 54))
+
+        # Horizontal divider between header and content stack
+        divider_y = self.modal_rect.y + 160
+        pygame.draw.line(
+            surface,
+            (35, 55, 80),
+            (self.modal_rect.x + 24, divider_y),
+            (self.modal_rect.right - 24, divider_y),
+            1,
+        )
+
+        # 4. Prompt Text Box (Tech frame + bounded text)
+        pygame.draw.rect(surface, (14, 20, 30), self.modal_prompt_rect)
+        pygame.draw.rect(surface, (35, 55, 78), self.modal_prompt_rect, width=1)
+
+        lh_prompt = self.font_modal_prompt.get_linesize() if self.font_modal_prompt else 18
+        vis_chars = int(self.typewriter_chars)
+        py = self.modal_prompt_rect.y + 8
+
+        rem = vis_chars
+        for line_text, lsurf in zip(self._modal_prompt_lines, self._modal_prompt_full_lines):
+            if rem <= 0:
+                break
+            if rem >= len(line_text):
+                surface.blit(lsurf, (self.modal_prompt_rect.x + 12, py))
+                rem -= (len(line_text) + 1)
+            else:
+                reveal_w = self.font_modal_prompt.size(line_text[:rem])[0] if self.font_modal_prompt else rem * 8
+                clip_box = pygame.Rect(0, 0, reveal_w, lh_prompt)
+                surface.blit(lsurf, (self.modal_prompt_rect.x + 12, py), area=clip_box)
+                break
+            py += lh_prompt
+
+        # 5. Response Panel (if response is active)
+        if self.response_text and self.modal_response_rect.height > 0:
+            pygame.draw.rect(surface, (16, 26, 38), self.modal_response_rect)
+            pygame.draw.rect(surface, (0, 180, 230), self.modal_response_rect, width=1)
+            cw = 10
+            rx, ry = self.modal_response_rect.x, self.modal_response_rect.y
+            rw = self.modal_response_rect.width
+            pygame.draw.lines(surface, (0, 220, 255), False, [(rx, ry + cw), (rx, ry), (rx + cw, ry)], 1)
+            pygame.draw.lines(surface, (0, 220, 255), False, [(rx + rw - cw, ry), (rx + rw - 1, ry), (rx + rw - 1, ry + cw)], 1)
+
+            # Row 1: Reaction Header (left) & Patriotism Delta (right)
+            hdr_surf = self._modal_text_cache.get("response_header")
+            if hdr_surf:
+                surface.blit(hdr_surf, (self.modal_response_rect.x + 14, self.modal_response_rect.y + 6))
+
+            d_surf = self._modal_text_cache.get("response_delta")
+            if d_surf:
+                surface.blit(
+                    d_surf,
+                    (self.modal_response_rect.right - d_surf.get_width() - 14, self.modal_response_rect.y + 6),
+                )
+
+            # Row 2+: Spoken dialogue response lines (below header & delta)
+            lh_resp = self.font_modal_response.get_linesize() if self.font_modal_response else 18
+            resp_y = self.modal_response_rect.y + 24
+            resp_surfs = self._modal_text_cache.get("response_lines", [])
+            for rsurf in resp_surfs:
+                surface.blit(rsurf, (self.modal_response_rect.x + 14, resp_y))
+                resp_y += lh_resp
+
+        # 6. Three Option Stance Cards (Two-Row Layout: Row 1 = Tag + Delta, Row 2 = Statement Body)
+        for stance, rect in self.modal_option_rects.items():
+            if self.dialogue_completed_mode:
+                is_selected = (stance == self.selected_stance)
+                bg_col = (20, 32, 48) if is_selected else (10, 14, 22)
+                border_col = (255, 215, 50) if is_selected else (25, 38, 52)
+                bw = 2 if is_selected else 1
+            else:
+                is_hovered = (stance == self.hovered_stance)
+                bg_col = (24, 38, 58) if is_hovered else (14, 22, 34)
+                border_col = (0, 220, 255) if is_hovered else (45, 75, 105)
+                bw = 2 if is_hovered else 1
+
+            pygame.draw.rect(surface, bg_col, rect)
+            pygame.draw.rect(surface, border_col, rect, width=bw)
+
+            # Row 1: Stance Tag (left) & Patriotism Delta Badge (right)
+            opt_tag = self._modal_text_cache.get(f"opt_tag_{stance}")
+            if opt_tag:
+                surface.blit(opt_tag, (rect.x + 14, rect.y + 6))
+
+            opt_delta = self._modal_text_cache.get(f"opt_delta_{stance}")
+            if opt_delta:
+                surface.blit(opt_delta, (rect.right - opt_delta.get_width() - 14, rect.y + 6))
+
+            # Row 2: Dialogue statement body
+            opt_body = self._modal_text_cache.get(f"opt_body_{stance}")
+            if opt_body:
+                surface.blit(opt_body, (rect.x + 14, rect.y + 24))
+
+        # 7. Continue / End Transmission Button
+        c_rect = self.modal_continue_rect
+        c_hover = self.hovered_continue
+        c_bg = (24, 40, 62) if c_hover else (14, 22, 34)
+        c_border = (255, 215, 50) if c_hover else (0, 180, 230)
+        pygame.draw.rect(surface, c_bg, c_rect)
+        pygame.draw.rect(surface, c_border, c_rect, width=2 if c_hover else 1)
+
+        c_surf = self._modal_text_cache.get("continue_btn")
+        if c_surf:
+            cx = c_rect.centerx - c_surf.get_width() // 2
+            cy = c_rect.centery - c_surf.get_height() // 2
+            surface.blit(c_surf, (cx, cy))
