@@ -173,6 +173,11 @@ class SuperDestroyerView:
         """Return whether an interactive dialogue modal is active."""
         return self._dialogue_open
 
+    @property
+    def aircraft_hull_ratio(self) -> float:
+        """Return the current aircraft hull ratio recorded from the latest sortie."""
+        return self.last_hull_ratio
+
     def set_dialogue_open(self, is_open: bool) -> None:
         """Set whether the dialogue modal is open or closed (Issue #63)."""
         open_val = bool(is_open)
@@ -785,6 +790,69 @@ class SuperDestroyerView:
         self.last_hull_ratio = h_ratio
 
         self._post_sortie_stats_recorded = True
+
+    def on_enter_hub(self, debrief_results: Optional[Dict[str, Any]] = None) -> None:
+        """Reset hub modal/launch states, enforce orbital audio, and ingest post-sortie debriefing results."""
+        self.close_dialogue()
+        self.launch_initiated = False
+        self.hovered_launch = False
+        self.hovered_zone = None
+
+        if self.audio and hasattr(self.audio, "stop_engine_sound"):
+            try:
+                self.audio.stop_engine_sound()
+            except Exception:
+                pass
+        if self.audio and hasattr(self.audio, "play_music"):
+            try:
+                self.audio.play_music("menu_theme")
+            except Exception:
+                pass
+
+        if isinstance(debrief_results, dict) and debrief_results:
+            raw_cas = debrief_results.get("casualties_count", debrief_results.get("casualties"))
+            raw_surv = debrief_results.get("survivors_count")
+            flawless = debrief_results.get("flawless_squad", False)
+
+            if (
+                raw_cas is not None
+                and not isinstance(raw_cas, bool)
+                and isinstance(raw_cas, (int, float))
+                and math.isfinite(float(raw_cas))
+            ):
+                cas_count = max(0, int(raw_cas))
+            elif (
+                raw_surv is not None
+                and not isinstance(raw_surv, bool)
+                and isinstance(raw_surv, (int, float))
+                and math.isfinite(float(raw_surv))
+            ):
+                surv_int = max(0, min(4, int(raw_surv)))
+                cas_count = 4 - surv_int
+            elif flawless is True:
+                cas_count = 0
+            else:
+                cas_count = self.last_casualties_count
+
+            raw_wiped = debrief_results.get("squad_wiped")
+            if isinstance(raw_wiped, bool):
+                squad_wiped = raw_wiped or (cas_count >= 4)
+            elif (
+                raw_surv is not None
+                and not isinstance(raw_surv, bool)
+                and isinstance(raw_surv, (int, float))
+                and math.isfinite(float(raw_surv))
+            ):
+                squad_wiped = (int(raw_surv) <= 0) or (cas_count >= 4)
+            else:
+                squad_wiped = cas_count >= 4
+
+            raw_hull = debrief_results.get("hull_ratio", self.last_hull_ratio)
+            self.set_last_sortie_stats(
+                casualties_count=cas_count,
+                squad_wiped=squad_wiped,
+                hull_ratio=raw_hull,
+            )
 
     def get_ready_room_morale_state(self) -> str:
         """Determine the current Viper Squad morale state ('replacements', 'casualties', 'flawless')."""

@@ -1278,6 +1278,154 @@ def test_sanitized_act_sortie_in_hud_and_dialogue_resolution(story_mgr):
     assert cached_badge[0] == (1, 1)
 
 
+def test_on_enter_hub_ingests_debrief_results_and_resets_modal_state(story_mgr):
+    """Verify on_enter_hub resets modal/hover states and updates casualties/hull stats."""
+    view = SuperDestroyerView(story_manager=story_mgr)
+
+    # Simulate open dialogue and pending launch
+    node = view.open_npc_dialogue("npc_reiner")
+    assert node is not None
+    assert view.is_dialogue_open is True
+    view.launch_initiated = True
+    view.hovered_launch = True
+    view.hovered_zone = "hangar"
+
+    # Enter hub with debrief results
+    debrief_data = {
+        "casualties_count": 3,
+        "squad_wiped": True,
+        "hull_ratio": 0.35,
+    }
+    view.on_enter_hub(debrief_data)
+
+    assert view.is_dialogue_open is False
+    assert view.launch_initiated is False
+    assert view.hovered_launch is False
+    assert view.hovered_zone is None
+    assert view.aircraft_hull_ratio == pytest.approx(0.35)
+    assert view.last_casualties_count == 3
+    assert view.last_squad_wiped is True
+    assert view.get_ready_room_morale_state() == "replacements"
+
+    diag = view.get_aircraft_diagnostics_summary()
+    assert diag["hull_ratio"] == pytest.approx(0.35)
+    assert diag["warning"] is True
+    assert diag["status_level"] == "WARNING"
+
+    # Verify fallback on None preserves existing stats while resetting modals
+    view.on_enter_hub(None)
+    assert view.is_dialogue_open is False
+    assert view.launch_initiated is False
+    assert view.aircraft_hull_ratio == pytest.approx(0.35)
+
+    # Passing extreme / invalid debrief results sanitizes safely
+    view.on_enter_hub({"hull_ratio": float("nan"), "casualties_count": -5})
+    assert view.aircraft_hull_ratio == 1.0
+    assert view.last_casualties_count == 0
+
+
+def test_game_super_destroyer_state_transitions_and_catapult_launch(monkeypatch, tmp_path):
+    """Verify enter_super_destroyer and handle_super_destroyer_action transitions."""
+    import eagle1.app.game as game
+
+    save_mgr = CampaignSaveManager(data_dir=tmp_path)
+    test_story_mgr = StoryManager(save_manager=save_mgr)
+    game.story_manager = test_story_mgr
+    game.super_destroyer_view.story_manager = test_story_mgr
+
+    # Enter Super Destroyer
+    game.enter_super_destroyer({"casualties_count": 1, "hull_ratio": 0.8})
+    assert game.game_state == "super_destroyer"
+    assert game.super_destroyer_view.aircraft_hull_ratio == pytest.approx(0.8)
+
+    # Launch sortie action
+    mock_respawn = MagicMock()
+    monkeypatch.setattr(game, "respawn", mock_respawn)
+
+    res = game.handle_super_destroyer_action({"action": "launch_sortie", "mission_id": "air_superiority"})
+    assert res is not None
+    assert game.game_state == ""
+    assert mock_respawn.called
+    assert game.super_destroyer_view.launch_initiated is False
+    assert game.player.shooting is False
+    assert game.player.reloading is False
+
+    # Exit to menu action
+    game.game_state = "super_destroyer"
+    game.handle_super_destroyer_action({"action": "exit_to_menu"})
+    assert game.game_state == "main_menu"
+
+
+def test_end_to_end_campaign_loop_menu_hub_sortie_debrief_return(monkeypatch, tmp_path):
+    """Verify full campaign loop: Menu -> Hub -> Launch -> Combat -> Debrief -> Return to Hub."""
+    import eagle1.app.game as game
+
+    save_mgr = CampaignSaveManager(data_dir=tmp_path)
+    test_story_mgr = StoryManager(save_manager=save_mgr)
+    game.story_manager = test_story_mgr
+    game.super_destroyer_view.story_manager = test_story_mgr
+
+    # Step 1: Start at main_menu and enter hub
+    game.game_state = "main_menu"
+    game.enter_super_destroyer()
+    assert game.game_state == "super_destroyer"
+
+    # Step 2: Hub initiates launch
+    game.handle_super_destroyer_action({"action": "launch_sortie", "mission_id": "air_superiority"})
+    assert game.game_state == ""
+    assert game.active_mission_config is not None
+
+    # Step 3: Trigger mission complete -> debriefing
+    game.trigger_mission_complete()
+    assert game.game_state == "mission_debriefing"
+    assert game.debriefing_screen.results is not None
+    assert "casualties_count" in game.debriefing_screen.results
+    assert "hull_ratio" in game.debriefing_screen.results
+
+    # Step 4: From debriefing screen, press 'H' or return to hub
+    event_h = pygame.event.Event(pygame.KEYDOWN, key=pygame.K_h)
+    result = game.debriefing_screen.handle_event(event_h)
+    assert result == "super_destroyer"
+
+    # Step 5: Game handles return to hub
+    game.enter_super_destroyer(game.debriefing_screen.results)
+    assert game.game_state == "super_destroyer"
+    assert game.super_destroyer_view.aircraft_hull_ratio == game.debriefing_screen.results["hull_ratio"]
+
+
+def test_super_destroyer_audio_and_input_isolation(monkeypatch, tmp_path):
+    """Verify audio and input states are strictly isolated upon entering Super Destroyer."""
+    import eagle1.app.game as game
+
+    mock_stop_engine = MagicMock()
+    mock_play_music = MagicMock()
+    monkeypatch.setattr(game.audio_manager, "stop_engine_sound", mock_stop_engine)
+    monkeypatch.setattr(game.audio_manager, "play_music", mock_play_music)
+
+    game.player.shooting = True
+    game.player.reloading = True
+
+    game.enter_super_destroyer()
+
+    # Audio verification
+    assert mock_stop_engine.called
+    mock_play_music.assert_called_with("menu_theme")
+
+    # Verify input states reset on enter_super_destroyer
+    assert game.player.shooting is False
+    assert game.player.reloading is False
+
+    # Launching sortie cleans shooting and input states
+    game.player.shooting = True
+    game.player.reloading = True
+    mock_respawn = MagicMock()
+    monkeypatch.setattr(game, "respawn", mock_respawn)
+    game.handle_super_destroyer_action({"action": "launch_sortie", "mission_id": "air_superiority"})
+    assert game.player.shooting is False
+    assert game.player.reloading is False
+
+
+
 
 
 
