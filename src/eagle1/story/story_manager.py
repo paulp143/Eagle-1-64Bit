@@ -10,6 +10,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from eagle1.story.campaign_save import (
     CAMPAIGN_SAVE_VERSION,
+    MAX_CAMPAIGN_ACT,
+    MAX_CAMPAIGN_SORTIE,
     CampaignSaveManager,
     CampaignSaveState,
 )
@@ -65,8 +67,23 @@ class StoryManager:
         state = self.save_manager.load_campaign()
         raw_loyalty = state.loyalty if not math.isnan(state.loyalty) else DEFAULT_LOYALTY
         self.loyalty = max(MIN_LOYALTY, min(MAX_LOYALTY, raw_loyalty))
-        self.current_act = state.current_act
-        self.current_sortie = state.current_sortie
+
+        if isinstance(state.current_act, bool) or state.current_act is None:
+            self.current_act = 1
+        else:
+            try:
+                self.current_act = max(1, min(MAX_CAMPAIGN_ACT, int(state.current_act)))
+            except (ValueError, TypeError, OverflowError):
+                self.current_act = 1
+
+        if isinstance(state.current_sortie, bool) or state.current_sortie is None:
+            self.current_sortie = 1
+        else:
+            try:
+                self.current_sortie = max(1, min(MAX_CAMPAIGN_SORTIE, int(state.current_sortie)))
+            except (ValueError, TypeError, OverflowError):
+                self.current_sortie = 1
+
         self.total_casualties = state.total_casualties
         self.campaign_active = state.campaign_active
         self.extra = dict(state.extra)
@@ -97,17 +114,17 @@ class StoryManager:
     def advance_sortie(self, act: Optional[int] = None, sortie: Optional[int] = None) -> bool:
         """Advance to next sortie or specific act/sortie coordinates and persist."""
         if act is None and sortie is None:
-            self.current_sortie += 1
+            self.current_sortie = min(MAX_CAMPAIGN_SORTIE, self.current_sortie + 1)
         else:
             if act is not None and not isinstance(act, bool):
                 try:
-                    self.current_act = max(1, int(act))
-                except (ValueError, TypeError):
+                    self.current_act = max(1, min(MAX_CAMPAIGN_ACT, int(act)))
+                except (ValueError, TypeError, OverflowError):
                     pass
             if sortie is not None and not isinstance(sortie, bool):
                 try:
-                    self.current_sortie = max(1, int(sortie))
-                except (ValueError, TypeError):
+                    self.current_sortie = max(1, min(MAX_CAMPAIGN_SORTIE, int(sortie)))
+                except (ValueError, TypeError, OverflowError):
                     pass
         return self.save_campaign_state()
 
@@ -188,15 +205,18 @@ class StoryManager:
                 return None
 
         option = node.options[canonical_stance]
+        canonical_node_id = node.node_id
         choice_record = {
-            "node": node_id,
+            "node": canonical_node_id,
             "stance": canonical_stance,
             "loyalty_delta": option.loyalty_delta,
+            "act": self.current_act,
+            "sortie": self.current_sortie,
         }
         self.dialogue_history.append(choice_record)
-        self.modify_loyalty(option.loyalty_delta, reason=f"choice:{node_id}:{canonical_stance}")
+        self.modify_loyalty(option.loyalty_delta, reason=f"choice:{canonical_node_id}:{canonical_stance}")
 
-        if self.active_dialogue and self.active_dialogue.node_id == node_id:
+        if self.active_dialogue and self.active_dialogue.node_id == canonical_node_id:
             self.set_active_dialogue(None)
 
         return option

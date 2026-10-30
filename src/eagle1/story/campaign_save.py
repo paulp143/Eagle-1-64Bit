@@ -20,6 +20,9 @@ CAMPAIGN_SAVE_VERSION: int = 1
 CAMPAIGN_SAVE_FILENAME: str = "campaign_save.json"
 DEFAULT_CAMPAIGN_FILE: str = CAMPAIGN_SAVE_FILENAME
 
+MAX_CAMPAIGN_ACT: int = 10
+MAX_CAMPAIGN_SORTIE: int = 100
+
 
 @dataclass
 class CampaignSaveState:
@@ -74,7 +77,7 @@ class CampaignSaveState:
             current_act = 1
         else:
             try:
-                current_act = max(1, int(raw_act))
+                current_act = max(1, min(MAX_CAMPAIGN_ACT, int(raw_act)))
             except (ValueError, TypeError, OverflowError):
                 current_act = 1
 
@@ -83,7 +86,7 @@ class CampaignSaveState:
             current_sortie = 1
         else:
             try:
-                current_sortie = max(1, int(raw_sortie))
+                current_sortie = max(1, min(MAX_CAMPAIGN_SORTIE, int(raw_sortie)))
             except (ValueError, TypeError, OverflowError):
                 current_sortie = 1
 

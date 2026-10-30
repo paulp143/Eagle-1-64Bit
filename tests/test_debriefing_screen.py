@@ -123,3 +123,75 @@ def test_mission_complete_blocks_simulation():
         game.game_state = orig_state
         game.player.pos_x = orig_pos_x
         game.debriefing_screen.is_active = False
+
+
+def test_debriefing_screen_hub_return_and_button_layout():
+    """Verify hub return via hotkeys/clicks and ensure zero button layout overlaps."""
+    from eagle1.ui.layout import validate_rects_no_overlap
+
+    screen = DebriefingScreen(1280, 720)
+    screen.set_results({"final_score": 5000})
+
+    # Keyboard hotkey H
+    ev_h = pygame.event.Event(pygame.KEYDOWN, key=pygame.K_h)
+    assert screen.handle_event(ev_h) == "super_destroyer"
+
+    # Keyboard hotkey RETURN
+    ev_ret = pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN)
+    assert screen.handle_event(ev_ret) == "super_destroyer"
+
+    # Mouse click on Return to Hub button
+    click_hub = pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=screen.btn_hub_rect.center)
+    assert screen.handle_event(click_hub, mouse_pos=screen.btn_hub_rect.center) == "super_destroyer"
+
+    # Verify zero layout overlap across all 4 navigation buttons
+    buttons = [
+        screen.btn_replay_rect,
+        screen.btn_hub_rect,
+        screen.btn_select_rect,
+        screen.btn_menu_rect,
+    ]
+    overlaps = validate_rects_no_overlap(buttons)
+    assert overlaps == [], f"Detected button overlaps: {overlaps}"
+
+    # Verify all buttons remain strictly inside panel_rect
+    for btn in buttons:
+        assert screen.panel_rect.contains(btn), f"Button {btn} falls outside panel {screen.panel_rect}"
+
+
+def test_debriefing_screen_sanitization_and_nan_inf_handling():
+    """Verify set_results defensively sanitizes None, NaN, Inf, and non-numeric fields."""
+    screen = DebriefingScreen()
+
+    # Scenario A: None payload
+    screen.set_results(None)
+    assert screen.is_active is True
+    assert screen.results["final_score"] == 0
+    assert screen.results["duration_seconds"] == 0.0
+
+    # Scenario B: NaN / Inf / string values
+    screen.set_results({
+        "final_score": None,
+        "highscore": "invalid",
+        "duration_seconds": float("nan"),
+        "waves_cleared": -5,
+        "survivors_count": 99,
+        "casualties_count": -3,
+        "hull_ratio": float("inf"),
+    })
+    assert screen.results["final_score"] == 0
+    assert screen.results["highscore"] == 0
+    assert screen.results["duration_seconds"] == 0.0
+    assert screen.results["waves_cleared"] == 1
+    assert screen.results["survivors_count"] == 4
+    assert screen.results["casualties_count"] == 0
+    assert screen.results["hull_ratio"] == 0.0
+
+    # Verify draw() does not crash with sanitized edge values
+    surface = pygame.Surface((1280, 720))
+    screen.draw(surface)
+
+    # Verify close() deactivates screen
+    screen.close()
+    assert screen.is_active is False
+

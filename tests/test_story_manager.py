@@ -6,7 +6,7 @@ from pathlib import Path
 import tempfile
 import pytest
 
-from eagle1.story.campaign_save import CampaignSaveManager
+from eagle1.story.campaign_save import CampaignSaveManager, CampaignSaveState
 from eagle1.story.dialogue_db import DIALOGUE_DATABASE, get_dialogue_node
 from eagle1.story.story_manager import (
     BRANCH_COLD_PROTOCOL,
@@ -17,6 +17,8 @@ from eagle1.story.story_manager import (
     ENDING_BRANCH_COLD_PROTOCOL,
     ENDING_BRANCH_DISSIDENT_SURRENDER,
     ENDING_BRANCH_OBEDIENCE_PURGE,
+    MAX_CAMPAIGN_ACT,
+    MAX_CAMPAIGN_SORTIE,
     MAX_LOYALTY,
     MIN_LOYALTY,
     NORMAL_TIME_DILATION,
@@ -41,6 +43,9 @@ def test_story_manager_constants():
     assert MAX_LOYALTY == 100.0
     assert DECISION_TIME_DILATION == 0.4
     assert NORMAL_TIME_DILATION == 1.0
+
+    assert MAX_CAMPAIGN_ACT == 10
+    assert MAX_CAMPAIGN_SORTIE == 100
 
     assert THRESHOLD_OBEDIENCE_PURGE == 90.0
     assert THRESHOLD_DISSIDENT_SURRENDER == 15.0
@@ -356,4 +361,70 @@ def test_save_and_load_persistence_sync(temp_campaign_dir):
     assert story2.total_casualties == 1
     assert story2.loyalty == pytest.approx(story1.loyalty)
     assert len(story2.dialogue_history) == 1
+
+
+def test_load_campaign_state_clamps_act_and_sortie_bounds(temp_campaign_dir):
+    """Verify loading saved state with excessive or negative act/sortie clamps to [1, MAX]."""
+    save_mgr = CampaignSaveManager(data_dir=temp_campaign_dir)
+    save_path = save_mgr.get_save_path()
+    save_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Write tampered JSON with excessive act and sortie values
+    save_path.write_text(
+        '{"current_act": 99, "current_sortie": 500, "loyalty": 75.0}',
+        encoding="utf-8",
+    )
+    story = StoryManager(save_manager=save_mgr)
+    assert story.current_act == MAX_CAMPAIGN_ACT
+    assert story.current_sortie == MAX_CAMPAIGN_SORTIE
+    assert story.loyalty == pytest.approx(75.0)
+
+    # Write JSON with zero/negative act and sortie values
+    save_path.write_text(
+        '{"current_act": 0, "current_sortie": -15}',
+        encoding="utf-8",
+    )
+    story.load_campaign_state()
+    assert story.current_act == 1
+    assert story.current_sortie == 1
+
+    # Direct CampaignSaveState injection bypassing from_dict
+    save_mgr.save_campaign(CampaignSaveState(current_act=42, current_sortie=250))
+    story2 = StoryManager(save_manager=save_mgr)
+    assert story2.current_act == MAX_CAMPAIGN_ACT
+    assert story2.current_sortie == MAX_CAMPAIGN_SORTIE
+
+
+def test_advance_sortie_upper_boundary_and_coordinate_clamping(temp_campaign_dir):
+    """Verify advance_sortie caps at MAX_CAMPAIGN_SORTIE and clamps explicit coordinate arguments."""
+    save_mgr = CampaignSaveManager(data_dir=temp_campaign_dir)
+    story = StoryManager(save_manager=save_mgr)
+
+    # 1. Parameterless advance caps at MAX_CAMPAIGN_SORTIE
+    story.current_sortie = MAX_CAMPAIGN_SORTIE
+    assert story.advance_sortie() is True
+    assert story.current_sortie == MAX_CAMPAIGN_SORTIE
+
+    # 2. Out-of-bounds explicit coordinate clamping
+    assert story.advance_sortie(act=999, sortie=5000) is True
+    assert story.current_act == MAX_CAMPAIGN_ACT
+    assert story.current_sortie == MAX_CAMPAIGN_SORTIE
+
+    # 3. Underflow coordinate clamping
+    assert story.advance_sortie(act=0, sortie=-25) is True
+    assert story.current_act == 1
+    assert story.current_sortie == 1
+
+    # 4. Invalid types (booleans, strings, overflows) are ignored without state corruption
+    initial_act = story.current_act
+    initial_sortie = story.current_sortie
+    story.advance_sortie(act=True, sortie=False)  # type: ignore[arg-type]
+    assert story.current_act == initial_act
+    assert story.current_sortie == initial_sortie
+
+    story.advance_sortie(act="invalid", sortie=float("inf"))  # type: ignore[arg-type]
+    assert story.current_act == initial_act
+    assert story.current_sortie == initial_sortie
+
+
 

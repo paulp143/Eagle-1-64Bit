@@ -10,6 +10,8 @@ from eagle1.story.campaign_save import (
     CAMPAIGN_SAVE_FILENAME,
     CAMPAIGN_SAVE_VERSION,
     DEFAULT_CAMPAIGN_FILE,
+    MAX_CAMPAIGN_ACT,
+    MAX_CAMPAIGN_SORTIE,
     CampaignSaveManager,
     CampaignSaveState,
 )
@@ -24,10 +26,12 @@ def temp_campaign_dir():
 
 
 def test_campaign_save_constants():
-    """Verify core constants match Issue #52 specifications."""
+    """Verify core constants match Issue #52 and Issue #65 specifications."""
     assert CAMPAIGN_SAVE_VERSION == 1
     assert CAMPAIGN_SAVE_FILENAME == "campaign_save.json"
     assert DEFAULT_CAMPAIGN_FILE == "campaign_save.json"
+    assert MAX_CAMPAIGN_ACT == 10
+    assert MAX_CAMPAIGN_SORTIE == 100
 
 
 def test_default_campaign_save_state():
@@ -343,3 +347,47 @@ def test_story_manager_preserves_campaign_active_and_extra(temp_campaign_dir):
     assert story2.loyalty == 70.0
     assert story2.active_dialogue is None
     assert story2.time_dilation == 1.0
+
+
+def test_campaign_save_state_from_dict_clamps_act_and_sortie_upper_bounds():
+    """Ensure CampaignSaveState.from_dict clamps current_act and current_sortie to upper bounds."""
+    state = CampaignSaveState.from_dict({"current_act": 25, "current_sortie": 999})
+    assert state.current_act == MAX_CAMPAIGN_ACT
+    assert state.current_sortie == MAX_CAMPAIGN_SORTIE
+
+    # String-encoded integers exceeding upper bounds
+    state_str = CampaignSaveState.from_dict({"current_act": "50", "current_sortie": "250"})
+    assert state_str.current_act == MAX_CAMPAIGN_ACT
+    assert state_str.current_sortie == MAX_CAMPAIGN_SORTIE
+
+    # Exact boundary values remain untouched
+    state_exact = CampaignSaveState.from_dict(
+        {"current_act": MAX_CAMPAIGN_ACT, "current_sortie": MAX_CAMPAIGN_SORTIE}
+    )
+    assert state_exact.current_act == MAX_CAMPAIGN_ACT
+    assert state_exact.current_sortie == MAX_CAMPAIGN_SORTIE
+
+
+def test_campaign_save_state_act_and_sortie_type_defenses():
+    """Ensure CampaignSaveState.from_dict falls back cleanly to 1 on booleans, None, and invalid types."""
+    # Boolean values should not be treated as int 1 or 0
+    state_bool = CampaignSaveState.from_dict({"current_act": True, "current_sortie": False})
+    assert state_bool.current_act == 1
+    assert state_bool.current_sortie == 1
+
+    # None / null values
+    state_none = CampaignSaveState.from_dict({"current_act": None, "current_sortie": None})
+    assert state_none.current_act == 1
+    assert state_none.current_sortie == 1
+
+    # Malformed strings and non-numeric objects
+    state_invalid = CampaignSaveState.from_dict({"current_act": "invalid", "current_sortie": []})
+    assert state_invalid.current_act == 1
+    assert state_invalid.current_sortie == 1
+
+    # NaN floating point values
+    state_nan = CampaignSaveState.from_dict({"current_act": float("nan"), "current_sortie": float("nan")})
+    assert state_nan.current_act == 1
+    assert state_nan.current_sortie == 1
+
+

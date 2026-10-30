@@ -11,6 +11,7 @@ Renders an interactive military radio HUD overlay during active flight operation
 from __future__ import annotations
 
 import math
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 import pygame
 
@@ -61,6 +62,8 @@ class CommsHUD:
         self.box_height: int = 150
         self.box_x: int = (self.screen_width - self.box_width) // 2
         self.box_y: int = 16
+        self.max_chars_line: int = 100
+        self.max_body_lines: int = 4
 
         # Color Palette (Super Earth Military Aviator Theme)
         self.color_bg = (12, 18, 28, 230)
@@ -83,6 +86,7 @@ class CommsHUD:
         self._cached_loc_surf: Optional[pygame.Surface] = None
         self._cached_option_cards: Dict[str, Tuple[pygame.Surface, pygame.Surface]] = {}
         self._cached_body_key: Tuple[str, int] = ("", -1)
+        self._cached_body_lines: List[str] = []
         self._cached_body_surfs: List[pygame.Surface] = []
         self._waveform_points: List[Tuple[int, float]] = [(0, 0.0)] * 56
 
@@ -116,6 +120,7 @@ class CommsHUD:
     def _rebuild_node_surface_cache(self) -> None:
         """Pre-render static text surfaces for the active DialogueNode to avoid per-frame allocations."""
         self._cached_body_key = ("", -1)
+        self._cached_body_lines = []
         self._cached_body_surfs = []
         if not self.current_node:
             self._cached_speaker_surf = None
@@ -131,12 +136,15 @@ class CommsHUD:
         )
         self._cached_option_cards.clear()
         for stance, opt in self.current_node.options.items():
-            col = self.stance_colors.get(stance, self.color_border)
-            card_lbl = self.font_option.render(opt.label[:36], True, col)
-            sign = "+" if opt.loyalty_delta > 0 else ""
-            delta_str = f"Loyalty: {sign}{opt.loyalty_delta:.0f}" if opt.loyalty_delta != 0 else "Loyalty: 0"
-            delta_surf = self.font_badge.render(delta_str, True, (170, 190, 210))
-            self._cached_option_cards[stance] = (card_lbl, delta_surf)
+            raw_label = opt.label
+            if "]" in raw_label:
+                _, body_part = raw_label.split("]", 1)
+                clean_body = body_part.strip()
+            else:
+                clean_body = raw_label.strip()
+            display_label = f"[{opt.key_name}] {clean_body}"[:36]
+            card_lbl = self.font_option.render(display_label, True, (0, 220, 255))
+            self._cached_option_cards[stance] = (card_lbl, None)
 
     def trigger_transmission(self, node_or_id: Any) -> bool:
         """Start an incoming radio transmission from a DialogueNode or node_id."""
@@ -351,16 +359,26 @@ class CommsHUD:
         self._rebuild_node_surface_cache()
 
     def _get_portrait_surface(self, portrait_path: Optional[str]) -> Optional[pygame.Surface]:
-        """Load and cache a 64x64 speaker portrait surface safely."""
-        if not portrait_path:
+        """Load and cache a 64x64 speaker portrait surface safely within project root."""
+        if not portrait_path or not isinstance(portrait_path, str) or not portrait_path.strip():
             return None
 
         if portrait_path in self._portrait_cache:
             return self._portrait_cache[portrait_path]
 
         try:
-            full_path = get_base_dir() / portrait_path
-            if full_path.exists() and verify_path_exact_casing(portrait_path):
+            rel_candidate = Path(portrait_path.strip())
+            if rel_candidate.is_absolute():
+                self._portrait_cache[portrait_path] = None
+                return None
+
+            base_dir = get_base_dir().resolve()
+            full_path = (base_dir / rel_candidate).resolve()
+            if not full_path.is_relative_to(base_dir):
+                self._portrait_cache[portrait_path] = None
+                return None
+
+            if full_path.exists() and full_path.is_file() and verify_path_exact_casing(portrait_path.strip()):
                 img = pygame.image.load(str(full_path)).convert_alpha()
                 if img.get_size() != (64, 64):
                     img = pygame.transform.smoothscale(img, (64, 64))
@@ -371,6 +389,25 @@ class CommsHUD:
 
         self._portrait_cache[portrait_path] = None
         return None
+
+    def _wrap_body_lines(self, text: str) -> List[str]:
+        """Split and wrap body text into lines bounded by max_chars_line and max_body_lines."""
+        if not text:
+            return []
+        lines: List[str] = []
+        words = text.split(" ")
+        cur_line = ""
+        for w in words:
+            if not cur_line:
+                cur_line = w
+            elif len(cur_line) + 1 + len(w) <= self.max_chars_line:
+                cur_line = f"{cur_line} {w}"
+            else:
+                lines.append(cur_line)
+                cur_line = w
+        if cur_line:
+            lines.append(cur_line)
+        return lines[: self.max_body_lines]
 
     def render(self, surface: pygame.Surface) -> None:
         """Render the complete tactical radio HUD overlay on the target surface."""
@@ -434,24 +471,15 @@ class CommsHUD:
         if body_key != self._cached_body_key:
             self._cached_body_key = body_key
             visible_text = active_full_text[:visible_len]
-            max_chars_line = 85
-            lines = []
-            words = visible_text.split(" ") if visible_text else []
-            cur_line = ""
-            for w in words:
-                if len(cur_line) + len(w) + 1 <= max_chars_line:
-                    cur_line = f"{cur_line} {w}".strip()
-                else:
-                    lines.append(cur_line)
-                    cur_line = w
-            if cur_line:
-                lines.append(cur_line)
+            self._cached_body_lines = self._wrap_body_lines(visible_text)
             self._cached_body_surfs = [
-                self.font_body.render(line, True, self.color_text) for line in lines[:3]
+                self.font_body.render(line, True, self.color_text)
+                for line in self._cached_body_lines
             ]
 
+        line_spacing = 14 if len(self._cached_body_surfs) > 3 else 16
         for idx, txt_surf in enumerate(self._cached_body_surfs):
-            surface.blit(txt_surf, (header_x, body_y + idx * 16))
+            surface.blit(txt_surf, (header_x, body_y + idx * line_spacing))
 
         # 5. Choice Options Cards (Rendered when choice is active)
         if self.is_waiting_for_choice and self.current_node.options:
@@ -466,12 +494,12 @@ class CommsHUD:
                 card_w = opt_spacing - 10
                 card_h = 42
 
-                # Card background
-                col = self.stance_colors.get(stance, self.color_border)
+                # Uniform neutral card border (no stance-based coloring)
+                col = (0, 180, 230)
                 pygame.draw.rect(surface, (16, 26, 38), (card_x, opts_y, card_w, card_h))
                 pygame.draw.rect(surface, col, (card_x, opts_y, card_w, card_h), 1)
 
                 if stance in self._cached_option_cards:
-                    card_lbl, delta_surf = self._cached_option_cards[stance]
-                    surface.blit(card_lbl, (card_x + 6, opts_y + 6))
-                    surface.blit(delta_surf, (card_x + 6, opts_y + 24))
+                    card_item = self._cached_option_cards[stance]
+                    card_lbl = card_item[0] if isinstance(card_item, tuple) else card_item
+                    surface.blit(card_lbl, (card_x + 6, opts_y + 12))

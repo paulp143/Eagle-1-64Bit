@@ -32,7 +32,7 @@ from eagle1.systems.hangar_cinematic import (
     PHASE_HANGAR,
     PHASE_DESCENT,
 )
-from eagle1.story import CommsHUD, StoryManager
+from eagle1.story import CommsHUD, StoryManager, SuperDestroyerView
 
 BASE_DIR = str(PROJECT_ROOT)
 audio_manager = get_audio_manager()
@@ -346,11 +346,14 @@ def load_highscore(filepath=HIGHSCORE_FILE):
 
 def add_highscore(new_highscore, filepath=HIGHSCORE_FILE):
     try:
+        val = max(0, int(new_highscore))
         dir_name = os.path.dirname(filepath)
         if dir_name:
             os.makedirs(dir_name, exist_ok=True)
-        with open(filepath, "w") as file:
-            file.write(str(new_highscore))
+        tmp_filepath = f"{filepath}.tmp"
+        with open(tmp_filepath, "w", encoding="utf-8") as file:
+            file.write(str(val))
+        os.replace(tmp_filepath, filepath)
     except Exception as e:
         print(f"Error saving highscore: {e}")
 
@@ -1953,9 +1956,26 @@ def trigger_mission_complete():
         "strider_destroyed": getattr(ground_support_manager, "strider_destroyed", False),
         "cas_kills": ground_support_manager.total_cas_kills,
         "survivors_count": ground_support_manager.survivors_count,
+        "casualties_count": max(0, 4 - int(ground_support_manager.survivors_count)),
+        "squad_wiped": bool(ground_support_manager.survivors_count <= 0),
+        "hull_ratio": max(0.0, min(1.0, float(player.health) / max(1.0, float(player.max_health)))),
         "flawless_squad": ground_support_manager.flawless_protection,
         "hero_score": ground_support_manager.hero_score,
     }
+    if active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL and profile_manager.has_active_profile():
+        try:
+            prof = profile_manager.load_profile()
+            prof.academy_completed = True
+            prof.active_mission = MissionType.AIR_SUPERIORITY
+            profile_manager.save_profile(prof)
+        except Exception:
+            pass
+    player.shooting = False
+    player.rocket_shooting = False
+    player.reloading = False
+    player.rocket_reloading = False
+    ground_support_manager.stop_aiming()
+    ground_support_manager.weapon_menu.is_open = False
     debriefing_screen.set_results(results)
     game_state = "mission_debriefing"
     audio_manager.stop_engine_sound()
@@ -1966,7 +1986,7 @@ def move():
     global light_enemy, wave_manager, health_drops
     global explosion_group
     global mission_air_kills, mission_bomber_kills
-    if player.health <= 0 or game_state == "mission_debriefing":
+    if player.health <= 0 or game_state in ("mission_debriefing", "super_destroyer"):
         return
 
     # Boundary damage
@@ -2327,6 +2347,8 @@ def move():
 
 def respawn(mission_config=None, selected_stratagems=None):
     global active_mission_config, bomber_enemies, orbital_base
+    global wave_manager, health_drops, light_enemy, ground_support_manager
+    global mission_start_time, mission_air_kills, mission_bomber_kills
     if mission_config is not None:
         active_mission_config = mission_config
 
@@ -2342,15 +2364,18 @@ def respawn(mission_config=None, selected_stratagems=None):
         add_highscore(player.score)
     player.health = player.max_health
     player.bullets.clear()
+    player.used_bullets = 0
+    player.shooting = False
+    player.reloading = False
     player.rockets.clear()
     player.used_rockets = 0
     player.rocket_shooting = False
     player.rocket_reloading = False
     player.radar_mode = "CONE"
+    ground_support_manager.stop_aiming()
+    ground_support_manager.weapon_menu.is_open = False
 
     player.score = 0
-    global wave_manager, health_drops, light_enemy, ground_support_manager
-    global mission_start_time, mission_air_kills, mission_bomber_kills
     mission_start_time = pygame.time.get_ticks()
     mission_air_kills = 0
     mission_bomber_kills = 0
@@ -2931,6 +2956,12 @@ ground_support_manager = GroundSupportManager()
 combat_juice = CombatJuiceManager()
 story_manager = StoryManager(audio_manager=audio_manager)
 comms_hud = CommsHUD(story_manager=story_manager, audio_manager=audio_manager, screen_width=GAME_WIDTH, screen_height=GAME_HEIGHT)
+super_destroyer_view = SuperDestroyerView(
+    story_manager=story_manager,
+    audio_manager=audio_manager,
+    screen_width=GAME_WIDTH,
+    screen_height=GAME_HEIGHT,
+)
 ground_support_manager.set_story_manager(story_manager)
 ground_support_manager.set_comms_hud(comms_hud)
 light_enemy = wave_manager.enemies[0] if wave_manager.enemies else Light_Enemy()
@@ -2939,11 +2970,66 @@ player.rockets = []
 explosion_group = pygame.sprite.Group()
 
 
+def enter_super_destroyer(debrief_results=None):
+    """Transition cleanly into the Super Destroyer hub deck state."""
+    global game_state
+    audio_manager.stop_engine_sound()
+    audio_manager.play_music("menu_theme")
+    player.shooting = False
+    player.rocket_shooting = False
+    player.reloading = False
+    player.rocket_reloading = False
+    ground_support_manager.stop_aiming()
+    ground_support_manager.weapon_menu.is_open = False
+    super_destroyer_view.on_enter_hub(debrief_results)
+    game_state = "super_destroyer"
+
+
+def handle_super_destroyer_action(action):
+    """Handle structured action payloads from SuperDestroyerView."""
+    global game_state
+    if not isinstance(action, dict):
+        return None
+    act_type = action.get("action")
+    if act_type == "launch_sortie":
+        mission_id = action.get("mission_id") or super_destroyer_view.get_current_sortie_mission_id()
+        mission_cfg = MISSION_CONFIGS.get(
+            mission_id,
+            MISSION_CONFIGS[MissionType.OUTPOST_DEMOLITION],
+        )
+        super_destroyer_view.close_dialogue()
+        super_destroyer_view.launch_initiated = False
+        super_destroyer_view.hovered_launch = False
+        player.shooting = False
+        player.rocket_shooting = False
+        player.reloading = False
+        player.rocket_reloading = False
+        ground_support_manager.stop_aiming()
+        ground_support_manager.weapon_menu.is_open = False
+        try:
+            pygame.event.clear([
+                pygame.KEYDOWN,
+                pygame.KEYUP,
+                pygame.MOUSEBUTTONDOWN,
+                pygame.MOUSEBUTTONUP,
+            ])
+        except Exception:
+            pass
+        respawn(mission_config=mission_cfg)
+        game_state = ""
+    elif act_type in ("main_menu", "exit_to_menu"):
+        audio_manager.stop_engine_sound()
+        audio_manager.play_music("menu_theme")
+        game_state = "main_menu"
+    return action
+
+
 def run_game():
     global window, game_state, light_enemy, wave_manager, health_drops, ground_support_manager, pending_mission_config
     running = True
     last_wheel_time = 0
     while running:
+        state_at_frame_start = game_state
         canvas_mouse_pos = get_canvas_mouse_pos()
 
         for event in pygame.event.get():
@@ -3009,6 +3095,8 @@ def run_game():
                     settings_menu.handle_event(event, canvas_mouse_pos)
                 elif game_state == "enlistment":
                     enlistment_screen.handle_event(event, canvas_mouse_pos)
+                elif game_state == "super_destroyer":
+                    super_destroyer_view.handle_event(event, canvas_mouse_pos)
 
             if event.type == pygame.MOUSEBUTTONUP:
                 if game_state == "enlistment":
@@ -3041,10 +3129,13 @@ def run_game():
                     elif menu_continue_box.is_clicked(event, canvas_mouse_pos):
                         if profile_manager.has_active_profile():
                             active_prof = profile_manager.load_profile()
-                            target_mission = MissionType.ACADEMY_TUTORIAL if not active_prof.academy_completed else active_prof.active_mission
-                            config = MISSION_CONFIGS.get(target_mission, MISSION_CONFIGS[MissionType.ACADEMY_TUTORIAL])
-                            respawn(mission_config=config)
-                            game_state = ""
+                            if not active_prof.academy_completed:
+                                target_mission = MissionType.ACADEMY_TUTORIAL
+                                config = MISSION_CONFIGS.get(target_mission, MISSION_CONFIGS[MissionType.ACADEMY_TUTORIAL])
+                                respawn(mission_config=config)
+                                game_state = ""
+                            else:
+                                enter_super_destroyer()
                     elif menu_settings_box.is_clicked(event, canvas_mouse_pos):
                         previous_game_state = "main_menu"
                         settings_menu.sync_from_manager()
@@ -3087,12 +3178,24 @@ def run_game():
                 elif game_state == "mission_debriefing":
                     action = debriefing_screen.handle_event(event, canvas_mouse_pos)
                     if action == "replay":
+                        debriefing_screen.close()
                         respawn()
                         game_state = ""
+                    elif action == "super_destroyer":
+                        debrief_data = dict(debriefing_screen.results)
+                        debriefing_screen.close()
+                        enter_super_destroyer(debrief_data)
                     elif action == "mission_select":
+                        debriefing_screen.close()
                         game_state = "mission_select"
                     elif action == "main_menu":
+                        debriefing_screen.close()
                         game_state = "main_menu"
+
+                elif game_state == "super_destroyer":
+                    action = super_destroyer_view.handle_event(event, canvas_mouse_pos)
+                    if action is not None:
+                        handle_super_destroyer_action(action)
 
                 elif game_state == "":
                     if player.health <= 0:
@@ -3161,10 +3264,15 @@ def run_game():
                         game_state = "enlistment"
                     elif event.key == pygame.K_c and profile_manager.has_active_profile():
                         active_prof = profile_manager.load_profile()
-                        target_mission = MissionType.ACADEMY_TUTORIAL if not active_prof.academy_completed else active_prof.active_mission
-                        config = MISSION_CONFIGS.get(target_mission, MISSION_CONFIGS[MissionType.ACADEMY_TUTORIAL])
-                        respawn(mission_config=config)
-                        game_state = ""
+                        if not active_prof.academy_completed:
+                            target_mission = MissionType.ACADEMY_TUTORIAL
+                            config = MISSION_CONFIGS.get(target_mission, MISSION_CONFIGS[MissionType.ACADEMY_TUTORIAL])
+                            respawn(mission_config=config)
+                            game_state = ""
+                        else:
+                            enter_super_destroyer()
+                    elif event.key == pygame.K_s:
+                        enter_super_destroyer()
                     elif event.key == pygame.K_h:
                         previous_game_state = "main_menu"
                         game_state = "help_menu"
@@ -3232,13 +3340,25 @@ def run_game():
                 elif game_state == "mission_debriefing":
                     action = debriefing_screen.handle_event(event, canvas_mouse_pos)
                     if action == "replay":
+                        debriefing_screen.close()
                         respawn()
                         game_state = ""
+                    elif action == "super_destroyer":
+                        debrief_data = dict(debriefing_screen.results)
+                        debriefing_screen.close()
+                        enter_super_destroyer(debrief_data)
                     elif action == "mission_select":
+                        debriefing_screen.close()
                         game_state = "mission_select"
                     elif action == "main_menu":
+                        debriefing_screen.close()
                         game_state = "main_menu"
-                    elif event.key == pygame.K_m:
+
+                elif game_state == "super_destroyer":
+                    action = super_destroyer_view.handle_event(event, canvas_mouse_pos)
+                    if action is not None:
+                        handle_super_destroyer_action(action)
+                    elif event.key == pygame.K_m and not super_destroyer_view.is_dialogue_open:
                         is_muted = audio_manager.toggle_mute()
                         status_str = "MUTED" if is_muted else "UNMUTED"
                         ground_support_manager.add_combat_popup(f"AUDIO {status_str}", player.pos_x, player.pos_y, (255, 80, 80) if is_muted else (80, 255, 120))
@@ -3382,75 +3502,83 @@ def run_game():
             draw(None)
             debriefing_screen.draw(canvas, canvas_mouse_pos)
 
+        elif game_state == "super_destroyer":
+            super_destroyer_view.update(1.0 / 60.0)
+            super_destroyer_view.draw(canvas, canvas_mouse_pos)
+
         elif game_state == "":
             if player.health > 0:
-                sdm = ground_support_manager.super_destroyer
-                if sdm.is_active:
-                    if sdm.phase == PHASE_ASCENT:
-                        move()
-                        draw(canvas_mouse_pos)
-                        sdm.draw(canvas, GAME_WIDTH, GAME_HEIGHT, player)
-                    elif sdm.phase == PHASE_HANGAR:
-                        # Battlefield combat simulation frozen in orbit
-                        ground_support_manager.update(1.0 / 60.0, player, [], explosion_group, large_explosion_a_spritesheet.frames)
-                        sdm.draw(canvas, GAME_WIDTH, GAME_HEIGHT, player)
-                    elif sdm.phase == PHASE_DESCENT:
-                        move()
-                        draw(canvas_mouse_pos)
-                        sdm.draw(canvas, GAME_WIDTH, GAME_HEIGHT, player)
-                else:
-                    turn_rate = player.get_effective_turn_rate() * (0.75 if ground_support_manager.is_slow_mo else 1.0)
-                    player_turned_delta = 0.0
-                    if keys[pygame.K_a] or keys[pygame.K_LEFT]:
-                        player.angle += turn_rate
-                        player_turned_delta += turn_rate
-                    if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
-                        player.angle -= turn_rate
-                        player_turned_delta -= turn_rate
-                    if abs(player_turned_delta) > 0.0:
-                        combat_juice.emit_wingtip_contrails(
-                            cx=player.pos_x + PLAYER_WIDTH / 2,
-                            cy=player.pos_y + PLAYER_HEIGHT / 2,
-                            angle_deg=player.angle,
-                            speed=player.velocity_x,
-                            angular_delta=player_turned_delta,
-                            wing_span=21.0,
-                            tail_offset=14.0,
-                            is_enemy=False,
-                        )
-
-                    rad = math.radians(player.angle)
-                    dx = -math.sin(rad)
-                    dy = -math.cos(rad)
-
-                    if keys[pygame.K_w] or keys[pygame.K_UP]:
-                        player.velocity_x = min(player.max_speed, player.velocity_x + player.acceleration)
-                        player.velocity_y = min(player.max_speed, player.velocity_y + player.acceleration)
-                    elif keys[pygame.K_s] or keys[pygame.K_DOWN]:
-                        player.velocity_x = max(player.min_speed, player.velocity_x - player.acceleration)
-                        player.velocity_y = max(player.min_speed, player.velocity_y - player.acceleration)
-
-                    steering_factor = (PLAYER_STEERING_SLOW_MO_FACTOR if ground_support_manager.is_slow_mo else 1.0) * comms_hud.get_time_dilation()
-                    player.pos_x += dx * player.velocity_x * steering_factor
-                    player.pos_y += dy * player.velocity_y * steering_factor
-
-                    player.angle %= 360
-                    player.x = int(player.pos_x)
-                    player.y = int(player.pos_y)
-
-                    if ground_support_manager.equipped_slot == 0:
-                        is_firing = keys[pygame.K_SPACE] or (pygame.mouse.get_pressed()[0] and not ground_support_manager.weapon_menu.is_open)
-                        if is_firing and not player.reloading:
-                            player.set_shoot()
-
-                    if (keys[pygame.K_e] or (keys[pygame.K_f] and not (keys[pygame.K_LMETA] or keys[pygame.K_RMETA])) or keys[pygame.K_LCTRL]) and not player.rocket_reloading:
-                        targets = list(wave_manager.enemies) + [g for g in ground_support_manager.enemy_ground_units if g.is_alive] + [f for f in ground_support_manager.enemy_fabricators if f.is_alive]
-                        if active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL:
-                            targets.extend(academy_manager.get_combat_targets())
-                        player.set_shoot_rocket(targets)
-
-                    move()
+                if state_at_frame_start != "":
+                    # Transition frame: render canvas only to prevent sticky keys from firing
                     draw(canvas_mouse_pos)
+                else:
+                    sdm = ground_support_manager.super_destroyer
+                    if sdm.is_active:
+                        if sdm.phase == PHASE_ASCENT:
+                            move()
+                            draw(canvas_mouse_pos)
+                            sdm.draw(canvas, GAME_WIDTH, GAME_HEIGHT, player)
+                        elif sdm.phase == PHASE_HANGAR:
+                            # Battlefield combat simulation frozen in orbit
+                            ground_support_manager.update(1.0 / 60.0, player, [], explosion_group, large_explosion_a_spritesheet.frames)
+                            sdm.draw(canvas, GAME_WIDTH, GAME_HEIGHT, player)
+                        elif sdm.phase == PHASE_DESCENT:
+                            move()
+                            draw(canvas_mouse_pos)
+                            sdm.draw(canvas, GAME_WIDTH, GAME_HEIGHT, player)
+                    else:
+                        turn_rate = player.get_effective_turn_rate() * (0.75 if ground_support_manager.is_slow_mo else 1.0)
+                        player_turned_delta = 0.0
+                        if keys[pygame.K_a] or keys[pygame.K_LEFT]:
+                            player.angle += turn_rate
+                            player_turned_delta += turn_rate
+                        if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
+                            player.angle -= turn_rate
+                            player_turned_delta -= turn_rate
+                        if abs(player_turned_delta) > 0.0:
+                            combat_juice.emit_wingtip_contrails(
+                                cx=player.pos_x + PLAYER_WIDTH / 2,
+                                cy=player.pos_y + PLAYER_HEIGHT / 2,
+                                angle_deg=player.angle,
+                                speed=player.velocity_x,
+                                angular_delta=player_turned_delta,
+                                wing_span=21.0,
+                                tail_offset=14.0,
+                                is_enemy=False,
+                            )
+
+                        rad = math.radians(player.angle)
+                        dx = -math.sin(rad)
+                        dy = -math.cos(rad)
+
+                        if keys[pygame.K_w] or keys[pygame.K_UP]:
+                            player.velocity_x = min(player.max_speed, player.velocity_x + player.acceleration)
+                            player.velocity_y = min(player.max_speed, player.velocity_y + player.acceleration)
+                        elif keys[pygame.K_s] or keys[pygame.K_DOWN]:
+                            player.velocity_x = max(player.min_speed, player.velocity_x - player.acceleration)
+                            player.velocity_y = max(player.min_speed, player.velocity_y - player.acceleration)
+
+                        steering_factor = (PLAYER_STEERING_SLOW_MO_FACTOR if ground_support_manager.is_slow_mo else 1.0) * comms_hud.get_time_dilation()
+                        player.pos_x += dx * player.velocity_x * steering_factor
+                        player.pos_y += dy * player.velocity_y * steering_factor
+
+                        player.angle %= 360
+                        player.x = int(player.pos_x)
+                        player.y = int(player.pos_y)
+
+                        if ground_support_manager.equipped_slot == 0:
+                            is_firing = keys[pygame.K_SPACE] or (pygame.mouse.get_pressed()[0] and not ground_support_manager.weapon_menu.is_open)
+                            if is_firing and not player.reloading:
+                                player.set_shoot()
+
+                        if (keys[pygame.K_e] or (keys[pygame.K_f] and not (keys[pygame.K_LMETA] or keys[pygame.K_RMETA])) or keys[pygame.K_LCTRL]) and not player.rocket_reloading:
+                            targets = list(wave_manager.enemies) + [g for g in ground_support_manager.enemy_ground_units if g.is_alive] + [f for f in ground_support_manager.enemy_fabricators if f.is_alive]
+                            if active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL:
+                                targets.extend(academy_manager.get_combat_targets())
+                            player.set_shoot_rocket(targets)
+
+                        move()
+                        draw(canvas_mouse_pos)
             else:
                 draw(canvas_mouse_pos)
                 if (keys[pygame.K_m]):
@@ -3459,7 +3587,7 @@ def run_game():
                     ground_support_manager.add_combat_popup(f"AUDIO {status_str}", player.pos_x, player.pos_y, (255, 80, 80) if is_muted else (80, 255, 120))
 
         # Background Music & Engine Audio Loop Updates
-        if game_state in ("main_menu", "mission_select", "stratagem_select", "mission_debriefing"):
+        if game_state in ("main_menu", "mission_select", "stratagem_select", "mission_debriefing", "super_destroyer"):
             audio_manager.play_music("menu_theme")
             audio_manager.stop_engine_sound()
         elif game_state in ("pause_menu", "settings_menu", "help_menu"):

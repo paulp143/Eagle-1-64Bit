@@ -31,13 +31,14 @@ class DebriefingScreen:
 
         # Button definitions (x, y, w, h)
         by = self.panel_rect.bottom - 65
-        bw = 270
-        gap = 40
-        start_bx = self.panel_rect.centerx - (3 * bw + 2 * gap) // 2
+        bw = 235
+        gap = 24
+        start_bx = self.panel_rect.centerx - (4 * bw + 3 * gap) // 2
 
         self.btn_replay_rect = pygame.Rect(start_bx, by, bw, 46)
-        self.btn_select_rect = pygame.Rect(start_bx + bw + gap, by, bw, 46)
-        self.btn_menu_rect = pygame.Rect(start_bx + 2 * (bw + gap), by, bw, 46)
+        self.btn_hub_rect = pygame.Rect(start_bx + bw + gap, by, bw, 46)
+        self.btn_select_rect = pygame.Rect(start_bx + 2 * (bw + gap), by, bw, 46)
+        self.btn_menu_rect = pygame.Rect(start_bx + 3 * (bw + gap), by, bw, 46)
 
         # Fonts cache
         self.font_huge = None
@@ -70,12 +71,61 @@ class DebriefingScreen:
 
     def set_results(self, results):
         """Prepares debriefing statistics and computes combat rank."""
-        self.results = dict(results)
-        self.is_active = True
+        if not isinstance(results, dict):
+            raw_results = {}
+        else:
+            raw_results = results
 
-        score = self.results.get("final_score", 0)
-        flawless = self.results.get("flawless_squad", False)
-        survivors = self.results.get("survivors_count", 0)
+        def _safe_int(val, default=0, min_val=0):
+            if isinstance(val, bool) or not isinstance(val, (int, float)):
+                return default
+            try:
+                f_val = float(val)
+                if not math.isfinite(f_val):
+                    return default
+                return max(min_val, int(f_val))
+            except Exception:
+                return default
+
+        def _safe_float(val, default=0.0, min_val=0.0):
+            if isinstance(val, bool) or not isinstance(val, (int, float)):
+                return default
+            try:
+                f_val = float(val)
+                if not math.isfinite(f_val):
+                    return default
+                return max(min_val, f_val)
+            except Exception:
+                return default
+
+        score = _safe_int(raw_results.get("final_score", 0))
+        highscore = _safe_int(raw_results.get("highscore", score))
+        flawless = bool(raw_results.get("flawless_squad", False))
+        survivors = max(0, min(4, _safe_int(raw_results.get("survivors_count", 0))))
+        casualties = max(0, min(4, _safe_int(raw_results.get("casualties_count", 4 - survivors))))
+        squad_wiped = bool(raw_results.get("squad_wiped", survivors <= 0))
+        hull_ratio = min(1.0, _safe_float(raw_results.get("hull_ratio", 1.0)))
+
+        self.results = {
+            "mission_name": str(raw_results.get("mission_name", "OPERATION")),
+            "final_score": score,
+            "highscore": highscore,
+            "is_new_highscore": bool(raw_results.get("is_new_highscore", score >= highscore and score > 0)),
+            "duration_seconds": _safe_float(raw_results.get("duration_seconds", 0.0)),
+            "waves_cleared": _safe_int(raw_results.get("waves_cleared", 1), min_val=1),
+            "aerial_kills": _safe_int(raw_results.get("aerial_kills", 0)),
+            "bomber_kills": _safe_int(raw_results.get("bomber_kills", 0)),
+            "cas_kills": _safe_int(raw_results.get("cas_kills", 0)),
+            "fabricators_destroyed": _safe_int(raw_results.get("fabricators_destroyed", 0)),
+            "strider_destroyed": bool(raw_results.get("strider_destroyed", False)),
+            "survivors_count": survivors,
+            "casualties_count": casualties,
+            "squad_wiped": squad_wiped,
+            "hull_ratio": hull_ratio,
+            "flawless_squad": flawless,
+            "hero_score": _safe_int(raw_results.get("hero_score", 0)),
+        }
+        self.is_active = True
 
         # Compute Military Combat Rank
         if (flawless and score >= 6000) or score >= 10000:
@@ -95,6 +145,10 @@ class DebriefingScreen:
             self.rank_title = "COMBAT SURVIVOR"
             self.rank_color = (180, 200, 220)
 
+    def close(self):
+        """Deactivate debriefing screen and clear active state."""
+        self.is_active = False
+
     def handle_event(self, event, mouse_pos=None):
         """Processes keyboard hotkeys and mouse button clicks."""
         if not self.is_active:
@@ -104,6 +158,8 @@ class DebriefingScreen:
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_r:
                 return "replay"
+            elif event.key in (pygame.K_h, pygame.K_RETURN, pygame.K_KP_ENTER):
+                return "super_destroyer"
             elif event.key == pygame.K_SPACE:
                 return "mission_select"
             elif event.key == pygame.K_ESCAPE:
@@ -114,6 +170,8 @@ class DebriefingScreen:
             mpos = mouse_pos if mouse_pos is not None else pygame.mouse.get_pos()
             if self.btn_replay_rect.collidepoint(mpos):
                 return "replay"
+            elif self.btn_hub_rect.collidepoint(mpos):
+                return "super_destroyer"
             elif self.btn_select_rect.collidepoint(mpos):
                 return "mission_select"
             elif self.btn_menu_rect.collidepoint(mpos):
@@ -285,6 +343,7 @@ class DebriefingScreen:
 
         # 6. Bottom Navigation Action Buttons
         self._draw_button(canvas, self.btn_replay_rect, "[R] REPLAY MISSION", (0, 160, 90), (0, 240, 140), mpos)
+        self._draw_button(canvas, self.btn_hub_rect, "[H] RETURN TO HUB", (160, 115, 20), (255, 215, 50), mpos)
         self._draw_button(canvas, self.btn_select_rect, "[SPACE] MISSION SELECT", (0, 120, 180), (0, 210, 255), mpos)
         self._draw_button(canvas, self.btn_menu_rect, "[ESC] MAIN MENU", (140, 40, 40), (240, 70, 70), mpos)
 
@@ -297,7 +356,16 @@ class DebriefingScreen:
         pygame.draw.rect(canvas, fill_col, rect, border_radius=6)
         pygame.draw.rect(canvas, b_col, rect, 2 if not is_hover else 3, border_radius=6)
 
-        if self.font_large:
+        use_font = self.font_large
+        if use_font and self.font_med:
+            try:
+                tw, _ = use_font.size(label)
+                if tw > rect.width - 16:
+                    use_font = self.font_med
+            except Exception:
+                pass
+
+        if use_font:
             txt_col = (255, 255, 255) if is_hover else (235, 240, 250)
-            txt = self.font_large.render(label, True, txt_col)
+            txt = use_font.render(label, True, txt_col)
             canvas.blit(txt, (rect.centerx - txt.get_width() // 2, rect.centery - txt.get_height() // 2))
