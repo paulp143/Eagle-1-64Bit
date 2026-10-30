@@ -907,28 +907,21 @@ def test_dialogue_modal_guarantees_zero_layout_overlaps_across_all_nodes(story_m
         collisions_after = validate_rects_no_overlap(rects_after)
         assert collisions_after == [], f"Collisions detected after choice for NPC {npc_id}: {collisions_after}"
 
-        # Verify internal horizontal separation in option cards (Two-Row Layout)
+        # Verify option cards have clean tags and zero loyalty deltas exposed to player
         for stance in ("loyal", "neutral", "dissident"):
             tag_surf = view._modal_text_cache.get(f"opt_tag_{stance}")
             delta_surf = view._modal_text_cache.get(f"opt_delta_{stance}")
             body_surf = view._modal_text_cache.get(f"opt_body_{stance}")
             assert tag_surf is not None
-            assert delta_surf is not None
+            assert delta_surf is None, f"Loyalty delta badge must be hidden from player: {stance}"
             assert body_surf is not None
 
-            # On Row 1, tag (left) and delta (right) must have positive gap
-            opt_w = view.modal_option_rects[stance].width
-            gap = (opt_w - delta_surf.get_width() - 14) - (14 + tag_surf.get_width())
-            assert gap > 100, f"Horizontal collision on Row 1 of {stance} option card! Gap: {gap}px"
-
-        # Verify internal horizontal separation in Response panel
+        # Verify Response panel has no patriotism delta exposed to player
         if view.response_text:
             hdr_surf = view._modal_text_cache.get("response_header")
             resp_delta_surf = view._modal_text_cache.get("response_delta")
-            if hdr_surf and resp_delta_surf:
-                resp_w = view.modal_response_rect.width
-                resp_gap = (resp_w - resp_delta_surf.get_width() - 14) - (14 + hdr_surf.get_width())
-                assert resp_gap > 100, f"Horizontal collision on Row 1 of response panel! Gap: {resp_gap}px"
+            assert hdr_surf is not None
+            assert resp_delta_surf is None, "Loyalty delta in response panel must be hidden from player"
 
         view.close_dialogue()
 
@@ -1038,6 +1031,253 @@ def test_update_dt_inf_and_bool_safety(story_mgr):
     view.update(False)  # type: ignore
     view.update(0.016)
     assert view.ambient_timer > 0.0
+
+
+def test_sortie_mission_map_and_fallback_progression(story_mgr):
+    """Verify sortie numbers map cleanly to designated campaign mission types (1..4) with safe fallbacks."""
+    from eagle1.story.super_destroyer_view import SORTIE_MISSION_MAP
+
+    view = SuperDestroyerView(story_manager=story_mgr)
+
+    # Sortie 1 -> air_superiority
+    story_mgr.current_sortie = 1
+    assert view.get_current_sortie_mission_id() == SORTIE_MISSION_MAP[1]
+    assert view.get_current_sortie_mission_id() == "air_superiority"
+
+    # Sortie 2 -> base_defense
+    story_mgr.current_sortie = 2
+    assert view.get_current_sortie_mission_id() == SORTIE_MISSION_MAP[2]
+    assert view.get_current_sortie_mission_id() == "base_defense"
+
+    # Sortie 3 -> outpost_demolition
+    story_mgr.current_sortie = 3
+    assert view.get_current_sortie_mission_id() == SORTIE_MISSION_MAP[3]
+    assert view.get_current_sortie_mission_id() == "outpost_demolition"
+
+    # Sortie 4 -> strider_raid
+    story_mgr.current_sortie = 4
+    assert view.get_current_sortie_mission_id() == SORTIE_MISSION_MAP[4]
+    assert view.get_current_sortie_mission_id() == "strider_raid"
+
+    # Fallbacks: sortie > 4
+    story_mgr.current_sortie = 5
+    assert view.get_current_sortie_mission_id() == "outpost_demolition"
+    story_mgr.current_sortie = 99
+    assert view.get_current_sortie_mission_id() == "outpost_demolition"
+
+    # Defensive boundaries: NaN, inf, 0, bool
+    story_mgr.current_sortie = float("nan")
+    assert view.get_current_sortie_mission_id() == "air_superiority"
+    story_mgr.current_sortie = float("inf")
+    assert view.get_current_sortie_mission_id() == "air_superiority"
+    story_mgr.current_sortie = 0
+    assert view.get_current_sortie_mission_id() == "air_superiority"
+    story_mgr.current_sortie = True
+    assert view.get_current_sortie_mission_id() == "air_superiority"
+
+
+def test_aircraft_diagnostics_summary_nominal_and_low_hull_warning(story_mgr):
+    """Verify get_aircraft_diagnostics_summary generates status and warning when hull_ratio < 0.4."""
+    view = SuperDestroyerView(story_manager=story_mgr)
+
+    # Nominal state (100% hull)
+    view.set_last_sortie_stats(casualties_count=0, hull_ratio=1.0)
+    diag_nom = view.get_aircraft_diagnostics_summary()
+    assert diag_nom["warning"] is False
+    assert diag_nom["status_level"] == "NOMINAL"
+    assert diag_nom["hull_percent"] == 100.0
+    assert "CALIBRATED" in diag_nom["cannons_status"]
+    assert "OPTIMAL" in diag_nom["turbines_status"]
+    assert "primed for the rail" in diag_nom["ortiz_commentary"]
+
+    # Caution state (50% hull)
+    view.set_last_sortie_stats(casualties_count=0, hull_ratio=0.5)
+    diag_caut = view.get_aircraft_diagnostics_summary()
+    assert diag_caut["warning"] is False
+    assert diag_caut["status_level"] == "CAUTION"
+    assert diag_caut["hull_percent"] == 50.0
+
+    # Warning state (< 40% hull)
+    view.set_last_sortie_stats(casualties_count=2, hull_ratio=0.25)
+    diag_warn = view.get_aircraft_diagnostics_summary()
+    assert diag_warn["warning"] is True
+    assert diag_warn["status_level"] == "WARNING"
+    assert diag_warn["hull_percent"] == 25.0
+    assert "CRITICAL" in diag_warn["hull_status"]
+    assert "STRAINED" in diag_warn["cannons_status"]
+    assert "LEAK" in diag_warn["turbines_status"]
+    assert "took a beating" in diag_warn["ortiz_commentary"]
+
+    # Casualties only (100% hull, but empty racks)
+    view.set_last_sortie_stats(casualties_count=1, hull_ratio=1.0)
+    diag_cas = view.get_aircraft_diagnostics_summary()
+    assert diag_cas["warning"] is False
+    assert "empty racks" in diag_cas["ortiz_commentary"]
+
+
+def test_catapult_launch_button_click_and_hotkey_and_modal_block(story_mgr):
+    """Verify catapult launch triggers action payload via click and L hotkey, blocked during dialogue."""
+    audio_mock = MagicMock()
+    view = SuperDestroyerView(story_manager=story_mgr, audio_manager=audio_mock)
+    view.select_zone("hangar")
+    assert view.active_zone == "hangar"
+
+    story_mgr.current_act = 1
+    story_mgr.current_sortie = 2
+
+    # 1. Hotkey L in Hangar
+    key_l = pygame.event.Event(pygame.KEYDOWN, key=pygame.K_l)
+    res_key = view.handle_event(key_l)
+    assert res_key is not None
+    assert res_key["action"] == "launch_sortie"
+    assert res_key["mission_id"] == "base_defense"
+    assert res_key["act"] == 1
+    assert res_key["sortie"] == 2
+    audio_mock.play_sfx.assert_called_with("ui_click")
+
+    # 2. Click on btn_launch_rect in Hangar
+    audio_mock.reset_mock()
+    click_pos = view.btn_launch_rect.center
+    click_event = pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=click_pos)
+    res_click = view.handle_event(click_event)
+    assert res_click is not None
+    assert res_click["action"] == "launch_sortie"
+    assert res_click["mission_id"] == "base_defense"
+    audio_mock.play_sfx.assert_called_with("ui_click")
+
+    # 3. Blocked when on other zones
+    view.select_zone("bridge")
+    res_bridge = view.handle_event(click_event)
+    assert res_bridge is None
+    res_bridge_key = view.handle_event(key_l)
+    assert res_bridge_key is None
+
+    # 4. Strict Modality: Blocked when dialogue modal is open
+    view.select_zone("hangar")
+    view.open_npc_dialogue("npc_ortiz")
+    assert view.is_dialogue_open is True
+    res_modal_click = view.handle_event(click_event)
+    assert res_modal_click is None
+    res_modal_key = view.handle_event(key_l)
+    assert res_modal_key is None
+    assert view.trigger_catapult_launch() is None
+
+
+def test_hangar_deck_layout_zero_overlaps_and_zero_per_frame_allocations(story_mgr):
+    """Verify Hangar deck elements do not overlap and steady-state draw has 0 surface allocations."""
+    from eagle1.ui.layout import validate_rects_no_overlap
+
+    view = SuperDestroyerView(story_manager=story_mgr)
+    view.select_zone("hangar")
+
+    # Overlap validation among hangar elements
+    rects = [
+        view.npc_card_rects["npc_ortiz"],
+        view.hangar_diagnostics_rect,
+        view.hangar_briefing_rect,
+        view.btn_launch_rect,
+    ]
+    overlaps = validate_rects_no_overlap(rects)
+    assert overlaps == [], f"Overlaps detected on Hangar deck: {overlaps}"
+
+    # Zero per-frame allocations during draw in Hangar zone
+    screen = pygame.Surface((1280, 720))
+    view.update(0.016)
+    view.draw(screen, mouse_pos=(100, 100))
+
+    with patch("eagle1.story.super_destroyer_view.pygame.Surface") as mock_surface:
+        for _ in range(30):
+            view.update(0.016)
+            view.draw(screen, mouse_pos=(100, 100))
+        assert mock_surface.call_count == 0
+
+
+def test_hangar_deck_supplemental_boundaries_and_briefing_card(story_mgr):
+    """Verify briefing metadata structure, exact threshold boundaries, K_f launch key, and launch state reset."""
+    view = SuperDestroyerView(story_manager=story_mgr)
+
+    # 1. Direct get_current_sortie_briefing verification across sorties & fallbacks
+    for sortie_num, expected_mission in [(1, "air_superiority"), (2, "base_defense"), (3, "outpost_demolition"), (4, "strider_raid")]:
+        story_mgr.current_sortie = sortie_num
+        briefing = view.get_current_sortie_briefing()
+        assert briefing["mission_id"] == expected_mission
+        assert all(k in briefing for k in ("title", "operation", "objective", "threat", "mission_id"))
+
+    # Fallback briefing (sortie > 4 and NaN)
+    story_mgr.current_sortie = 99
+    assert view.get_current_sortie_briefing()["mission_id"] == "outpost_demolition"
+    story_mgr.current_sortie = float("nan")
+    assert view.get_current_sortie_briefing()["mission_id"] == "air_superiority"
+
+    # 2. Exact diagnostics threshold boundaries (0.40 and 0.75)
+    diag_399 = view.get_aircraft_diagnostics_summary(hull_ratio=0.399)
+    assert diag_399["status_level"] == "WARNING"
+    assert diag_399["warning"] is True
+
+    diag_400 = view.get_aircraft_diagnostics_summary(hull_ratio=0.40)
+    assert diag_400["status_level"] == "CAUTION"
+    assert diag_400["warning"] is False
+
+    diag_749 = view.get_aircraft_diagnostics_summary(hull_ratio=0.749)
+    assert diag_749["status_level"] == "CAUTION"
+
+    diag_750 = view.get_aircraft_diagnostics_summary(hull_ratio=0.75)
+    assert diag_750["status_level"] == "NOMINAL"
+
+    # Direct NaN / Inf arguments to get_aircraft_diagnostics_summary
+    diag_nan = view.get_aircraft_diagnostics_summary(hull_ratio=float("nan"), casualties_count=float("inf"))
+    assert diag_nan["hull_ratio"] == 1.0
+    assert diag_nan["status_level"] == "NOMINAL"
+
+    # 3. Secondary launch hotkey K_f
+    view.select_zone("hangar")
+    key_f = pygame.event.Event(pygame.KEYDOWN, key=pygame.K_f)
+    res_f = view.handle_event(key_f)
+    assert res_f is not None and res_f["action"] == "launch_sortie"
+    assert view.launch_initiated is True
+
+    # 4. Zone cycling resets launch_initiated
+    view.select_zone("bridge")
+    assert view.launch_initiated is False
+
+
+def test_top_hud_bar_patriotism_hidden_from_player(story_mgr):
+    """Verify that patriotism loyalty score and progress bar are completely hidden from player in HUD."""
+    view = SuperDestroyerView(story_manager=story_mgr)
+    screen = pygame.Surface((1280, 720))
+    view.draw(screen)
+
+    # Status title in HUD must be neutral fleet command, not patriotism score
+    fleet_hdr = view._cached_static_texts.get("fleet_status_title")
+    assert fleet_hdr is not None
+
+    # Verify patriotism_status is not populated in dynamic surfaces during HUD draw
+    assert "patriotism_status" not in view._cached_dynamic_surfaces
+
+    # Underlying calculation methods remain available for internal logic
+    assert view.get_patriotism_bar_ratio() >= 0.0
+    label, _ = view.get_patriotism_status_label_and_color()
+    assert label in (PATRIOTISM_LABEL_NOMINAL, PATRIOTISM_LABEL_ZEALOT, PATRIOTISM_LABEL_DISSIDENT)
+
+
+def test_sanitized_act_sortie_in_hud_and_dialogue_resolution(story_mgr):
+    """Verify resolve_npc_dialogue and _draw_top_hud_bar safely handle NaN and Inf."""
+    view = SuperDestroyerView(story_manager=story_mgr)
+    story_mgr.current_act = float("nan")
+    story_mgr.current_sortie = float("inf")
+
+    # Should not crash on Reiner dialogue resolution
+    node = view.resolve_npc_dialogue("npc_reiner")
+    assert node is not None
+
+    # Should not throw or thrash dynamic cache on draw
+    screen = pygame.Surface((1280, 720))
+    view.draw(screen)
+    cached_badge = view._cached_dynamic_surfaces.get("campaign_badge")
+    assert cached_badge is not None
+    assert cached_badge[0] == (1, 1)
+
+
 
 
 

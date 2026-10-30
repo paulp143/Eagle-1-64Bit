@@ -136,12 +136,15 @@ class CommsHUD:
         )
         self._cached_option_cards.clear()
         for stance, opt in self.current_node.options.items():
-            col = self.stance_colors.get(stance, self.color_border)
-            card_lbl = self.font_option.render(opt.label[:36], True, col)
-            sign = "+" if opt.loyalty_delta > 0 else ""
-            delta_str = f"Loyalty: {sign}{opt.loyalty_delta:.0f}" if opt.loyalty_delta != 0 else "Loyalty: 0"
-            delta_surf = self.font_badge.render(delta_str, True, (170, 190, 210))
-            self._cached_option_cards[stance] = (card_lbl, delta_surf)
+            raw_label = opt.label
+            if "]" in raw_label:
+                _, body_part = raw_label.split("]", 1)
+                clean_body = body_part.strip()
+            else:
+                clean_body = raw_label.strip()
+            display_label = f"[{opt.key_name}] {clean_body}"[:36]
+            card_lbl = self.font_option.render(display_label, True, (0, 220, 255))
+            self._cached_option_cards[stance] = (card_lbl, None)
 
     def trigger_transmission(self, node_or_id: Any) -> bool:
         """Start an incoming radio transmission from a DialogueNode or node_id."""
@@ -491,12 +494,12 @@ class CommsHUD:
                 card_w = opt_spacing - 10
                 card_h = 42
 
-                # Card background
-                col = self.stance_colors.get(stance, self.color_border)
+                # Uniform neutral card border (no stance-based coloring)
+                col = (0, 180, 230)
                 pygame.draw.rect(surface, (16, 26, 38), (card_x, opts_y, card_w, card_h))
                 pygame.draw.rect(surface, col, (card_x, opts_y, card_w, card_h), 1)
 
                 if stance in self._cached_option_cards:
-                    card_lbl, delta_surf = self._cached_option_cards[stance]
-                    surface.blit(card_lbl, (card_x + 6, opts_y + 6))
-                    surface.blit(delta_surf, (card_x + 6, opts_y + 24))
+                    card_item = self._cached_option_cards[stance]
+                    card_lbl = card_item[0] if isinstance(card_item, tuple) else card_item
+                    surface.blit(card_lbl, (card_x + 6, opts_y + 12))

@@ -71,6 +71,44 @@ ZONE_METADATA: Dict[str, Dict[str, str]] = {
     },
 }
 
+SORTIE_MISSION_MAP: Dict[int, str] = {
+    1: "air_superiority",
+    2: "base_defense",
+    3: "outpost_demolition",
+    4: "strider_raid",
+}
+
+SORTIE_BRIEFING_METADATA: Dict[int, Dict[str, str]] = {
+    1: {
+        "mission_id": "air_superiority",
+        "title": "SORTIE 1 // BAPTISM OF FIRE",
+        "operation": "AIR SUPERIORITY",
+        "objective": "Establish orbital air superiority over Vandalon Prime and intercept Automaton fighter squadrons.",
+        "threat": "MODERATE // AUTOMATON INTERCEPTOR WING",
+    },
+    2: {
+        "mission_id": "base_defense",
+        "title": "SORTIE 2 // THE RED PERIMETER",
+        "operation": "ORBITAL BASE DEFENSE",
+        "objective": "Provide Close Air Support to Viper Squad defending the forward orbital relay outpost.",
+        "threat": "HIGH // ARMORED GROUND ASSAULT & DROPSHIPS",
+    },
+    3: {
+        "mission_id": "outpost_demolition",
+        "title": "SORTIE 3 // THE FABRICATOR FURNACE",
+        "operation": "OUTPOST DEMOLITION",
+        "objective": "Deliver precision 500kg ordnance to obliterate fortified Automaton fabricator complexes.",
+        "threat": "SEVERE // HEAVY AA & HULL-CUTTER BATTERIES",
+    },
+    4: {
+        "mission_id": "strider_raid",
+        "title": "SORTIE 4 // THE IRON COLOSSUS",
+        "operation": "FACTORY STRIDER RAID",
+        "objective": "Neutralize the Automaton Factory Strider command fortress threatening Viper Squad extraction.",
+        "threat": "EXTREME // CLASS-IV MOBILE FORTRESS",
+    },
+}
+
 
 class SuperDestroyerView:
     """Foundational view for the Super Destroyer hub deck scene."""
@@ -111,6 +149,8 @@ class SuperDestroyerView:
         self.dialogue_completed_mode: bool = False
         self.hovered_stance: Optional[str] = None
         self.hovered_continue: bool = False
+        self.hovered_launch: bool = False
+        self.launch_initiated: bool = False
         self._portrait_cache: Dict[Tuple[str, str, Tuple[int, int]], pygame.Surface] = {}
         self._modal_text_cache: Dict[str, Any] = {}
         self._modal_prompt_lines: List[str] = []
@@ -144,7 +184,7 @@ class SuperDestroyerView:
     def _init_layout_rects(self) -> None:
         """Pre-compute layout geometry in screen coordinates."""
         self.top_hud_rect = pygame.Rect(0, 0, self.screen_width, 68)
-        self.patriotism_bar_rect = pygame.Rect(self.screen_width - 450, 24, 420, 16)
+        self.patriotism_bar_rect = pygame.Rect(self.screen_width - 500, 24, 474, 16)
 
         tab_y = 78
         tab_h = 50
@@ -177,8 +217,12 @@ class SuperDestroyerView:
             sx = inner_x + 12 + i * (slot_w + 12)
             self.npc_card_rects[vid] = pygame.Rect(sx, inner_y + 40, slot_w, inner_h - 80)
 
-        # Hangar: Ortiz workshop
-        self.npc_card_rects["npc_ortiz"] = pygame.Rect(inner_x + 30, inner_y + 100, (inner_w - 60) // 2, 200)
+        # Hangar Deck Staging Layout (Issue #60)
+        col_w = (inner_w - 30) // 2
+        self.npc_card_rects["npc_ortiz"] = pygame.Rect(inner_x + 10, inner_y + 10, col_w, 88)
+        self.hangar_diagnostics_rect = pygame.Rect(inner_x + 10, inner_y + 106, col_w, inner_h - 116)
+        self.hangar_briefing_rect = pygame.Rect(inner_x + 20 + col_w, inner_y + 10, col_w, inner_h - 100)
+        self.btn_launch_rect = pygame.Rect(inner_x + 20 + col_w, inner_y + inner_h - 80, col_w, 70)
 
         # Dialogue Modal Geometry (Issue #59: 1000x540 centered on 1280x720)
         self.modal_rect = pygame.Rect(140, 90, 1000, 540)
@@ -319,6 +363,7 @@ class SuperDestroyerView:
             self._cached_static_texts["sector"] = self.font_sector.render("SECTOR 7-C // VANDALON REACH", True, (150, 185, 210))
         if self.font_patriotism_title:
             self._cached_static_texts["patriotism_title"] = self.font_patriotism_title.render("SUPER EARTH PATRIOTISM INDEX", True, (170, 195, 220))
+            self._cached_static_texts["fleet_status_title"] = self.font_patriotism_title.render("SES LEVIATHAN // FLEET COMMAND ACTIVE", True, (140, 175, 205))
         if self.font_footer:
             self._cached_static_texts["footer_hint"] = self.font_footer.render(
                 "[A / D / ARROWS] SWITCH ZONE   |   [1-3] DIRECT SELECT   |   [ESC] MAIN MENU",
@@ -336,6 +381,19 @@ class SuperDestroyerView:
                 self._cached_static_texts[f"npc_role_{npc_id}"] = self.font_tab_sub.render(
                     profile.role.upper(), True, (160, 190, 215)
                 )
+
+        # Hangar deck static labels (Issue #60)
+        if self.font_badge:
+            self._cached_static_texts["npc_hint_npc_ortiz"] = self.font_badge.render(
+                "[E / CLICK] CONSULT CHIEF ENGINEER", True, (243, 156, 18)
+            )
+        if self.font_modal_role:
+            self._cached_static_texts["hangar_comm_label"] = self.font_modal_role.render(
+                "CHIEF ENGINEER LOG & AIRFRAME COMMENTARY:", True, (140, 175, 205)
+            )
+            self._cached_static_texts["hangar_obj_label"] = self.font_modal_role.render(
+                "MISSION PARAMETERS & PRIMARY OBJECTIVE:", True, (140, 175, 205)
+            )
 
         # 5. Dialogue Modal Pre-rendered Surfaces (Issue #59)
         self.modal_backdrop_surface = pygame.Surface((self.screen_width, self.screen_height), pygame.SRCALPHA)
@@ -564,17 +622,11 @@ class SuperDestroyerView:
             spk_hdr = f">> REACTION // {spk_name}"
             if self.font_modal_role:
                 self._modal_text_cache["response_header"] = self.font_modal_role.render(spk_hdr, True, (0, 220, 255))
-            if self.selected_option:
-                d = self.selected_option.loyalty_delta
-                d_col = (255, 215, 50) if d > 0 else ((0, 220, 255) if d == 0 else (231, 76, 60))
-                d_sign = "+" if d > 0 else ""
-                d_str = f"PATRIOTISM DELTA: {d_sign}{d:0.1f}%"
-                if self.font_modal_btn:
-                    self._modal_text_cache["response_delta"] = self.font_modal_btn.render(d_str, True, d_col)
         else:
             self.modal_response_rect = pygame.Rect(content_bounds.x, stack.cursor_y, 0, 0)
 
-        # Stance Option Cards (Two-Row Layout: Row 1 = Tag + Delta, Row 2 = Dialogue Statement)
+        # Stance Option Cards (Two-Row Layout: Row 1 = Option Number, Row 2 = Dialogue Statement)
+        # Stance labels (LOYAL/NEUTRAL/DISSIDENT) and Loyalty deltas are intentionally hidden from the player
         option_h = 42 if self.response_text else 46
         card_gap = 5 if self.response_text else 6
         for stance in ("loyal", "neutral", "dissident"):
@@ -583,22 +635,18 @@ class SuperDestroyerView:
 
             opt = node.options.get(stance)
             if opt:
-                col = (255, 215, 50) if stance == "loyal" else ((0, 220, 255) if stance == "neutral" else (231, 76, 60))
-                delta_sign = "+" if opt.loyalty_delta > 0 else ""
-                delta_text = f"[{delta_sign}{opt.loyalty_delta:0.1f}% PATRIOTISM]" if opt.loyalty_delta != 0 else "[0.0% PATRIOTISM]"
+                tag_col = (0, 220, 255)
+                tag_text = f"[{opt.key_name}]"
 
                 raw_label = opt.label
                 if "]" in raw_label:
-                    tag_part, body_part = raw_label.split("]", 1)
-                    tag_text = (tag_part + "]").strip()
+                    _, body_part = raw_label.split("]", 1)
                     body_text = body_part.strip()
                 else:
-                    tag_text = f"[{opt.key_name}. {opt.stance.upper()}]"
                     body_text = raw_label.strip()
 
                 if self.font_modal_btn:
-                    self._modal_text_cache[f"opt_tag_{stance}"] = self.font_modal_btn.render(tag_text, True, col)
-                    self._modal_text_cache[f"opt_delta_{stance}"] = self.font_modal_btn.render(delta_text, True, col)
+                    self._modal_text_cache[f"opt_tag_{stance}"] = self.font_modal_btn.render(tag_text, True, tag_col)
                 if self.font_modal_option:
                     self._modal_text_cache[f"opt_body_{stance}"] = self.font_modal_option.render(body_text, True, (220, 235, 250))
 
@@ -668,8 +716,7 @@ class SuperDestroyerView:
             surface.blit(sector_surf, (26, 40))
 
         # Campaign progression badge
-        act = getattr(self.story_manager, "current_act", 1)
-        sortie = getattr(self.story_manager, "current_sortie", 1)
+        act, sortie = self._get_current_sortie_key()
         badge_key = (act, sortie)
         cached_badge = self._cached_dynamic_surfaces.get("campaign_badge")
         if cached_badge and cached_badge[0] == badge_key:
@@ -688,43 +735,10 @@ class SuperDestroyerView:
             by = badge_box.centery - badge_surf.get_height() // 2
             surface.blit(badge_surf, (bx, by))
 
-        # Super Earth Patriotism Index
-        title_surf = self._cached_static_texts.get("patriotism_title")
-        if title_surf:
-            surface.blit(title_surf, (self.patriotism_bar_rect.x, 8))
-
-        label_str, color = self.get_patriotism_status_label_and_color()
-        ratio = self.get_patriotism_bar_ratio()
-        loyalty_val = self._get_sanitized_loyalty()
-
-        status_key = (label_str, color, round(loyalty_val, 1))
-        cached_status = self._cached_dynamic_surfaces.get("patriotism_status")
-        if cached_status and cached_status[0] == status_key:
-            status_surf = cached_status[1]
-        else:
-            text = f"{label_str} [{loyalty_val:5.1f}%]"
-            status_surf = self.font_patriotism_status.render(text, True, color) if self.font_patriotism_status else None
-            if status_surf:
-                self._cached_dynamic_surfaces["patriotism_status"] = (status_key, status_surf)
-
-        if status_surf:
-            sx = self.patriotism_bar_rect.right - status_surf.get_width()
-            surface.blit(status_surf, (sx, 8))
-
-        # Progress bar frame & fill
-        pygame.draw.rect(surface, (18, 24, 34), self.patriotism_bar_rect)
-        fill_w = int(self.patriotism_bar_rect.width * ratio)
-        if fill_w > 0:
-            fill_rect = pygame.Rect(self.patriotism_bar_rect.x, self.patriotism_bar_rect.y, fill_w, self.patriotism_bar_rect.height)
-            pygame.draw.rect(surface, color, fill_rect)
-
-        # Threshold markers (15% Dissident and 90% Zealot lines)
-        dissident_x = self.patriotism_bar_rect.x + int(self.patriotism_bar_rect.width * (THRESHOLD_DISSIDENT_SURRENDER / MAX_LOYALTY))
-        zealot_x = self.patriotism_bar_rect.x + int(self.patriotism_bar_rect.width * (THRESHOLD_OBEDIENCE_PURGE / MAX_LOYALTY))
-        pygame.draw.line(surface, PATRIOTISM_COLOR_DISSIDENT, (dissident_x, self.patriotism_bar_rect.top - 2), (dissident_x, self.patriotism_bar_rect.bottom + 2), 1)
-        pygame.draw.line(surface, PATRIOTISM_COLOR_ZEALOT, (zealot_x, self.patriotism_bar_rect.top - 2), (zealot_x, self.patriotism_bar_rect.bottom + 2), 1)
-
-        pygame.draw.rect(surface, (80, 110, 140), self.patriotism_bar_rect, width=1)
+        # Fleet Status / Command Telemetry (Neutral header; loyalty score is completely hidden from player)
+        status_hdr = self._cached_static_texts.get("fleet_status_title")
+        if status_hdr:
+            surface.blit(status_hdr, (self.screen_width - status_hdr.get_width() - 26, 26))
 
     # -------------------------------------------------------------------------
     # Shipboard NPC Profiles & Morale Engine (Issue #58)
@@ -759,7 +773,12 @@ class SuperDestroyerView:
         self.last_casualties_count = c_count
         self.last_squad_wiped = bool(squad_wiped) or (c_count >= 4)
 
-        if isinstance(hull_ratio, bool) or not isinstance(hull_ratio, (int, float)) or math.isnan(float(hull_ratio)):
+        if (
+            isinstance(hull_ratio, bool)
+            or not isinstance(hull_ratio, (int, float))
+            or math.isnan(float(hull_ratio))
+            or math.isinf(float(hull_ratio))
+        ):
             h_ratio = 1.0
         else:
             h_ratio = max(0.0, min(1.0, float(hull_ratio)))
@@ -795,8 +814,7 @@ class SuperDestroyerView:
         if profile is None:
             return None
 
-        act = max(1, int(getattr(self.story_manager, "current_act", 1)))
-        sortie = max(1, int(getattr(self.story_manager, "current_sortie", 1)))
+        act, sortie = self._get_current_sortie_key()
 
         # Bridge Personnel
         if profile.npc_id == "npc_reiner":
@@ -824,10 +842,105 @@ class SuperDestroyerView:
         return get_dialogue_node(profile.default_node_id)
 
     def _get_current_sortie_key(self) -> Tuple[int, int]:
-        """Return the (act, sortie) tuple for current sortie tracking."""
-        act = max(1, int(getattr(self.story_manager, "current_act", 1)))
-        sortie = max(1, int(getattr(self.story_manager, "current_sortie", 1)))
+        """Return the (act, sortie) tuple for current sortie tracking with boundary safety."""
+        raw_act = getattr(self.story_manager, "current_act", 1)
+        raw_sortie = getattr(self.story_manager, "current_sortie", 1)
+        if isinstance(raw_act, bool) or not isinstance(raw_act, (int, float)) or math.isnan(float(raw_act)) or math.isinf(float(raw_act)):
+            act = 1
+        else:
+            act = max(1, int(raw_act))
+
+        if isinstance(raw_sortie, bool) or not isinstance(raw_sortie, (int, float)) or math.isnan(float(raw_sortie)) or math.isinf(float(raw_sortie)):
+            sortie = 1
+        else:
+            sortie = max(1, int(raw_sortie))
         return (act, sortie)
+
+    def get_current_sortie_mission_id(self) -> str:
+        """Return the campaign mission ID corresponding to the current sortie."""
+        _act, sortie = self._get_current_sortie_key()
+        return SORTIE_MISSION_MAP.get(sortie, "outpost_demolition")
+
+    def get_current_sortie_briefing(self) -> Dict[str, str]:
+        """Return tactical briefing metadata dictionary for the next sortie."""
+        _act, sortie = self._get_current_sortie_key()
+        briefing = dict(SORTIE_BRIEFING_METADATA.get(sortie, SORTIE_BRIEFING_METADATA[3]))
+        briefing["mission_id"] = self.get_current_sortie_mission_id()
+        return briefing
+
+    def get_aircraft_diagnostics_summary(
+        self,
+        hull_ratio: Optional[float] = None,
+        casualties_count: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Generate Eagle-1 airframe diagnostics, subsystem status, and Chief Ortiz's commentary."""
+        if hull_ratio is None:
+            h_ratio = float(self.last_hull_ratio)
+        elif isinstance(hull_ratio, bool) or not isinstance(hull_ratio, (int, float)) or math.isnan(float(hull_ratio)) or math.isinf(float(hull_ratio)):
+            h_ratio = 1.0
+        else:
+            h_ratio = max(0.0, min(1.0, float(hull_ratio)))
+
+        if casualties_count is None:
+            c_count = int(self.last_casualties_count)
+        elif isinstance(casualties_count, bool) or not isinstance(casualties_count, (int, float)) or math.isnan(float(casualties_count)) or math.isinf(float(casualties_count)):
+            c_count = 0
+        else:
+            c_count = max(0, int(casualties_count))
+
+        warning = bool(h_ratio < 0.4)
+        if h_ratio < 0.4:
+            status_level = "WARNING"
+            hull_status = "WARNING: CRITICAL HULL FRACTURES"
+            cannons_status = "WARNING: RECOIL DAMPENERS STRAINED"
+            turbines_status = "WARNING: MANIFOLD THERMAL LEAK"
+            ortiz_commentary = "Ortiz: 'She took a beating out there, Val. Patch plates are holding, but watch your G-loads!'"
+        elif h_ratio < 0.75:
+            status_level = "CAUTION"
+            hull_status = "CAUTION: ABLATIVE SCARRING"
+            cannons_status = "QUAD-CANNON MOUNTS // RE-ALIGNED"
+            turbines_status = "THRUSTER MANIFOLD // PRESSURE STABLE"
+            ortiz_commentary = (
+                "Ortiz: 'Airframe is green, Val... sorry about the empty racks in the drop bay.'"
+                if c_count > 0
+                else "Ortiz: 'Patching up the scorch marks. Eagle-1 is combat ready.'"
+            )
+        else:
+            status_level = "NOMINAL"
+            hull_status = "NOMINAL // 100% AIRFRAME INTEGRITY"
+            cannons_status = "QUAD-CANNON MOUNTS // CALIBRATED"
+            turbines_status = "THRUSTER MANIFOLD // OPTIMAL PRESSURE"
+            ortiz_commentary = (
+                "Ortiz: 'Airframe is green, Val... sorry about the empty racks in the drop bay.'"
+                if c_count > 0
+                else "Ortiz: 'Turbines flushed, quad-cannons harmonized. Eagle-1 is primed for the rail.'"
+            )
+
+        return {
+            "hull_ratio": h_ratio,
+            "hull_percent": round(h_ratio * 100.0, 1),
+            "status_level": status_level,
+            "warning": warning,
+            "hull_status": hull_status,
+            "cannons_status": cannons_status,
+            "turbines_status": turbines_status,
+            "ortiz_commentary": ortiz_commentary,
+        }
+
+    def trigger_catapult_launch(self) -> Optional[Dict[str, Any]]:
+        """Trigger catapult launch if no modal is active and emit structured action payload."""
+        if self._dialogue_open:
+            return None
+
+        self.launch_initiated = True
+        self._play_ui_sound("ui_click")
+        act, sortie = self._get_current_sortie_key()
+        return {
+            "action": "launch_sortie",
+            "mission_id": self.get_current_sortie_mission_id(),
+            "act": act,
+            "sortie": sortie,
+        }
 
     def mark_node_completed(self, node_id: str) -> None:
         """Mark a dialogue node as completed in the current sortie."""
@@ -982,6 +1095,7 @@ class SuperDestroyerView:
         if target_index is not None and target_index != self._zone_index:
             self.close_dialogue()
             self._zone_index = target_index
+            self.launch_initiated = False
             self._play_ui_sound("ui_click")
             return True
         elif target_index == self._zone_index:
@@ -995,6 +1109,7 @@ class SuperDestroyerView:
             return self.active_zone
 
         self._zone_index = (self._zone_index + direction) % len(HUB_ZONES)
+        self.launch_initiated = False
         self._play_ui_sound("ui_click")
         return self.active_zone
 
@@ -1129,11 +1244,20 @@ class SuperDestroyerView:
                 if new_hover is not None:
                     self._play_ui_sound("ui_hover")
 
+            self.hovered_launch = bool(
+                self.active_zone == ZONE_HANGAR and self.btn_launch_rect.collidepoint(pos)
+            )
+
         elif event.type == pygame.MOUSEBUTTONDOWN and getattr(event, "button", 1) == 1 and pos is not None:
             for zone_id, rect in self.zone_tab_rects.items():
                 if rect.collidepoint(pos):
                     self.select_zone(zone_id)
                     return {"action": "select_zone", "zone": self.active_zone}
+
+            if self.active_zone == ZONE_HANGAR and self.btn_launch_rect.collidepoint(pos):
+                launch_payload = self.trigger_catapult_launch()
+                if launch_payload is not None:
+                    return launch_payload
 
             for npc in self.get_zone_npcs():
                 card_rect = self.npc_card_rects.get(npc.npc_id)
@@ -1147,7 +1271,12 @@ class SuperDestroyerView:
                     }
 
         elif event.type == pygame.KEYDOWN:
-            if event.key in (pygame.K_a, pygame.K_LEFT):
+            if event.key in (pygame.K_l, pygame.K_f):
+                if self.active_zone == ZONE_HANGAR:
+                    launch_payload = self.trigger_catapult_launch()
+                    if launch_payload is not None:
+                        return launch_payload
+            elif event.key in (pygame.K_a, pygame.K_LEFT):
                 new_zone = self.cycle_zone(-1)
                 return {"action": "select_zone", "zone": new_zone}
             elif event.key in (pygame.K_d, pygame.K_RIGHT):
@@ -1330,19 +1459,170 @@ class SuperDestroyerView:
             pygame.draw.line(surface, (255, 215, 50), (inner_rect.x + 40, cy - 20), (inner_rect.right - 40, cy - 20), 2)
             pygame.draw.line(surface, (255, 215, 50), (inner_rect.x + 40, cy + 20), (inner_rect.right - 40, cy + 20), 2)
 
-            # Draw Chief Ortiz station card
-            crect = self.npc_card_rects.get("npc_ortiz")
-            if crect:
-                pygame.draw.rect(surface, (16, 24, 38), crect)
-                pygame.draw.rect(surface, (243, 156, 18), crect, width=1)
-                card_y = crect.y + 14
-                nsurf = self._cached_static_texts.get("npc_name_npc_ortiz")
-                rsurf = self._cached_static_texts.get("npc_role_npc_ortiz")
-                if nsurf:
-                    surface.blit(nsurf, (crect.x + 14, card_y))
-                    card_y += nsurf.get_height() + 4
-                if rsurf:
-                    surface.blit(rsurf, (crect.x + 16, card_y))
+            self._draw_hangar_diagnostics(surface)
+
+    def _draw_hangar_diagnostics(self, surface: pygame.Surface) -> None:
+        """Render Chief Ortiz station, Eagle-1 airframe diagnostics, next sortie card & catapult button."""
+        # 1. Chief Ortiz station card
+        crect = self.npc_card_rects.get("npc_ortiz")
+        if crect:
+            pygame.draw.rect(surface, (16, 24, 38), crect)
+            pygame.draw.rect(surface, (243, 156, 18), crect, width=1)
+            # Corner brackets
+            cw = 8
+            pygame.draw.lines(surface, (243, 156, 18), False, [(crect.x, crect.y + cw), (crect.x, crect.y), (crect.x + cw, crect.y)], 1)
+            pygame.draw.lines(surface, (243, 156, 18), False, [(crect.right - cw, crect.y), (crect.right - 1, crect.y), (crect.right - 1, crect.y + cw)], 1)
+            card_y = crect.y + 10
+            nsurf = self._cached_static_texts.get("npc_name_npc_ortiz")
+            rsurf = self._cached_static_texts.get("npc_role_npc_ortiz")
+            hsurf = self._cached_static_texts.get("npc_hint_npc_ortiz")
+            if nsurf:
+                surface.blit(nsurf, (crect.x + 14, card_y))
+                card_y += nsurf.get_height() + 2
+            if rsurf:
+                surface.blit(rsurf, (crect.x + 16, card_y))
+                card_y += rsurf.get_height() + 4
+            if hsurf:
+                surface.blit(hsurf, (crect.x + 16, card_y))
+
+        # 2. Aircraft Diagnostics Panel
+        drect = self.hangar_diagnostics_rect
+        diag = self.get_aircraft_diagnostics_summary()
+        border_col = (231, 76, 60) if diag["warning"] else (45, 75, 105)
+        pygame.draw.rect(surface, (14, 22, 34), drect)
+        pygame.draw.rect(surface, border_col, drect, width=1)
+
+        diag_key = (round(float(diag["hull_ratio"]), 2), int(self.last_casualties_count))
+        cached_diag = self._cached_dynamic_surfaces.get("hangar_diag")
+        if cached_diag and cached_diag[0] == diag_key:
+            header_surf, status_surf, lines_surfs, comm_surfs = cached_diag[1]
+        else:
+            status_col = (231, 76, 60) if diag["warning"] else ((255, 215, 50) if diag["status_level"] == "CAUTION" else (0, 220, 255))
+            header_surf = self.font_deck_code.render("EAGLE-1 AIRFRAME DIAGNOSTICS", True, (255, 215, 50)) if self.font_deck_code else None
+            status_surf = self.font_badge.render(f"STATUS // {diag['status_level']} [{diag['hull_percent']:0.1f}%]", True, status_col) if self.font_badge else None
+
+            lines_surfs = []
+            if self.font_modal_role:
+                lines_surfs.append(self.font_modal_role.render(f">> {diag['hull_status']}", True, status_col))
+                cannons_col = (231, 76, 60) if diag["warning"] else (0, 220, 255)
+                lines_surfs.append(self.font_modal_role.render(f">> {diag['cannons_status']}", True, cannons_col))
+                turbines_col = (231, 76, 60) if diag["warning"] else (0, 220, 255)
+                lines_surfs.append(self.font_modal_role.render(f">> {diag['turbines_status']}", True, turbines_col))
+
+            comm_lines = self._wrap_text_to_width(str(diag["ortiz_commentary"]), self.font_deck_desc, drect.width - 28, max_lines=2)
+            comm_surfs = [self.font_deck_desc.render(cl, True, (200, 225, 245)) for cl in comm_lines] if self.font_deck_desc else []
+            self._cached_dynamic_surfaces["hangar_diag"] = (diag_key, (header_surf, status_surf, lines_surfs, comm_surfs))
+
+        if header_surf:
+            surface.blit(header_surf, (drect.x + 14, drect.y + 12))
+        if status_surf:
+            surface.blit(status_surf, (drect.right - status_surf.get_width() - 14, drect.y + 12))
+
+        # Hull bar
+        bar_rect = pygame.Rect(drect.x + 14, drect.y + 36, drect.width - 28, 10)
+        pygame.draw.rect(surface, (18, 26, 38), bar_rect)
+        fill_w = int(bar_rect.width * float(diag["hull_ratio"]))
+        if fill_w > 0:
+            fill_col = (231, 76, 60) if diag["warning"] else ((255, 215, 50) if diag["status_level"] == "CAUTION" else (0, 220, 255))
+            pygame.draw.rect(surface, fill_col, (bar_rect.x, bar_rect.y, fill_w, bar_rect.height))
+        pygame.draw.rect(surface, (45, 70, 95), bar_rect, width=1)
+
+        # Subsystem lines
+        sy = drect.y + 54
+        for lsurf in lines_surfs:
+            surface.blit(lsurf, (drect.x + 14, sy))
+            sy += 20
+
+        # Divider & Commentary
+        pygame.draw.line(surface, (30, 48, 70), (drect.x + 14, drect.y + 124), (drect.right - 14, drect.y + 124), 1)
+        clabel_surf = self._cached_static_texts.get("hangar_comm_label")
+        if clabel_surf:
+            surface.blit(clabel_surf, (drect.x + 14, drect.y + 130))
+
+        cy = drect.y + 150
+        for csurf in comm_surfs:
+            surface.blit(csurf, (drect.x + 14, cy))
+            cy += 18
+
+        # 3. Next Sortie Mission Briefing Card
+        brect = self.hangar_briefing_rect
+        pygame.draw.rect(surface, (14, 22, 34), brect)
+        pygame.draw.rect(surface, (0, 180, 230), brect, width=1)
+        # Cyan corner brackets on briefing
+        bcw = 12
+        pygame.draw.lines(surface, (0, 220, 255), False, [(brect.x, brect.y + bcw), (brect.x, brect.y), (brect.x + bcw, brect.y)], 1)
+        pygame.draw.lines(surface, (0, 220, 255), False, [(brect.right - bcw, brect.y), (brect.right - 1, brect.y), (brect.right - 1, brect.y + bcw)], 1)
+
+        brief_key = self._get_current_sortie_key()
+        cached_brief = self._cached_dynamic_surfaces.get("hangar_briefing")
+        if cached_brief and cached_brief[0] == brief_key:
+            b_hdr_surf, b_title_surf, b_mode_surf, b_threat_surf, b_obj_surfs = cached_brief[1]
+        else:
+            briefing = self.get_current_sortie_briefing()
+            b_hdr_surf = self.font_deck_code.render("NEXT SORTIE // TACTICAL BRIEFING", True, (0, 220, 255)) if self.font_deck_code else None
+            b_title_surf = self.font_tab_title.render(briefing.get("title", ""), True, (255, 215, 50)) if self.font_tab_title else None
+            b_mode_surf = self.font_modal_role.render(f"OPERATION // {briefing.get('operation', '')}", True, (0, 220, 255)) if self.font_modal_role else None
+            b_threat_surf = self.font_modal_role.render(f"THREAT LEVEL // {briefing.get('threat', '')}", True, (231, 76, 60)) if self.font_modal_role else None
+            obj_lines = self._wrap_text_to_width(briefing.get("objective", ""), self.font_deck_desc, brect.width - 28, max_lines=3)
+            b_obj_surfs = [self.font_deck_desc.render(ol, True, (220, 235, 250)) for ol in obj_lines] if self.font_deck_desc else []
+            self._cached_dynamic_surfaces["hangar_briefing"] = (brief_key, (b_hdr_surf, b_title_surf, b_mode_surf, b_threat_surf, b_obj_surfs))
+
+        if b_hdr_surf:
+            surface.blit(b_hdr_surf, (brect.x + 14, brect.y + 12))
+        if b_title_surf:
+            surface.blit(b_title_surf, (brect.x + 14, brect.y + 36))
+        pygame.draw.line(surface, (30, 48, 70), (brect.x + 14, brect.y + 66), (brect.right - 14, brect.y + 66), 1)
+        if b_mode_surf:
+            surface.blit(b_mode_surf, (brect.x + 14, brect.y + 74))
+        if b_threat_surf:
+            surface.blit(b_threat_surf, (brect.x + 14, brect.y + 96))
+        pygame.draw.line(surface, (30, 48, 70), (brect.x + 14, brect.y + 122), (brect.right - 14, brect.y + 122), 1)
+
+        olabel_surf = self._cached_static_texts.get("hangar_obj_label")
+        if olabel_surf:
+            surface.blit(olabel_surf, (brect.x + 14, brect.y + 128))
+
+        boy = brect.y + 150
+        for osurf in b_obj_surfs:
+            surface.blit(osurf, (brect.x + 14, boy))
+            boy += 20
+
+        # 4. Catapult Launch Button
+        lrect = self.btn_launch_rect
+        is_hovered = bool(self.hovered_launch and not self._dialogue_open)
+        if self.launch_initiated:
+            bg_col = (60, 42, 16)
+            border_col = (255, 245, 180)
+        else:
+            bg_col = (45, 32, 16) if is_hovered else (24, 18, 12)
+            border_col = (255, 235, 100) if is_hovered else (255, 215, 50)
+        pygame.draw.rect(surface, bg_col, lrect)
+        pygame.draw.rect(surface, border_col, lrect, width=2)
+        # Gold corner brackets
+        lcw = 10
+        pygame.draw.lines(surface, border_col, False, [(lrect.x, lrect.y + lcw), (lrect.x, lrect.y), (lrect.x + lcw, lrect.y)], 2)
+        pygame.draw.lines(surface, border_col, False, [(lrect.right - lcw, lrect.y), (lrect.right - 1, lrect.y), (lrect.right - 1, lrect.y + lcw)], 2)
+        pygame.draw.lines(surface, border_col, False, [(lrect.x, lrect.bottom - lcw), (lrect.x, lrect.bottom - 1), (lrect.x + lcw, lrect.bottom - 1)], 2)
+        pygame.draw.lines(surface, border_col, False, [(lrect.right - lcw, lrect.bottom - 1), (lrect.right - 1, lrect.bottom - 1), (lrect.right - 1, lrect.bottom - lcw)], 2)
+
+        launch_key = (is_hovered, bool(self.launch_initiated))
+        cached_launch = self._cached_dynamic_surfaces.get("hangar_launch_btn")
+        if cached_launch and cached_launch[0] == launch_key:
+            btn_txt, sub_txt = cached_launch[1]
+        else:
+            if self.launch_initiated:
+                btn_txt = self.font_tab_title.render("CATAPULT LAUNCH SEQUENCE INITIATED...", True, (255, 255, 255)) if self.font_tab_title else None
+                sub_txt = self.font_modal_role.render("CLEARING MAGNETIC RAIL // TRANSITION TO COMBAT SORTIE", True, (255, 220, 100)) if self.font_modal_role else None
+            else:
+                t_col = (255, 240, 150) if is_hovered else (255, 215, 50)
+                btn_txt = self.font_tab_title.render("[L / CLICK] INITIATE MAGNETIC CATAPULT LAUNCH", True, t_col) if self.font_tab_title else None
+                sub_txt = self.font_modal_role.render("MAGNETIC RAIL ARMED // CLEAR FOR ORBITAL DROP", True, (200, 180, 120)) if self.font_modal_role else None
+            self._cached_dynamic_surfaces["hangar_launch_btn"] = (launch_key, (btn_txt, sub_txt))
+
+        if btn_txt:
+            surface.blit(btn_txt, (lrect.centerx - btn_txt.get_width() // 2, lrect.y + 14))
+        if sub_txt:
+            surface.blit(sub_txt, (lrect.centerx - sub_txt.get_width() // 2, lrect.y + 40))
 
     def _draw_footer_bar(self, surface: pygame.Surface) -> None:
         """Render the bottom control and shortcut prompt bar."""
@@ -1365,6 +1645,11 @@ class SuperDestroyerView:
                 if rect.collidepoint(mouse_pos):
                     self.hovered_zone = zone_id
                     break
+            self.hovered_launch = bool(
+                self.active_zone == ZONE_HANGAR
+                and not self._dialogue_open
+                and self.btn_launch_rect.collidepoint(mouse_pos)
+            )
 
         # 1. Blit static pre-rendered orbital panoramic vista
         surface.blit(self.orbital_bg_surface, (0, 0))
@@ -1469,19 +1754,12 @@ class SuperDestroyerView:
             pygame.draw.lines(surface, (0, 220, 255), False, [(rx, ry + cw), (rx, ry), (rx + cw, ry)], 1)
             pygame.draw.lines(surface, (0, 220, 255), False, [(rx + rw - cw, ry), (rx + rw - 1, ry), (rx + rw - 1, ry + cw)], 1)
 
-            # Row 1: Reaction Header (left) & Patriotism Delta (right)
+            # Row 1: Reaction Header
             hdr_surf = self._modal_text_cache.get("response_header")
             if hdr_surf:
                 surface.blit(hdr_surf, (self.modal_response_rect.x + 14, self.modal_response_rect.y + 6))
 
-            d_surf = self._modal_text_cache.get("response_delta")
-            if d_surf:
-                surface.blit(
-                    d_surf,
-                    (self.modal_response_rect.right - d_surf.get_width() - 14, self.modal_response_rect.y + 6),
-                )
-
-            # Row 2+: Spoken dialogue response lines (below header & delta)
+            # Row 2+: Spoken dialogue response lines (below header)
             lh_resp = self.font_modal_response.get_linesize() if self.font_modal_response else 18
             resp_y = self.modal_response_rect.y + 24
             resp_surfs = self._modal_text_cache.get("response_lines", [])
@@ -1489,12 +1767,12 @@ class SuperDestroyerView:
                 surface.blit(rsurf, (self.modal_response_rect.x + 14, resp_y))
                 resp_y += lh_resp
 
-        # 6. Three Option Stance Cards (Two-Row Layout: Row 1 = Tag + Delta, Row 2 = Statement Body)
+        # 6. Three Option Cards (Two-Row Layout: Row 1 = Option Number, Row 2 = Statement Body)
         for stance, rect in self.modal_option_rects.items():
             if self.dialogue_completed_mode:
                 is_selected = (stance == self.selected_stance)
                 bg_col = (20, 32, 48) if is_selected else (10, 14, 22)
-                border_col = (255, 215, 50) if is_selected else (25, 38, 52)
+                border_col = (0, 220, 255) if is_selected else (25, 38, 52)
                 bw = 2 if is_selected else 1
             else:
                 is_hovered = (stance == self.hovered_stance)
@@ -1505,14 +1783,10 @@ class SuperDestroyerView:
             pygame.draw.rect(surface, bg_col, rect)
             pygame.draw.rect(surface, border_col, rect, width=bw)
 
-            # Row 1: Stance Tag (left) & Patriotism Delta Badge (right)
+            # Row 1: Option Key Tag (left)
             opt_tag = self._modal_text_cache.get(f"opt_tag_{stance}")
             if opt_tag:
                 surface.blit(opt_tag, (rect.x + 14, rect.y + 6))
-
-            opt_delta = self._modal_text_cache.get(f"opt_delta_{stance}")
-            if opt_delta:
-                surface.blit(opt_delta, (rect.right - opt_delta.get_width() - 14, rect.y + 6))
 
             # Row 2: Dialogue statement body
             opt_body = self._modal_text_cache.get(f"opt_body_{stance}")
