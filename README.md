@@ -56,6 +56,11 @@ A custom 2D camera tracks the player ship across the map, clamping to world bord
 ## Key Features
 
 - **Story Campaign Mode & Pilot Enlistment:** Streamlined story-driven main menu (`NEW GAME`, conditional `CONTINUE` locked until enlistment, `SETTINGS`, `TACTICAL MANUAL`, `QUIT`). Recruits enter their official pilot callsign, review the official Super Earth Helldivers Division **Contract of Employment** (with all indemnity, martyrdom deductions, and binding Clause 6.4), and take the Oath of Democracy before deploying.
+- **Super Destroyer Hub Deck Screen (`game_state == "super_destroyer"`):** Staging tactical and narrative hub aboard the *SES Leviathan of Truth* overlooking Vandalon Prime. Freely explore 3 operational zones:
+  - **The Bridge:** Confer with Democracy Officer Karl Reiner and Ship Master Cynthia Vance regarding high command directives and the Super Earth Patriotism Index.
+  - **The Ready Room:** Debrief Fireteam Viper (Apex, Braker, Ghost, Doc) with dynamic dialogue reacting to recent sortie casualties, flawless squad extractions, and replacement reinforcements.
+  - **The Hangar Deck:** Inspect real-time aircraft hull integrity with Chief Engineer Rylan Ortiz, review operational sortie briefing cards, and initiate hydraulic catapult launch into combat.
+- **Interactive 3-Choice Dialogue System:** Dynamic typewriter narrative interface with high-res character portraits and stance options (Zealot, Neutral, Cynical, Defiant) directly modulating player loyalty.
 - **Super Earth Naval Academy Tutorial Mission (`academy_briefing.py`):** The introductory campaign training sortie guided by Chief Flight Drill Instructor Commander Vance. Features 6 progressive training drills (yaw steering gates, afterburners & air brakes, hazard perimeter turnaround, convergence pip cannon accuracy, radar modes & missile lock, and 500kg CAS bunker strike) culminating in a graduation ceremony awarding the "Wings of Liberty" aviator badge and unlocking operational stratagems.
 - **Mission Selection System:** Tactical operational menu (`game_state = "mission_select"`) featuring 5 focused modes to prevent chaotic gameplay.
 - **5 Focused Operational Modes:**
@@ -95,7 +100,7 @@ A custom 2D camera tracks the player ship across the map, clamping to world bord
 - **Dual Defense System (Shield + Health):** Energy shields absorb incoming damage before hull health is impacted.
 - **Autonomous Enemy Aircraft:** Hostile `Light_Enemy` units spawn in coordinated squadrons with flocking and combat AI.
 - **In-Game Help Menu (6 Tabs):** Multi-tab help overlay providing weapons, abilities, radar, controls, wave combat, and Helldiver support guidance.
-- **Automated Headless Test Suite:** 99 automated pytest tests covering mission configs, ground combat, fabricators, stratagems, flight physics, player profiles, enlistment, academy drills, and regression suites.
+- **Automated Headless Test Suite:** 301 automated pytest tests covering mission configs, ground combat, fabricators, stratagems, flight physics, player profiles, enlistment, academy drills, Super Destroyer hub deck, NPC dialogue trees, aircraft diagnostics, and regression suites.
 
 
 
@@ -362,6 +367,11 @@ Access the interactive in-game tactical manual at any time by pressing **`H`**. 
 | **Close Help / Settings / Weapon Menu** | `Escape` (`ESC`) | Click `X` / close button | In Menus |
 | **Respawn** | `R` | Click `RESPAWN` | Game Over (`Health <= 0`) |
 | **Return to Main Menu** | `Spacebar` | Click `MAIN MENU` | Game Over (`Health <= 0`) |
+| **Cycle Hub Deck Zones** | `A` / `D` | `Left` / `Right Arrow` | Super Destroyer Hub Deck |
+| **Select Dialogue Stance Option** | `1` / `2` / `3` | Click Stance Card | Super Destroyer NPC Dialogue |
+| **Close Dialogue / Exit to Menu** | `Escape` (`ESC`) | Click `CLOSE` | Super Destroyer Hub Deck |
+| **Catapult Launch Sortie** | `Spacebar` / `F` | Click `LAUNCH SORTIE` | Super Destroyer Hangar Deck |
+| **Return to Super Destroyer Hub** | `H` / `Enter` | Click `RETURN TO HUB` | Mission Debriefing Screen |
 ## Game Audio & Extensible Settings Architecture
 
 Eagle-1-64Bit features a centralized, 16-channel audio system (`audio_manager.py`) with procedural audio generation (`generate_audio_assets.py`), dynamic combat music adaptation, thruster engine sound modulation, anti-clipping voice limiting, and an extensible tabbed Settings Menu (`settings_menu.py`).
