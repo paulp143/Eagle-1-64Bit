@@ -717,6 +717,92 @@ def test_dialogue_modal_opens_on_npc_click_and_blocks_zone_navigation(story_mgr)
     assert view.is_dialogue_open is False
 
 
+# -----------------------------------------------------------------------------
+# Issue #63: Public set_dialogue_open API & Property Setter Tests
+# -----------------------------------------------------------------------------
+
+def test_set_dialogue_open_toggles_state_via_method_and_property(story_mgr):
+    """Verify set_dialogue_open and is_dialogue_open property setter toggle state correctly."""
+    audio_mock = MagicMock()
+    view = SuperDestroyerView(story_manager=story_mgr, audio_manager=audio_mock)
+    assert view.is_dialogue_open is False
+
+    # Method calls
+    view.set_dialogue_open(True)
+    assert view.is_dialogue_open is True
+    view.set_dialogue_open(False)
+    assert view.is_dialogue_open is False
+
+    # Property setter assignments
+    view.is_dialogue_open = True
+    assert view.is_dialogue_open is True
+    view.is_dialogue_open = False
+    assert view.is_dialogue_open is False
+
+
+@pytest.mark.parametrize("invalid_val", [1, 0, -1, "True", "False", "", None, [], {}, 1.0])
+def test_set_dialogue_open_rejects_non_boolean_types(story_mgr, invalid_val):
+    """Verify set_dialogue_open and is_dialogue_open property strictly reject non-bool types with TypeError."""
+    view = SuperDestroyerView(story_manager=story_mgr)
+
+    with pytest.raises(TypeError, match="is_open must be a bool"):
+        view.set_dialogue_open(invalid_val)
+
+    with pytest.raises(TypeError, match="is_open must be a bool"):
+        view.is_dialogue_open = invalid_val
+
+
+def test_set_dialogue_open_blocks_navigation_keys_and_clicks(story_mgr):
+    """Verify setting dialogue open blocks keyboard navigation, tab clicks, and launch button."""
+    audio_mock = MagicMock()
+    view = SuperDestroyerView(story_manager=story_mgr, audio_manager=audio_mock)
+    assert view.active_zone == ZONE_BRIDGE
+
+    view.set_dialogue_open(True)
+    assert view.is_dialogue_open is True
+
+    # Keyboard navigation events must be swallowed
+    for key in (pygame.K_a, pygame.K_d, pygame.K_LEFT, pygame.K_RIGHT, pygame.K_l):
+        evt = pygame.event.Event(pygame.KEYDOWN, key=key)
+        assert view.handle_event(evt) is None
+    assert view.active_zone == ZONE_BRIDGE
+
+    # Zone tab mouse clicks must be swallowed
+    ready_tab_rect = view.zone_tab_rects[ZONE_READY_ROOM]
+    click_tab = pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=ready_tab_rect.center)
+    assert view.handle_event(click_tab) is None
+    assert view.active_zone == ZONE_BRIDGE
+
+    # Launch button clicks must be swallowed
+    click_launch = pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=view.btn_launch_rect.center)
+    assert view.handle_event(click_launch) is None
+
+
+def test_set_dialogue_open_false_cleans_up_modal_state_and_restores_navigation(story_mgr):
+    """Verify setting dialogue open to False closes active modal state and restores normal event handling."""
+    view = SuperDestroyerView(story_manager=story_mgr)
+    node = view.open_npc_dialogue("npc_reiner")
+    assert node is not None
+    assert view.is_dialogue_open is True
+    assert view.active_npc_id == "npc_reiner"
+    assert view.active_dialogue_node is not None
+
+    # Close dialogue via property setter
+    view.is_dialogue_open = False
+    assert view.is_dialogue_open is False
+    assert view.active_npc_id is None
+    assert view.active_dialogue_node is None
+    assert view.typewriter_chars == 0.0
+    assert len(view._modal_text_cache) == 0
+
+    # Normal navigation is restored
+    evt_d = pygame.event.Event(pygame.KEYDOWN, key=pygame.K_d)
+    res = view.handle_event(evt_d)
+    assert res is not None
+    assert res["action"] == "select_zone"
+    assert view.active_zone == ZONE_READY_ROOM
+
+
 def test_dialogue_typewriter_advances_and_space_skips_to_full_text(story_mgr):
     """Verify typewriter advances proportionally with dt and Spacebar immediately skips to full prompt."""
     view = SuperDestroyerView(story_manager=story_mgr)

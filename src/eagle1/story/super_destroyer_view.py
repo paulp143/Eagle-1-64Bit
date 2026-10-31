@@ -173,15 +173,21 @@ class SuperDestroyerView:
         """Return whether an interactive dialogue modal is active."""
         return self._dialogue_open
 
+    @is_dialogue_open.setter
+    def is_dialogue_open(self, is_open: bool) -> None:
+        """Set whether an interactive dialogue modal is active (Issue #63)."""
+        self.set_dialogue_open(is_open)
+
     @property
     def aircraft_hull_ratio(self) -> float:
         """Return the current aircraft hull ratio recorded from the latest sortie."""
         return self.last_hull_ratio
 
     def set_dialogue_open(self, is_open: bool) -> None:
-        """Set whether the dialogue modal is open or closed (Issue #63)."""
-        open_val = bool(is_open)
-        if not open_val:
+        """Set whether the dialogue modal is open or closed with boolean validation (Issue #63)."""
+        if not isinstance(is_open, bool):
+            raise TypeError(f"is_open must be a bool, got {type(is_open).__name__}")
+        if not is_open:
             self.close_dialogue()
         else:
             self._dialogue_open = True
