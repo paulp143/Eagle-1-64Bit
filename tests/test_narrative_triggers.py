@@ -420,3 +420,26 @@ def test_manager_works_without_comms_and_mission_controller(story_mgr):
     assert story_mgr.is_dialogue_active is True
     assert story_mgr.time_dilation == DECISION_TIME_DILATION
     assert NORMAL_TIME_DILATION != DECISION_TIME_DILATION
+
+
+def test_public_api_exports():
+    """The narrative trigger API is re-exported from the eagle1.story package."""
+    import eagle1.story as story_pkg
+
+    expected = {
+        "CONDITION_AERIAL_KILLS",
+        "CONDITION_BOSS_HP_BELOW",
+        "CONDITION_CUSTOM",
+        "CONDITION_ELAPSED_TIME",
+        "CONDITION_FABRICATORS_DESTROYED",
+        "CONDITION_HELLDIVER_CASUALTIES",
+        "CONDITION_WAVE_REACHED",
+        "VALID_CONDITION_TYPES",
+        "CombatTelemetrySnapshot",
+        "NarrativeTriggerManager",
+        "SortieEventTrigger",
+        "validate_sortie_event_trigger",
+    }
+    assert expected <= set(story_pkg.__all__)
+    for name in expected:
+        assert hasattr(story_pkg, name)
