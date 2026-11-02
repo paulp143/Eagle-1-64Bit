@@ -1,5 +1,6 @@
 """Unit tests for in-flight narrative triggers and telemetry sanitization (Issue #68)."""
 
+import logging
 import math
 
 import pytest
@@ -173,6 +174,7 @@ def test_has_radio_payload_reflects_dialogue_or_banter():
 # -----------------------------------------------------------------------------
 
 from eagle1.story import CampaignSaveManager, CommsHUD, MissionController, StoryManager  # noqa: E402
+from eagle1.story import narrative_trigger_manager as ntm_module  # noqa: E402
 from eagle1.story.narrative_trigger_manager import NarrativeTriggerManager  # noqa: E402
 from eagle1.story.story_manager import DECISION_TIME_DILATION, NORMAL_TIME_DILATION  # noqa: E402
 
@@ -235,17 +237,17 @@ def test_each_condition_type_fires_at_threshold(manager, condition_type, thresho
     """Standard conditions stay silent below the threshold and fire at it."""
     manager.register_trigger(_trigger("t", condition_type=condition_type, threshold=threshold))
 
-    assert manager.evaluate(CombatTelemetrySnapshot(**below)) == []
-    assert manager.evaluate(CombatTelemetrySnapshot(**at)) == ["t"]
+    assert manager.evaluate(CombatTelemetrySnapshot(**below)) == ()
+    assert manager.evaluate(CombatTelemetrySnapshot(**at)) == ("t",)
 
 
 def test_boss_hp_below_requires_active_boss(manager):
     """boss_hp_below fires only while a boss is active and below the ratio."""
     manager.register_trigger(_trigger("boss", condition_type=CONDITION_BOSS_HP_BELOW, threshold=0.5))
 
-    assert manager.evaluate(CombatTelemetrySnapshot(boss_active=True, boss_hp_ratio=0.5)) == []
-    assert manager.evaluate(CombatTelemetrySnapshot(boss_active=False, boss_hp_ratio=0.1)) == []
-    assert manager.evaluate(CombatTelemetrySnapshot(boss_active=True, boss_hp_ratio=0.49)) == ["boss"]
+    assert manager.evaluate(CombatTelemetrySnapshot(boss_active=True, boss_hp_ratio=0.5)) == ()
+    assert manager.evaluate(CombatTelemetrySnapshot(boss_active=False, boss_hp_ratio=0.1)) == ()
+    assert manager.evaluate(CombatTelemetrySnapshot(boss_active=True, boss_hp_ratio=0.49)) == ("boss",)
 
 
 def test_custom_predicate_fires_and_exception_is_contained(manager):
@@ -258,7 +260,7 @@ def test_custom_predicate_fires_and_exception_is_contained(manager):
             predicate=lambda snap: snap.active_500kg_inbound,
         )
     )
-    assert manager.evaluate(CombatTelemetrySnapshot(active_500kg_inbound=True)) == ["custom_ok"]
+    assert manager.evaluate(CombatTelemetrySnapshot(active_500kg_inbound=True)) == ("custom_ok",)
 
     def _boom(_snap):
         raise RuntimeError("bad predicate")
@@ -266,7 +268,7 @@ def test_custom_predicate_fires_and_exception_is_contained(manager):
     manager.register_trigger(
         _trigger("custom_boom", condition_type=CONDITION_CUSTOM, threshold=0, predicate=_boom)
     )
-    assert manager.evaluate(CombatTelemetrySnapshot()) == []
+    assert manager.evaluate(CombatTelemetrySnapshot()) == ()
 
 
 def test_once_trigger_never_refires_in_same_sortie(manager):
@@ -274,19 +276,19 @@ def test_once_trigger_never_refires_in_same_sortie(manager):
     manager.register_trigger(_trigger("t", threshold=1))
     snap = CombatTelemetrySnapshot(aerial_kills=3)
 
-    assert manager.evaluate(snap) == ["t"]
-    assert manager.evaluate(snap) == []
-    assert manager.evaluate(snap) == []
+    assert manager.evaluate(snap) == ("t",)
+    assert manager.evaluate(snap) == ()
+    assert manager.evaluate(snap) == ()
 
 
 def test_repeatable_trigger_fires_on_rising_edge_only(manager):
     """once=False fires on each false-to-true transition of its condition."""
     manager.register_trigger(_trigger("t", threshold=1, once=False))
 
-    assert manager.evaluate(CombatTelemetrySnapshot(aerial_kills=1)) == ["t"]
-    assert manager.evaluate(CombatTelemetrySnapshot(aerial_kills=1)) == []
-    assert manager.evaluate(CombatTelemetrySnapshot(aerial_kills=0)) == []
-    assert manager.evaluate(CombatTelemetrySnapshot(aerial_kills=1)) == ["t"]
+    assert manager.evaluate(CombatTelemetrySnapshot(aerial_kills=1)) == ("t",)
+    assert manager.evaluate(CombatTelemetrySnapshot(aerial_kills=1)) == ()
+    assert manager.evaluate(CombatTelemetrySnapshot(aerial_kills=0)) == ()
+    assert manager.evaluate(CombatTelemetrySnapshot(aerial_kills=1)) == ("t",)
 
 
 def test_simultaneous_triggers_ordered_by_priority_then_registration(manager):
@@ -297,7 +299,7 @@ def test_simultaneous_triggers_ordered_by_priority_then_registration(manager):
         _trigger("c", priority=5),
     ])
 
-    assert manager.evaluate(CombatTelemetrySnapshot(aerial_kills=1)) == ["b", "c", "a"]
+    assert manager.evaluate(CombatTelemetrySnapshot(aerial_kills=1)) == ("b", "c", "a")
 
 
 def test_objective_only_trigger_applies_immediately(manager, mission_ctrl):
@@ -313,7 +315,7 @@ def test_dialogue_trigger_engages_time_dilation(manager, story_mgr, comms):
     """Firing a dialogue trigger starts the interactive beat with decision time dilation."""
     manager.register_trigger(_trigger("dlg", threshold=1, dialogue_node_id="sortie_1_inflight", objective_update=None))
 
-    assert manager.evaluate(CombatTelemetrySnapshot(aerial_kills=1)) == ["dlg"]
+    assert manager.evaluate(CombatTelemetrySnapshot(aerial_kills=1)) == ("dlg",)
     assert story_mgr.time_dilation == DECISION_TIME_DILATION
     assert comms.is_active is True
     assert manager.dispatch_log == ["dlg"]
@@ -377,16 +379,16 @@ def test_reset_for_sortie_clears_state_and_switches_triggers(manager):
     manager.register_trigger(_trigger("s2", threshold=1, sortie_num=2))
     snap = CombatTelemetrySnapshot(aerial_kills=1)
 
-    assert manager.evaluate(snap) == ["s1"]
+    assert manager.evaluate(snap) == ("s1",)
     manager.reset_for_sortie(1)
     assert manager.fired_trigger_ids == set()
     assert manager.pending_queue == []
     assert manager.dispatch_log == []
-    assert manager.evaluate(snap) == ["s1"]
+    assert manager.evaluate(snap) == ("s1",)
 
-    assert manager.evaluate(snap) == []
+    assert manager.evaluate(snap) == ()
     manager.reset_for_sortie(2)
-    assert manager.evaluate(snap) == ["s2"]
+    assert manager.evaluate(snap) == ("s2",)
 
 
 @pytest.mark.parametrize("bad_sortie", [True, 0, 99, "2", None])
@@ -405,7 +407,7 @@ def test_duplicate_trigger_id_rejected(manager):
 
 def test_evaluate_with_invalid_telemetry_returns_empty(manager):
     """Non-snapshot telemetry is ignored instead of raising."""
-    assert manager.evaluate(None) == []
+    assert manager.evaluate(None) == ()
 
 
 def test_manager_works_without_comms_and_mission_controller(story_mgr):
@@ -443,3 +445,117 @@ def test_public_api_exports():
     assert expected <= set(story_pkg.__all__)
     for name in expected:
         assert hasattr(story_pkg, name)
+
+
+# -----------------------------------------------------------------------------
+# 4. Ship-review hardening: queue ordering, latching, logging and delivery
+# -----------------------------------------------------------------------------
+
+def _banter(trigger_id, **kwargs):
+    """Build a once-only banter trigger without an objective payload."""
+    return _trigger(trigger_id, banter_category="kill_streak", objective_update=None, **kwargs)
+
+
+def test_late_high_priority_beat_jumps_queue(manager, comms):
+    """A higher-priority beat that fires on a later frame is dispatched before older queued beats."""
+    manager.register_triggers([
+        _banter("low", threshold=1, priority=1),
+        _banter("high", threshold=2, priority=9),
+    ])
+    comms.trigger_callout("Other", "busy channel")
+
+    manager.evaluate(CombatTelemetrySnapshot(aerial_kills=1))
+    manager.evaluate(CombatTelemetrySnapshot(aerial_kills=2))
+    assert [t.trigger_id for t in manager.pending_queue] == ["high", "low"]
+
+    comms.dismiss()
+    manager.evaluate(CombatTelemetrySnapshot(aerial_kills=2))
+    assert manager.dispatch_log == ["high"]
+
+
+def test_repeatable_radio_trigger_not_queued_twice(manager, comms):
+    """A repeatable beat that re-arms while still queued does not create a duplicate queue entry."""
+    manager.register_trigger(_banter("rep", threshold=1, once=False))
+    comms.trigger_callout("Other", "busy channel")
+
+    for kills in (1, 0, 1):
+        manager.evaluate(CombatTelemetrySnapshot(aerial_kills=kills))
+
+    assert [t.trigger_id for t in manager.pending_queue] == ["rep"]
+
+
+def test_banter_rotates_through_pool(manager, comms):
+    """Consecutive banter dispatches select different lines from the category pool."""
+    manager.register_triggers([_banter("a", priority=2), _banter("b", priority=1)])
+    snap = CombatTelemetrySnapshot(aerial_kills=1)
+
+    manager.evaluate(snap)
+    first_line = comms.current_node.prompt
+    comms.dismiss()
+    manager.evaluate(snap)
+    second_line = comms.current_node.prompt
+
+    assert first_line != second_line
+
+
+def test_reset_clears_repeatable_latch(manager):
+    """After a reset, a repeatable trigger whose condition stays true fires again."""
+    manager.register_trigger(_trigger("rep", threshold=1, once=False))
+    snap = CombatTelemetrySnapshot(aerial_kills=1)
+
+    assert list(manager.evaluate(snap)) == ["rep"]
+    assert list(manager.evaluate(snap)) == []
+    manager.reset_for_sortie(1)
+    assert list(manager.evaluate(snap)) == ["rep"]
+
+
+def test_idle_evaluate_returns_empty_sequence(manager):
+    """A frame without fired triggers returns an empty sequence."""
+    manager.register_trigger(_trigger("t", threshold=5))
+
+    assert manager.evaluate(CombatTelemetrySnapshot()) == ()
+
+
+def test_failing_predicate_is_logged_once_until_reset(manager, caplog):
+    """A raising predicate warns once per sortie instead of every frame."""
+    def _boom(_snap):
+        raise RuntimeError("bad predicate")
+
+    manager.register_trigger(_trigger("boom", condition_type=CONDITION_CUSTOM, threshold=0, predicate=_boom))
+
+    def _warnings():
+        return sum("Custom predicate" in record.getMessage() for record in caplog.records)
+
+    with caplog.at_level(logging.WARNING, logger="eagle1.story.narrative_trigger_manager"):
+        for _ in range(5):
+            manager.evaluate(CombatTelemetrySnapshot())
+        assert _warnings() == 1
+
+        manager.reset_for_sortie(1)
+        manager.evaluate(CombatTelemetrySnapshot())
+        assert _warnings() == 2
+
+
+def test_undeliverable_beat_is_dropped_and_not_logged(story_mgr):
+    """Banter without a comms HUD cannot be delivered, so it is dropped and not recorded as dispatched."""
+    manager = NarrativeTriggerManager(story_mgr)
+    manager.reset_for_sortie(1)
+    manager.register_trigger(_banter("banter", threshold=1))
+
+    manager.evaluate(CombatTelemetrySnapshot(aerial_kills=1))
+
+    assert manager.dispatch_log == []
+    assert manager.pending_queue == []
+
+
+def test_dispatch_log_is_capped(manager, comms, monkeypatch):
+    """The dispatch log keeps only the most recent MAX_DISPATCH_LOG entries."""
+    monkeypatch.setattr(ntm_module, "MAX_DISPATCH_LOG", 2, raising=False)
+    manager.register_triggers([_banter("a", priority=3), _banter("b", priority=2), _banter("c", priority=1)])
+    snap = CombatTelemetrySnapshot(aerial_kills=1)
+
+    for _ in range(3):
+        manager.evaluate(snap)
+        comms.dismiss()
+
+    assert manager.dispatch_log == ["b", "c"]

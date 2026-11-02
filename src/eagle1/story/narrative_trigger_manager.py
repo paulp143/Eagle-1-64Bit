@@ -8,7 +8,7 @@ the tactical HUD objective in sync with the narrative.
 from dataclasses import dataclass, field
 import logging
 import math
-from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, List, Optional, Set, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from eagle1.story.dialogue_data import BANTER_QUEUES, get_contextual_banter
 from eagle1.story.dialogue_db import get_dialogue_node
@@ -27,6 +27,8 @@ CONDITION_FABRICATORS_DESTROYED: str = "fabricators_destroyed"
 CONDITION_BOSS_HP_BELOW: str = "boss_hp_below"
 CONDITION_HELLDIVER_CASUALTIES: str = "helldiver_casualties"
 CONDITION_CUSTOM: str = "custom"
+
+MAX_DISPATCH_LOG: int = 256
 
 VALID_CONDITION_TYPES: Tuple[str, ...] = (
     CONDITION_ELAPSED_TIME,
@@ -214,6 +216,8 @@ class NarrativeTriggerManager:
         self._triggers_by_sortie: Dict[int, List[SortieEventTrigger]] = {}
         self._registration_index: Dict[str, int] = {}
         self._condition_latched: Dict[str, bool] = {}
+        self._failed_predicate_ids: Set[str] = set()
+        self._dispatch_count: int = 0
 
     def register_trigger(self, trigger: SortieEventTrigger) -> None:
         """Validate and register a trigger for its sortie, keeping each sortie's list sorted."""
@@ -243,7 +247,9 @@ class NarrativeTriggerManager:
         self.fired_trigger_ids.clear()
         self.pending_queue.clear()
         self._condition_latched.clear()
+        self._failed_predicate_ids.clear()
         self.dispatch_log.clear()
+        self._dispatch_count = 0
 
     def is_comms_busy(self) -> bool:
         """Return True while an interactive dialogue or a comms overlay occupies the radio."""
@@ -270,22 +276,26 @@ class NarrativeTriggerManager:
             try:
                 return bool(trigger.predicate(telemetry))
             except Exception:
-                # Third-party predicates must never crash the 60 FPS loop; log and treat as not met.
-                logger.warning("Custom predicate for trigger '%s' raised", trigger.trigger_id, exc_info=True)
+                # Third-party predicates must never crash the 60 FPS loop. Log once per trigger
+                # until the next sortie reset instead of flooding the log at 60 Hz.
+                if trigger.trigger_id not in self._failed_predicate_ids:
+                    self._failed_predicate_ids.add(trigger.trigger_id)
+                    logger.warning("Custom predicate for trigger '%s' raised", trigger.trigger_id, exc_info=True)
                 return False
         return False
 
-    def evaluate(self, telemetry: CombatTelemetrySnapshot) -> List[str]:
+    def evaluate(self, telemetry: CombatTelemetrySnapshot) -> Sequence[str]:
         """Evaluate the active sortie's triggers for one frame.
 
         Returns:
-            Trigger ids that fired during this call, in priority order.
+            Trigger ids that fired during this call, in priority order. Frames without
+            a fired trigger return the shared empty tuple and allocate nothing.
         """
         if not isinstance(telemetry, CombatTelemetrySnapshot):
             logger.warning("evaluate() expected CombatTelemetrySnapshot, got %s", type(telemetry).__name__)
-            return []
+            return ()
 
-        newly_fired: List[str] = []
+        newly_fired: Optional[List[str]] = None
         for trigger in self._triggers_by_sortie.get(self.active_sortie_num, ()):
             tid = trigger.trigger_id
             if trigger.once and tid in self.fired_trigger_ids:
@@ -304,6 +314,8 @@ class NarrativeTriggerManager:
                     continue
 
             self.fired_trigger_ids.add(tid)
+            if newly_fired is None:
+                newly_fired = []
             newly_fired.append(tid)
             if trigger.has_radio_payload:
                 self.pending_queue.append(trigger)
@@ -314,7 +326,7 @@ class NarrativeTriggerManager:
             self.pending_queue.sort(key=self._sort_key)
 
         self.dispatch_next_pending()
-        return newly_fired
+        return tuple(newly_fired) if newly_fired is not None else ()
 
     def dispatch_next_pending(self) -> Optional[str]:
         """Dispatch the highest-priority queued beat if the radio is free."""
@@ -322,8 +334,14 @@ class NarrativeTriggerManager:
             return None
 
         trigger = self.pending_queue.pop(0)
-        self._dispatch(trigger)
+        if not self._dispatch(trigger):
+            logger.warning("Narrative beat '%s' could not be delivered and was dropped", trigger.trigger_id)
+            return None
+
+        self._dispatch_count += 1
         self.dispatch_log.append(trigger.trigger_id)
+        if len(self.dispatch_log) > MAX_DISPATCH_LOG:
+            del self.dispatch_log[0]
         return trigger.trigger_id
 
     def _sort_key(self, trigger: SortieEventTrigger) -> Tuple[int, int]:
@@ -338,23 +356,31 @@ class NarrativeTriggerManager:
             return MIN_SORTIE_NUM
         return sortie_num
 
-    def _dispatch(self, trigger: SortieEventTrigger) -> None:
+    def _dispatch(self, trigger: SortieEventTrigger) -> bool:
+        """Deliver a trigger's radio beat and apply its objective; return True if the beat was delivered."""
+        delivered = False
         if trigger.dialogue_node_id is not None:
-            if not self.story_manager.start_dialogue(trigger.dialogue_node_id):
-                logger.warning("Dialogue trigger '%s' could not start its node", trigger.trigger_id)
-            elif self.comms_hud is not None:
+            if self.story_manager.start_dialogue(trigger.dialogue_node_id):
                 node = get_dialogue_node(trigger.dialogue_node_id)
-                if node is not None:
+                if self.comms_hud is not None:
                     self.comms_hud.trigger_transmission(node)
+                    delivered = True
+                else:
+                    # An interactive node is active in StoryManager even without a HUD;
+                    # a non-interactive node would be invisible, so it counts as undelivered.
+                    delivered = bool(node.options)
+            else:
+                logger.warning("Dialogue trigger '%s' could not start its node", trigger.trigger_id)
         elif trigger.banter_category is not None:
             if self.comms_hud is None:
                 logger.debug("Skipping banter trigger '%s' without a comms HUD", trigger.trigger_id)
             else:
-                line = get_contextual_banter(trigger.banter_category, selection_index=len(self.dispatch_log))
+                line = get_contextual_banter(trigger.banter_category, selection_index=self._dispatch_count)
                 if line is not None:
-                    self.comms_hud.trigger_callout(line.speaker, line.text, portrait=line.portrait_path)
+                    delivered = bool(self.comms_hud.trigger_callout(line.speaker, line.text, portrait=line.portrait_path))
 
         self._apply_objective(trigger)
+        return delivered
 
     def _apply_objective(self, trigger: SortieEventTrigger) -> None:
         if trigger.objective_update and self.mission_controller is not None:
