@@ -428,3 +428,40 @@ def test_advance_sortie_upper_boundary_and_coordinate_clamping(temp_campaign_dir
 
 
 
+
+
+# -----------------------------------------------------------------------------
+# start_dialogue() and is_dialogue_active (Issue #68)
+# -----------------------------------------------------------------------------
+
+def test_start_dialogue_engages_decision_time_dilation(temp_campaign_dir):
+    """Starting an interactive node by id engages decision time dilation."""
+    story = StoryManager(save_manager=CampaignSaveManager(data_dir=temp_campaign_dir))
+
+    assert story.start_dialogue("sortie_1_inflight") is True
+    assert story.active_dialogue is not None
+    assert story.active_dialogue.node_id == "sortie_1_inflight"
+    assert story.time_dilation == DECISION_TIME_DILATION
+    assert story.is_dialogue_active is True
+
+
+@pytest.mark.parametrize("bad_id", [None, True, 123, "", "   ", "no_such_node"])
+def test_start_dialogue_rejects_invalid_ids(temp_campaign_dir, bad_id):
+    """Invalid or unknown node ids return False without changing dialogue state."""
+    story = StoryManager(save_manager=CampaignSaveManager(data_dir=temp_campaign_dir))
+
+    assert story.start_dialogue(bad_id) is False
+    assert story.active_dialogue is None
+    assert story.time_dilation == NORMAL_TIME_DILATION
+    assert story.is_dialogue_active is False
+
+
+def test_record_choice_clears_dialogue_started_via_start_dialogue(temp_campaign_dir):
+    """A choice on a node started via start_dialogue releases time dilation."""
+    story = StoryManager(save_manager=CampaignSaveManager(data_dir=temp_campaign_dir))
+    story.start_dialogue("sortie_1_inflight")
+
+    story.record_choice("sortie_1_inflight", "neutral")
+
+    assert story.is_dialogue_active is False
+    assert story.time_dilation == NORMAL_TIME_DILATION

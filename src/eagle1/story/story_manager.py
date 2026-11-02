@@ -171,6 +171,26 @@ class StoryManager:
         # Slow down time to 0.4 during decision beats to permit reaction without combat stress
         self.time_dilation = DECISION_TIME_DILATION if node is not None else NORMAL_TIME_DILATION
 
+    @property
+    def is_dialogue_active(self) -> bool:
+        """Return True while an interactive dialogue beat awaits the pilot's choice."""
+        return self.active_dialogue is not None
+
+    def start_dialogue(self, node_id: str) -> bool:
+        """Activate a dialogue node by id; interactive nodes engage decision time dilation.
+
+        Returns:
+            True if the node exists and was started, False otherwise.
+        """
+        node = get_dialogue_node(node_id)
+        if node is None:
+            logger.warning("Cannot start unknown dialogue node %r", node_id)
+            return False
+
+        if node.options:
+            self.set_active_dialogue(node)
+        return True
+
     def record_choice(self, node_id: str, stance: str) -> Optional[DialogueOption]:
         """Record pilot choice for a dialogue node, apply delta, and resume time flow."""
         if not isinstance(node_id, str) or not node_id.strip():
