@@ -8,11 +8,15 @@ the tactical HUD objective in sync with the narrative.
 from dataclasses import dataclass, field
 import logging
 import math
-from typing import Any, Callable, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, List, Optional, Set, Tuple
 
-from eagle1.story.dialogue_data import BANTER_QUEUES
+from eagle1.story.dialogue_data import BANTER_QUEUES, get_contextual_banter
 from eagle1.story.dialogue_db import get_dialogue_node
-from eagle1.story.mission_controller import MAX_SORTIE_NUM, MIN_SORTIE_NUM
+from eagle1.story.mission_controller import MAX_SORTIE_NUM, MIN_SORTIE_NUM, MissionController
+from eagle1.story.story_manager import StoryManager
+
+if TYPE_CHECKING:
+    from eagle1.story.comms_hud import CommsHUD
 
 logger = logging.getLogger(__name__)
 
@@ -186,3 +190,172 @@ def validate_sortie_event_trigger(trigger: SortieEventTrigger) -> None:
 
     if not isinstance(trigger.once, bool):
         raise ValueError(f"Trigger '{tid}': once must be a bool")
+
+
+class NarrativeTriggerManager:
+    """Evaluates sortie triggers against combat telemetry and dispatches narrative beats."""
+
+    def __init__(
+        self,
+        story_manager: StoryManager,
+        comms_hud: Optional["CommsHUD"] = None,
+        mission_controller: Optional[MissionController] = None,
+    ) -> None:
+        if story_manager is None or isinstance(story_manager, bool) or not isinstance(story_manager, StoryManager):
+            raise TypeError("story_manager must be a valid StoryManager instance")
+
+        self.story_manager = story_manager
+        self.comms_hud = comms_hud
+        self.mission_controller = mission_controller
+        self.active_sortie_num: int = MIN_SORTIE_NUM
+        self.fired_trigger_ids: Set[str] = set()
+        self.pending_queue: List[SortieEventTrigger] = []
+        self.dispatch_log: List[str] = []
+        self._triggers_by_sortie: Dict[int, List[SortieEventTrigger]] = {}
+        self._registration_index: Dict[str, int] = {}
+        self._condition_latched: Dict[str, bool] = {}
+
+    def register_trigger(self, trigger: SortieEventTrigger) -> None:
+        """Validate and register a trigger for its sortie, keeping each sortie's list sorted."""
+        validate_sortie_event_trigger(trigger)
+        if trigger.trigger_id in self._registration_index:
+            raise ValueError(f"Duplicate trigger_id '{trigger.trigger_id}'")
+
+        self._registration_index[trigger.trigger_id] = len(self._registration_index)
+        bucket = self._triggers_by_sortie.setdefault(trigger.sortie_num, [])
+        bucket.append(trigger)
+        bucket.sort(key=self._sort_key)
+
+    def register_triggers(self, triggers: Iterable[SortieEventTrigger]) -> None:
+        """Register several triggers; the first invalid one aborts the remaining registrations."""
+        for trigger in triggers:
+            self.register_trigger(trigger)
+
+    def get_triggers_for_sortie(self, sortie_num: int) -> Tuple[SortieEventTrigger, ...]:
+        """Return the registered triggers for a sortie in evaluation order."""
+        if isinstance(sortie_num, bool) or not isinstance(sortie_num, int):
+            return ()
+        return tuple(self._triggers_by_sortie.get(sortie_num, ()))
+
+    def reset_for_sortie(self, sortie_num: int) -> None:
+        """Clear fired state and pending beats, then select the given sortie's triggers."""
+        self.active_sortie_num = self._sanitize_sortie_num(sortie_num)
+        self.fired_trigger_ids.clear()
+        self.pending_queue.clear()
+        self._condition_latched.clear()
+        self.dispatch_log.clear()
+
+    def is_comms_busy(self) -> bool:
+        """Return True while an interactive dialogue or a comms overlay occupies the radio."""
+        if self.story_manager.is_dialogue_active:
+            return True
+        return self.comms_hud is not None and bool(self.comms_hud.is_active)
+
+    def is_condition_met(self, trigger: SortieEventTrigger, telemetry: CombatTelemetrySnapshot) -> bool:
+        """Evaluate a trigger's condition against sanitized telemetry."""
+        condition = trigger.condition_type
+        if condition == CONDITION_ELAPSED_TIME:
+            return telemetry.elapsed_seconds >= trigger.threshold
+        if condition == CONDITION_AERIAL_KILLS:
+            return telemetry.aerial_kills >= trigger.threshold
+        if condition == CONDITION_WAVE_REACHED:
+            return telemetry.current_wave >= trigger.threshold
+        if condition == CONDITION_FABRICATORS_DESTROYED:
+            return telemetry.fabricators_destroyed >= trigger.threshold
+        if condition == CONDITION_BOSS_HP_BELOW:
+            return telemetry.boss_active and telemetry.boss_hp_ratio < trigger.threshold
+        if condition == CONDITION_HELLDIVER_CASUALTIES:
+            return telemetry.casualties_count >= trigger.threshold
+        if condition == CONDITION_CUSTOM:
+            try:
+                return bool(trigger.predicate(telemetry))
+            except Exception:
+                # Third-party predicates must never crash the 60 FPS loop; log and treat as not met.
+                logger.warning("Custom predicate for trigger '%s' raised", trigger.trigger_id, exc_info=True)
+                return False
+        return False
+
+    def evaluate(self, telemetry: CombatTelemetrySnapshot) -> List[str]:
+        """Evaluate the active sortie's triggers for one frame.
+
+        Returns:
+            Trigger ids that fired during this call, in priority order.
+        """
+        if not isinstance(telemetry, CombatTelemetrySnapshot):
+            logger.warning("evaluate() expected CombatTelemetrySnapshot, got %s", type(telemetry).__name__)
+            return []
+
+        newly_fired: List[str] = []
+        for trigger in self._triggers_by_sortie.get(self.active_sortie_num, ()):
+            tid = trigger.trigger_id
+            if trigger.once and tid in self.fired_trigger_ids:
+                continue
+
+            met = self.is_condition_met(trigger, telemetry)
+            if trigger.once:
+                if not met:
+                    continue
+            else:
+                was_latched = self._condition_latched.get(tid, False)
+                self._condition_latched[tid] = met
+                if not met or was_latched:
+                    continue
+                if any(queued.trigger_id == tid for queued in self.pending_queue):
+                    continue
+
+            self.fired_trigger_ids.add(tid)
+            newly_fired.append(tid)
+            if trigger.has_radio_payload:
+                self.pending_queue.append(trigger)
+            else:
+                self._apply_objective(trigger)
+
+        if newly_fired and len(self.pending_queue) > 1:
+            self.pending_queue.sort(key=self._sort_key)
+
+        self.dispatch_next_pending()
+        return newly_fired
+
+    def dispatch_next_pending(self) -> Optional[str]:
+        """Dispatch the highest-priority queued beat if the radio is free."""
+        if not self.pending_queue or self.is_comms_busy():
+            return None
+
+        trigger = self.pending_queue.pop(0)
+        self._dispatch(trigger)
+        self.dispatch_log.append(trigger.trigger_id)
+        return trigger.trigger_id
+
+    def _sort_key(self, trigger: SortieEventTrigger) -> Tuple[int, int]:
+        return (-trigger.priority, self._registration_index[trigger.trigger_id])
+
+    def _sanitize_sortie_num(self, sortie_num: Any) -> int:
+        if isinstance(sortie_num, bool) or not isinstance(sortie_num, int):
+            logger.warning("Invalid sortie number %r; falling back to %d", sortie_num, MIN_SORTIE_NUM)
+            return MIN_SORTIE_NUM
+        if not MIN_SORTIE_NUM <= sortie_num <= MAX_SORTIE_NUM:
+            logger.warning("Sortie number %d out of range; falling back to %d", sortie_num, MIN_SORTIE_NUM)
+            return MIN_SORTIE_NUM
+        return sortie_num
+
+    def _dispatch(self, trigger: SortieEventTrigger) -> None:
+        if trigger.dialogue_node_id is not None:
+            if not self.story_manager.start_dialogue(trigger.dialogue_node_id):
+                logger.warning("Dialogue trigger '%s' could not start its node", trigger.trigger_id)
+            elif self.comms_hud is not None:
+                node = get_dialogue_node(trigger.dialogue_node_id)
+                if node is not None:
+                    self.comms_hud.trigger_transmission(node)
+        elif trigger.banter_category is not None:
+            if self.comms_hud is None:
+                logger.debug("Skipping banter trigger '%s' without a comms HUD", trigger.trigger_id)
+            else:
+                line = get_contextual_banter(trigger.banter_category, selection_index=len(self.dispatch_log))
+                if line is not None:
+                    self.comms_hud.trigger_callout(line.speaker, line.text, portrait=line.portrait_path)
+
+        self._apply_objective(trigger)
+
+    def _apply_objective(self, trigger: SortieEventTrigger) -> None:
+        if trigger.objective_update and self.mission_controller is not None:
+            self.mission_controller.set_active_objective_text(trigger.objective_update)
