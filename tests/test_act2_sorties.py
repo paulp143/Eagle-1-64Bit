@@ -13,6 +13,7 @@ from eagle1.story.campaign_act2 import (
     CASUALTY_CHECK_PARTIAL_BRAKER,
     CASUALTY_CHECK_PARTIAL_MEMORIAL,
     CASUALTY_CHECK_WIPED,
+    SORTIE3_APPROACH_OBJECTIVE,
     SORTIE3_CRISIS_NODE_ID,
     SORTIE3_EXTRACTION_WAVE,
     SORTIE3_LOYAL_NET_LOYALTY_DELTA,
@@ -25,6 +26,7 @@ from eagle1.story.campaign_act2 import (
     SORTIE4_OBJECTIVE_DISSIDENT,
     SORTIE4_OBJECTIVE_LOYAL,
     SORTIE4_OBJECTIVE_NEUTRAL,
+    SORTIE4_WEAKPOINT_OBJECTIVE,
     apply_sortie4_choice_effect,
     emit_sortie4_casualty_check,
     get_sortie3_braker_survived,
@@ -602,3 +604,145 @@ def test_emit_casualty_check_on_comms(comms):
 def test_emit_casualty_check_without_comms():
     """Without a comms HUD nothing is shown."""
     assert emit_sortie4_casualty_check(None, 0) is False
+
+
+# -----------------------------------------------------------------------------
+# 8. Headless integration: Sortie 3 and Sortie 4
+# -----------------------------------------------------------------------------
+
+def _start(mission_ctrl, manager, sortie_num):
+    """Start a sortie on the controller and select its triggers on the manager."""
+    mission_ctrl.start_sortie(sortie_num)
+    manager.reset_for_sortie(sortie_num)
+
+
+def _finish_callout(comms):
+    """Dismiss a finished non-interactive callout so the next queued beat can dispatch."""
+    if comms.is_active and comms.current_node is not None and not comms.current_node.options:
+        comms.dismiss()
+
+
+def _pump(manager, comms, telemetry, frames=10):
+    """Simulate frames: close finished callouts and evaluate; returns all fired ids in order."""
+    fired = []
+    for _ in range(frames):
+        _finish_callout(comms)
+        fired.extend(manager.evaluate(telemetry))
+    return fired
+
+
+def _answer(story_mgr, comms, mission_ctrl, node_id, stance, gsm=None):
+    """Record the pilot's choice like CommsHUD does, close the overlay and apply the Act II effect."""
+    option = story_mgr.record_choice(node_id, stance)
+    comms.dismiss()
+    resolve_act2_choice(node_id, stance, story_mgr, gsm, mission_ctrl)
+    return option
+
+
+def test_sortie3_progression_approach_crisis_extraction(story_mgr, mission_ctrl, comms, manager):
+    """Sortie 3 runs from approach cue through the 500kg crisis to the Pelican extraction."""
+    _start(mission_ctrl, manager, 3)
+    fired = _pump(manager, comms, CombatTelemetrySnapshot(current_wave=1))
+    assert "act2_s3_approach_ghost" in fired
+    assert mission_ctrl.current_objective == SORTIE3_APPROACH_OBJECTIVE
+    assert "act2_s3_500kg_crisis" not in manager.fired_trigger_ids
+
+    _pump(manager, comms, CombatTelemetrySnapshot(current_wave=1, fabricators_destroyed=1))
+    assert story_mgr.active_dialogue.node_id == "sortie_3_500kg_crisis"
+
+    _answer(story_mgr, comms, mission_ctrl, "sortie_3_500kg_crisis", "dissident", gsm=_fresh_gsm())
+    fired = _pump(manager, comms, CombatTelemetrySnapshot(current_wave=4, fabricators_destroyed=1))
+    assert "act2_s3_extraction" in fired
+    assert mission_ctrl.current_objective == CAMPAIGN_SORTIE_REGISTRY[3].extraction_objective
+    assert manager.dispatch_log == ["act2_s3_approach_ghost", "act2_s3_500kg_crisis", "act2_s3_extraction"]
+
+
+def test_sortie3_crisis_fires_on_inbound_500kg(mission_ctrl, comms, manager):
+    """An inbound 500kg strike alone is enough to queue the crisis."""
+    _start(mission_ctrl, manager, 3)
+    _pump(manager, comms, CombatTelemetrySnapshot(current_wave=1, active_500kg_inbound=True))
+    assert "act2_s3_500kg_crisis" in manager.fired_trigger_ids
+
+
+@pytest.mark.parametrize(
+    "stance, expected_loyalty, braker_alive, casualties, delta",
+    [
+        ("loyal", DEFAULT_LOYALTY + SORTIE3_LOYAL_NET_LOYALTY_DELTA, False, 1, 12.0),
+        ("neutral", DEFAULT_LOYALTY, True, 0, 0.0),
+        ("dissident", DEFAULT_LOYALTY - 12.0, True, 0, -12.0),
+    ],
+)
+def test_sortie3_crisis_outcomes_end_to_end(
+    story_mgr, mission_ctrl, comms, manager, stance, expected_loyalty, braker_alive, casualties, delta
+):
+    """Each 500kg answer updates loyalty, Braker's state and the dialogue history consistently."""
+    _start(mission_ctrl, manager, 3)
+    gsm = _fresh_gsm()
+    gsm.set_story_manager(story_mgr)
+    _pump(manager, comms, CombatTelemetrySnapshot(current_wave=2, fabricators_destroyed=1))
+    assert story_mgr.active_dialogue.node_id == "sortie_3_500kg_crisis"
+
+    _answer(story_mgr, comms, mission_ctrl, "sortie_3_500kg_crisis", stance, gsm=gsm)
+    assert story_mgr.loyalty == pytest.approx(expected_loyalty)
+    assert _braker(gsm).is_alive is braker_alive
+    assert story_mgr.total_casualties == casualties
+    assert story_mgr.dialogue_history[-1] == {
+        "node": "sortie_3_500kg_crisis",
+        "stance": stance,
+        "loyalty_delta": delta,
+        "act": 2,
+        "sortie": 3,
+    }
+
+
+def test_sortie4_progression_arrival_crisis_extraction(story_mgr, mission_ctrl, comms, manager):
+    """Sortie 4 runs from Strider arrival through the crisis to the Pelican extraction."""
+    _start(mission_ctrl, manager, 4)
+    assert _pump(manager, comms, CombatTelemetrySnapshot(current_wave=1)) == []
+
+    fired = _pump(manager, comms, CombatTelemetrySnapshot(current_wave=2, boss_active=True, boss_hp_ratio=1.0))
+    assert "act2_s4_strider_arrival" in fired
+    assert mission_ctrl.current_objective == SORTIE4_WEAKPOINT_OBJECTIVE
+    assert "act2_s4_strider_crisis" not in manager.fired_trigger_ids
+
+    _pump(manager, comms, CombatTelemetrySnapshot(current_wave=2, boss_active=True, boss_hp_ratio=0.45))
+    assert story_mgr.active_dialogue.node_id == "sortie_4_strider_crisis"
+
+    _answer(story_mgr, comms, mission_ctrl, "sortie_4_strider_crisis", "neutral")
+    assert mission_ctrl.current_objective == SORTIE4_OBJECTIVE_NEUTRAL
+
+    fired = _pump(manager, comms, CombatTelemetrySnapshot(current_wave=5, boss_active=False, boss_hp_ratio=0.0))
+    assert "act2_s4_extraction" in fired
+    assert mission_ctrl.current_objective == CAMPAIGN_SORTIE_REGISTRY[4].extraction_objective
+    assert manager.dispatch_log == ["act2_s4_strider_arrival", "act2_s4_strider_crisis", "act2_s4_extraction"]
+
+
+def test_sortie4_crisis_does_not_fire_without_boss(mission_ctrl, comms, manager):
+    """Without an active boss neither the Strider arrival nor the crisis fires."""
+    _start(mission_ctrl, manager, 4)
+    _pump(manager, comms, CombatTelemetrySnapshot(current_wave=3, boss_active=False, boss_hp_ratio=0.1, any_helldiver_critical=True))
+    assert "act2_s4_strider_arrival" not in manager.fired_trigger_ids
+    assert "act2_s4_strider_crisis" not in manager.fired_trigger_ids
+
+
+def test_sortie4_boss_spawning_damaged_keeps_story_order(mission_ctrl, comms, manager):
+    """A Strider that spawns below half HP still plays arrival before crisis."""
+    _start(mission_ctrl, manager, 4)
+    _pump(manager, comms, CombatTelemetrySnapshot(current_wave=2, boss_active=True, boss_hp_ratio=0.3))
+    assert manager.dispatch_log[:2] == ["act2_s4_strider_arrival", "act2_s4_strider_crisis"]
+
+
+def test_sortie4_casualty_check_uses_sortie3_outcome(story_mgr, comms):
+    """The Sortie 4 check reflects Braker's fate from the Sortie 3 crisis."""
+    resolve_sortie3_500kg_choice("loyal", story_mgr, None)
+    braker_survived = get_sortie3_braker_survived(story_mgr)
+    assert braker_survived is False
+    assert emit_sortie4_casualty_check(comms, 0, braker_survived) is True
+    assert comms.current_node.prompt == BANTER_QUEUES[CASUALTY_CHECK_FLAWLESS_MEMORIAL][0].text
+
+
+def test_act2_triggers_do_not_fire_in_other_sorties(mission_ctrl, comms, manager):
+    """Sortie 3 never fires Sortie 4 beats, even with a live boss telemetry frame."""
+    _start(mission_ctrl, manager, 3)
+    _pump(manager, comms, CombatTelemetrySnapshot(current_wave=5, boss_active=True, boss_hp_ratio=0.1))
+    assert all(not tid.startswith("act2_s4_") for tid in manager.fired_trigger_ids)
