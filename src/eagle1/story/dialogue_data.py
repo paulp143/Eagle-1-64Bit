@@ -437,6 +437,68 @@ BANTER_QUEUES: Dict[str, List[BanterLine]] = {
             portrait_path="images/portraits/viper_4_doc.png",
         ),
     ],
+    # Act I scripted radio cues (Issue #69). Each category holds exactly one line so the
+    # NarrativeTriggerManager delivers it deterministically regardless of selection_index.
+    "act1_s1_checkin_eagle": [
+        BanterLine(
+            line_id="act1_s1_checkin_eagle_01",
+            member_id="eagle_1",
+            speaker="Eagle-1 (Lt. Val)",
+            category="act1_s1_checkin_eagle",
+            text="Eagle-1 breaking through the cloud deck over Vandalon Prime. Viper Squad, radio check.",
+            portrait_path="",
+        ),
+    ],
+    "act1_s1_checkin_apex": [
+        BanterLine(
+            line_id="act1_s1_checkin_apex_01",
+            member_id="viper_1",
+            speaker='Viper-1 "Apex"',
+            category="act1_s1_checkin_apex",
+            text="Apex reading you loud and clear, Eagle-1! Hellpods are hot, the skies are yours. For Super Earth!",
+            portrait_path="images/portraits/viper_1_apex.png",
+        ),
+    ],
+    "act1_s1_vanguard_doc": [
+        BanterLine(
+            line_id="act1_s1_vanguard_doc_01",
+            member_id="viper_4",
+            speaker='Viper-4 "Doc"',
+            category="act1_s1_vanguard_doc",
+            text="Five interceptors down! Eagle-1, you are a guardian angel with quad-cannons!",
+            portrait_path="images/portraits/viper_4_doc.png",
+        ),
+    ],
+    "act1_s1_radar_braker": [
+        BanterLine(
+            line_id="act1_s1_radar_braker_01",
+            member_id="viper_2",
+            speaker='Viper-2 "Braker"',
+            category="act1_s1_radar_braker",
+            text="Do not celebrate yet, Doc. Radar is lighting up, a whole new wing is surging in from the north.",
+            portrait_path="images/portraits/viper_2_braker.png",
+        ),
+    ],
+    "act1_s2_perimeter_ghost": [
+        BanterLine(
+            line_id="act1_s2_perimeter_ghost_01",
+            member_id="viper_3",
+            speaker='Viper-3 "Ghost"',
+            category="act1_s2_perimeter_ghost",
+            text="Eagle-1, Ghost. Automaton armor is breaching the red perimeter, bearing two-seven-zero. They want the relay.",
+            portrait_path="images/portraits/viper_3_ghost.png",
+        ),
+    ],
+    "act1_s2_extraction_pelican": [
+        BanterLine(
+            line_id="act1_s2_extraction_pelican_01",
+            member_id="pelican_1",
+            speaker="Pelican-1",
+            category="act1_s2_extraction_pelican",
+            text="Pelican-1 inbound to the relay LZ! Hold the perimeter, Eagle-1, we are coming in hot for Viper Squad!",
+            portrait_path="",
+        ),
+    ],
 }
 
 

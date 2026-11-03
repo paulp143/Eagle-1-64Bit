@@ -3,6 +3,7 @@
 import pytest
 
 from eagle1.story.mission_controller import CAMPAIGN_SORTIE_REGISTRY, validate_sortie_registry
+from eagle1.story.dialogue_data import BANTER_QUEUES, get_contextual_banter, validate_viper_dialogue_data
 from eagle1.story.dialogue_db import (
     DIALOGUE_DATABASE,
     get_dialogue_node,
@@ -78,3 +79,35 @@ def test_sortie_2_registry_uses_act1_nodes():
     assert cfg.inflight_node_ids == ("sortie_2_inflight",)
     assert cfg.debrief_node_id == "sortie_2_hangar_debrief"
     assert validate_sortie_registry() is True
+
+
+# -----------------------------------------------------------------------------
+# 3. Act I radio cue banter categories
+# -----------------------------------------------------------------------------
+
+ACT1_BANTER_CATEGORIES = (
+    "act1_s1_checkin_eagle",
+    "act1_s1_checkin_apex",
+    "act1_s1_vanguard_doc",
+    "act1_s1_radar_braker",
+    "act1_s2_perimeter_ghost",
+    "act1_s2_extraction_pelican",
+)
+
+
+@pytest.mark.parametrize("category", ACT1_BANTER_CATEGORIES)
+def test_act1_banter_categories_have_single_line(category):
+    """Each Act I cue category holds exactly one line tagged with its own category."""
+    assert len(BANTER_QUEUES[category]) == 1
+    assert BANTER_QUEUES[category][0].category == category
+
+
+@pytest.mark.parametrize("category", ACT1_BANTER_CATEGORIES)
+def test_act1_banter_is_deterministic(category):
+    """Selection index does not change which Act I line is delivered."""
+    assert get_contextual_banter(category, selection_index=0) is get_contextual_banter(category, selection_index=7)
+
+
+def test_viper_dialogue_data_still_valid():
+    """Adding Act I categories keeps the Viper dialogue data valid."""
+    assert validate_viper_dialogue_data() is True
