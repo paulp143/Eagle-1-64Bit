@@ -6,9 +6,14 @@ NarrativeTriggerManager.
 """
 
 import logging
-from typing import Tuple
+from typing import Dict, Optional, Tuple
 
-from eagle1.story.mission_controller import CAMPAIGN_SORTIE_REGISTRY, MAX_SORTIE_NUM, MIN_SORTIE_NUM
+from eagle1.story.mission_controller import (
+    CAMPAIGN_SORTIE_REGISTRY,
+    MAX_SORTIE_NUM,
+    MIN_SORTIE_NUM,
+    MissionController,
+)
 from eagle1.story.narrative_trigger_manager import (
     CONDITION_AERIAL_KILLS,
     CONDITION_CUSTOM,
@@ -18,6 +23,7 @@ from eagle1.story.narrative_trigger_manager import (
     NarrativeTriggerManager,
     SortieEventTrigger,
 )
+from eagle1.story.story_manager import VALID_STANCES
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +46,41 @@ SORTIE2_EXTRACTION_WAVE: int = CAMPAIGN_SORTIE_REGISTRY[SORTIE2_NUM].target_wave
 SORTIE2_PERIMETER_OBJECTIVE: str = (
     "Perimeter breach: suppress Automaton ground forces advancing on the orbital relay."
 )
+
+SORTIE1_OBJECTIVE_LOYAL: str = (
+    "PRIORITY: Destroy High-Value Automaton Interceptors. Squad support is secondary."
+)
+SORTIE1_OBJECTIVE_NEUTRAL: str = (
+    "Fleet CAS Manual Section 4: Alternate interceptor kills with scheduled squad support."
+)
+SORTIE1_OBJECTIVE_DISSIDENT: str = (
+    "Close Squad Suppression: Cover Viper-4's flank and break the ground assault."
+)
+
+SORTIE2_OBJECTIVE_LOYAL: str = (
+    "Conserve ordnance: Defend the relay generator. No unscheduled resupply."
+)
+SORTIE2_OBJECTIVE_NEUTRAL: str = (
+    "Standard rationing: Hold the relay perimeter and resupply per Ordnance Table 4-B."
+)
+SORTIE2_OBJECTIVE_DISSIDENT: str = (
+    "Emergency resupply: Drop a supply pod on Viper-4 and cover the casualty evacuation."
+)
+
+ACT1_CHOICE_OBJECTIVES: Dict[str, Dict[str, str]] = {
+    SORTIE1_INFLIGHT_NODE_ID: {
+        "loyal": SORTIE1_OBJECTIVE_LOYAL,
+        "neutral": SORTIE1_OBJECTIVE_NEUTRAL,
+        "dissident": SORTIE1_OBJECTIVE_DISSIDENT,
+    },
+    SORTIE2_INFLIGHT_NODE_ID: {
+        "loyal": SORTIE2_OBJECTIVE_LOYAL,
+        "neutral": SORTIE2_OBJECTIVE_NEUTRAL,
+        "dissident": SORTIE2_OBJECTIVE_DISSIDENT,
+    },
+}
+
+_STANCE_KEY_ALIASES: Dict[str, str] = {"1": "loyal", "2": "neutral", "3": "dissident"}
 
 
 def _sortie1_override_ready(telemetry: CombatTelemetrySnapshot) -> bool:
@@ -158,3 +199,82 @@ def register_act1_triggers(manager: NarrativeTriggerManager) -> int:
     manager.register_triggers(ACT1_TRIGGERS)
     logger.debug("Registered %d Act I narrative triggers", len(ACT1_TRIGGERS))
     return len(ACT1_TRIGGERS)
+
+
+def _normalize_stance(stance: object) -> Optional[str]:
+    """Map "loyal", "[LOYAL]", " Loyal " or the key "1" to a canonical stance; anything else returns None."""
+    if isinstance(stance, bool) or not isinstance(stance, str):
+        return None
+    clean = stance.strip().strip("[]").strip().lower()
+    clean = _STANCE_KEY_ALIASES.get(clean, clean)
+    return clean if clean in VALID_STANCES else None
+
+
+def _apply_choice_objective(
+    node_id: str,
+    stance: object,
+    mission_controller: Optional[MissionController],
+) -> Optional[str]:
+    """Set the HUD objective mapped to node_id and stance; return the applied text or None."""
+    canonical = _normalize_stance(stance)
+    if canonical is None:
+        logger.warning("Ignoring invalid stance %r for Act I node '%s'", stance, node_id)
+        return None
+    if not isinstance(mission_controller, MissionController):
+        logger.debug("No MissionController wired; skipping objective update for '%s'", node_id)
+        return None
+
+    mission_controller.set_active_objective_text(ACT1_CHOICE_OBJECTIVES[node_id][canonical])
+    return mission_controller.current_objective
+
+
+def apply_sortie1_choice_effect(
+    stance: str,
+    mission_controller: Optional[MissionController],
+) -> Optional[str]:
+    """Update the HUD objective after the pilot answers Reiner's Sortie 1 command override.
+
+    Loyalty is applied separately by StoryManager.record_choice().
+
+    Returns:
+        The objective text now shown on the HUD, or None if nothing was applied.
+    """
+    return _apply_choice_objective(SORTIE1_INFLIGHT_NODE_ID, stance, mission_controller)
+
+
+def apply_sortie2_choice_effect(
+    stance: str,
+    mission_controller: Optional[MissionController],
+) -> Optional[str]:
+    """Update the HUD objective after the pilot resolves the Sortie 2 casualty and supply dilemma.
+
+    Loyalty is applied separately by StoryManager.record_choice().
+
+    Returns:
+        The objective text now shown on the HUD, or None if nothing was applied.
+    """
+    return _apply_choice_objective(SORTIE2_INFLIGHT_NODE_ID, stance, mission_controller)
+
+
+def resolve_act1_choice(
+    node_id: str,
+    stance: str,
+    mission_controller: Optional[MissionController],
+) -> Optional[str]:
+    """Route a recorded in-flight choice to its Act I objective effect.
+
+    Call after StoryManager.record_choice(node_id, stance). Nodes without an Act I
+    objective mapping are ignored.
+
+    Returns:
+        The objective text now shown on the HUD, or None if node_id is not an Act I
+        in-flight node or nothing was applied.
+    """
+    if isinstance(node_id, bool) or not isinstance(node_id, str):
+        return None
+    clean_id = node_id.strip()
+    if clean_id == SORTIE1_INFLIGHT_NODE_ID:
+        return apply_sortie1_choice_effect(stance, mission_controller)
+    if clean_id == SORTIE2_INFLIGHT_NODE_ID:
+        return apply_sortie2_choice_effect(stance, mission_controller)
+    return None

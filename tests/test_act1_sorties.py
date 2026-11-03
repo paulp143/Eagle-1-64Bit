@@ -2,7 +2,23 @@
 
 import pytest
 
-from eagle1.story.campaign_act1 import ACT1_TRIGGERS, SORTIE2_EXTRACTION_WAVE, register_act1_triggers
+from eagle1.story.campaign_act1 import (
+    ACT1_CHOICE_OBJECTIVES,
+    ACT1_TRIGGERS,
+    SORTIE1_INFLIGHT_NODE_ID,
+    SORTIE1_OBJECTIVE_DISSIDENT,
+    SORTIE1_OBJECTIVE_LOYAL,
+    SORTIE1_OBJECTIVE_NEUTRAL,
+    SORTIE2_EXTRACTION_WAVE,
+    SORTIE2_INFLIGHT_NODE_ID,
+    SORTIE2_OBJECTIVE_DISSIDENT,
+    SORTIE2_OBJECTIVE_LOYAL,
+    SORTIE2_OBJECTIVE_NEUTRAL,
+    apply_sortie1_choice_effect,
+    apply_sortie2_choice_effect,
+    register_act1_triggers,
+    resolve_act1_choice,
+)
 from eagle1.story.campaign_save import CampaignSaveManager
 from eagle1.story.comms_hud import CommsHUD
 from eagle1.story.mission_controller import CAMPAIGN_SORTIE_REGISTRY, MissionController, validate_sortie_registry
@@ -228,3 +244,79 @@ def test_supply_dilemma_predicate():
     assert pred(CombatTelemetrySnapshot(casualties_count=1)) is True
     assert pred(CombatTelemetrySnapshot(any_helldiver_critical=True)) is True
     assert pred(CombatTelemetrySnapshot(current_wave=2)) is True
+
+
+# -----------------------------------------------------------------------------
+# 5. Choice effects on the HUD objective
+# -----------------------------------------------------------------------------
+
+def test_choice_objectives_cover_all_stances():
+    """Both in-flight nodes map every stance to a distinct objective within the HUD length limit."""
+    texts = []
+    for node_id in (SORTIE1_INFLIGHT_NODE_ID, SORTIE2_INFLIGHT_NODE_ID):
+        assert set(ACT1_CHOICE_OBJECTIVES[node_id]) == {"loyal", "neutral", "dissident"}
+        texts.extend(ACT1_CHOICE_OBJECTIVES[node_id].values())
+    assert len(set(texts)) == len(texts)
+    assert all(len(text) <= 250 for text in texts)
+
+
+@pytest.mark.parametrize(
+    ("stance", "expected"),
+    [
+        ("loyal", SORTIE1_OBJECTIVE_LOYAL),
+        ("neutral", SORTIE1_OBJECTIVE_NEUTRAL),
+        ("dissident", SORTIE1_OBJECTIVE_DISSIDENT),
+    ],
+)
+def test_apply_sortie1_choice_effect_sets_objective(mission_ctrl, stance, expected):
+    """Sortie 1 stance sets the matching HUD objective."""
+    assert apply_sortie1_choice_effect(stance, mission_ctrl) == expected
+    assert mission_ctrl.current_objective == expected
+
+
+@pytest.mark.parametrize(
+    ("stance", "expected"),
+    [
+        ("loyal", SORTIE2_OBJECTIVE_LOYAL),
+        ("neutral", SORTIE2_OBJECTIVE_NEUTRAL),
+        ("dissident", SORTIE2_OBJECTIVE_DISSIDENT),
+    ],
+)
+def test_apply_sortie2_choice_effect_sets_objective(mission_ctrl, stance, expected):
+    """Sortie 2 stance sets the matching HUD objective."""
+    assert apply_sortie2_choice_effect(stance, mission_ctrl) == expected
+    assert mission_ctrl.current_objective == expected
+
+
+@pytest.mark.parametrize(
+    ("alias", "canonical"),
+    [("1", "loyal"), ("[NEUTRAL]", "neutral"), (" Dissident ", "dissident")],
+)
+def test_choice_effect_accepts_stance_aliases(mission_ctrl, alias, canonical):
+    """Key numbers, bracketed labels and padded or mixed-case stances normalize to canonical stances."""
+    expected = ACT1_CHOICE_OBJECTIVES[SORTIE1_INFLIGHT_NODE_ID][canonical]
+    assert apply_sortie1_choice_effect(alias, mission_ctrl) == expected
+
+
+@pytest.mark.parametrize("bad_stance", [None, True, "", "heroic", 1])
+def test_choice_effect_rejects_invalid_stance(mission_ctrl, bad_stance):
+    """Invalid stances apply nothing and leave the current objective unchanged."""
+    before = mission_ctrl.current_objective
+    assert apply_sortie1_choice_effect(bad_stance, mission_ctrl) is None
+    assert mission_ctrl.current_objective == before
+
+
+def test_choice_effect_without_mission_controller():
+    """Missing MissionController is tolerated and reports nothing applied."""
+    assert apply_sortie2_choice_effect("loyal", None) is None
+
+
+def test_resolve_act1_choice_routes_and_ignores_foreign_nodes(mission_ctrl):
+    """resolve_act1_choice routes Act I nodes and ignores everything else."""
+    assert resolve_act1_choice("sortie_1_inflight", "loyal", mission_ctrl) == SORTIE1_OBJECTIVE_LOYAL
+    assert resolve_act1_choice(" sortie_2_inflight ", "dissident", mission_ctrl) == SORTIE2_OBJECTIVE_DISSIDENT
+
+    before = mission_ctrl.current_objective
+    for node_id in ["sortie_1_briefing", "unknown", None, 42]:
+        assert resolve_act1_choice(node_id, "loyal", mission_ctrl) is None
+        assert mission_ctrl.current_objective == before
