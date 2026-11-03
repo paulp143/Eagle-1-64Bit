@@ -11,6 +11,7 @@ from eagle1.story.campaign_act1 import (
     SORTIE1_OBJECTIVE_NEUTRAL,
     SORTIE2_EXTRACTION_WAVE,
     SORTIE2_INFLIGHT_NODE_ID,
+    SORTIE2_PERIMETER_OBJECTIVE,
     SORTIE2_OBJECTIVE_DISSIDENT,
     SORTIE2_OBJECTIVE_LOYAL,
     SORTIE2_OBJECTIVE_NEUTRAL,
@@ -27,7 +28,7 @@ from eagle1.story.narrative_trigger_manager import (
     NarrativeTriggerManager,
     validate_sortie_event_trigger,
 )
-from eagle1.story.story_manager import StoryManager
+from eagle1.story.story_manager import DEFAULT_LOYALTY, StoryManager
 from eagle1.story.dialogue_data import BANTER_QUEUES, get_contextual_banter, validate_viper_dialogue_data
 from eagle1.story.dialogue_db import (
     DIALOGUE_DATABASE,
@@ -320,3 +321,186 @@ def test_resolve_act1_choice_routes_and_ignores_foreign_nodes(mission_ctrl):
     for node_id in ["sortie_1_briefing", "unknown", None, 42]:
         assert resolve_act1_choice(node_id, "loyal", mission_ctrl) is None
         assert mission_ctrl.current_objective == before
+
+
+# -----------------------------------------------------------------------------
+# 6. Headless integration: Sortie 1 and Sortie 2 from launch to extraction
+# -----------------------------------------------------------------------------
+
+def _start(mission_ctrl, manager, sortie_num):
+    """Start a sortie on the controller and select its triggers on the manager."""
+    mission_ctrl.start_sortie(sortie_num)
+    manager.reset_for_sortie(sortie_num)
+
+
+def _finish_callout(comms):
+    """Dismiss a finished non-interactive callout so the next queued beat can dispatch."""
+    if comms.is_active and comms.current_node is not None and not comms.current_node.options:
+        comms.dismiss()
+
+
+def _pump(manager, comms, telemetry, frames=10):
+    """Simulate frames: close finished callouts and evaluate; returns all fired ids in order."""
+    fired = []
+    for _ in range(frames):
+        _finish_callout(comms)
+        fired.extend(manager.evaluate(telemetry))
+    return fired
+
+
+def _answer(story_mgr, comms, mission_ctrl, node_id, stance):
+    """Record the pilot's choice like CommsHUD does, close the overlay and apply the Act I effect."""
+    option = story_mgr.record_choice(node_id, stance)
+    comms.dismiss()
+    resolve_act1_choice(node_id, stance, mission_ctrl)
+    return option
+
+
+def test_sortie1_no_beats_before_checkin(mission_ctrl, manager):
+    """No Sortie 1 beat fires before the two-second check-in."""
+    _start(mission_ctrl, manager, 1)
+    assert manager.evaluate(CombatTelemetrySnapshot(elapsed_seconds=1.9)) == ()
+    assert manager.dispatch_log == []
+
+
+def test_sortie1_progression_launch_to_override(story_mgr, mission_ctrl, comms, manager):
+    """Sortie 1 beats fire in story order: check-ins, vanguard banter, then Reiner's override."""
+    _start(mission_ctrl, manager, 1)
+
+    _pump(manager, comms, CombatTelemetrySnapshot(elapsed_seconds=2.0, current_wave=1))
+    assert manager.dispatch_log == ["act1_s1_checkin_eagle", "act1_s1_checkin_apex"]
+
+    _pump(manager, comms, CombatTelemetrySnapshot(elapsed_seconds=20.0, current_wave=1, aerial_kills=5))
+    assert manager.dispatch_log[-2:] == ["act1_s1_vanguard_doc", "act1_s1_radar_braker"]
+    assert story_mgr.is_dialogue_active is False
+
+    _pump(manager, comms, CombatTelemetrySnapshot(elapsed_seconds=40.0, current_wave=1, aerial_kills=10))
+    assert manager.dispatch_log[-1] == "act1_s1_reiner_override"
+    assert story_mgr.active_dialogue.node_id == "sortie_1_inflight"
+    assert comms.current_node.node_id == "sortie_1_inflight"
+
+
+def test_sortie1_override_fires_on_wave_two_without_kills(mission_ctrl, comms, manager):
+    """The override fires on wave 2 even with zero kills; the vanguard cue does not."""
+    _start(mission_ctrl, manager, 1)
+    _pump(manager, comms, CombatTelemetrySnapshot(elapsed_seconds=60.0, current_wave=2, aerial_kills=0))
+    assert "act1_s1_reiner_override" in manager.dispatch_log
+    assert "act1_s1_vanguard_doc" not in manager.fired_trigger_ids
+
+
+def test_sortie1_kill_burst_queues_beats_chronologically(mission_ctrl, comms, manager):
+    """A 0 -> 12 kill jump in one frame queues vanguard, radar and override in story order."""
+    _start(mission_ctrl, manager, 1)
+    _pump(manager, comms, CombatTelemetrySnapshot(elapsed_seconds=5.0), frames=1)
+    _pump(manager, comms, CombatTelemetrySnapshot(elapsed_seconds=5.0), frames=5)
+
+    burst = CombatTelemetrySnapshot(elapsed_seconds=6.0, aerial_kills=12)
+    fired = manager.evaluate(burst)
+    assert fired == ("act1_s1_vanguard_doc", "act1_s1_radar_braker", "act1_s1_reiner_override")
+
+    _pump(manager, comms, burst, frames=5)
+    assert manager.dispatch_log[-3:] == ["act1_s1_vanguard_doc", "act1_s1_radar_braker", "act1_s1_reiner_override"]
+    assert manager.pending_queue == []
+
+
+@pytest.mark.parametrize(
+    ("stance", "delta", "objective"),
+    [
+        ("loyal", 8.0, SORTIE1_OBJECTIVE_LOYAL),
+        ("neutral", 0.0, SORTIE1_OBJECTIVE_NEUTRAL),
+        ("dissident", -8.0, SORTIE1_OBJECTIVE_DISSIDENT),
+    ],
+)
+def test_sortie1_choice_updates_loyalty_history_and_objective(story_mgr, mission_ctrl, comms, manager, stance, delta, objective):
+    """Each Sortie 1 stance moves loyalty, records history, sets the HUD objective and clears the overlay."""
+    _start(mission_ctrl, manager, 1)
+    _pump(manager, comms, CombatTelemetrySnapshot(elapsed_seconds=30.0, current_wave=2, aerial_kills=10))
+    assert story_mgr.is_dialogue_active is True
+
+    _answer(story_mgr, comms, mission_ctrl, "sortie_1_inflight", stance)
+
+    assert story_mgr.loyalty == pytest.approx(DEFAULT_LOYALTY + delta)
+    assert story_mgr.dialogue_history[-1] == {
+        "node": "sortie_1_inflight",
+        "stance": stance,
+        "loyalty_delta": delta,
+        "act": 1,
+        "sortie": 1,
+    }
+    assert mission_ctrl.get_active_objective_text() == objective
+    assert story_mgr.is_dialogue_active is False
+    assert comms.is_active is False
+
+
+def test_sortie2_progression_perimeter_dilemma_extraction(story_mgr, mission_ctrl, comms, manager):
+    """Sortie 2 runs perimeter breach, supply dilemma, then the extraction callout."""
+    _start(mission_ctrl, manager, 2)
+
+    _pump(manager, comms, CombatTelemetrySnapshot(elapsed_seconds=3.0, current_wave=1))
+    assert manager.dispatch_log == ["act1_s2_perimeter_breach"]
+    assert mission_ctrl.current_objective == SORTIE2_PERIMETER_OBJECTIVE
+
+    _pump(manager, comms, CombatTelemetrySnapshot(elapsed_seconds=30.0, current_wave=1, casualties_count=1))
+    assert manager.dispatch_log[-1] == "act1_s2_supply_dilemma"
+    assert story_mgr.active_dialogue.node_id == "sortie_2_inflight"
+
+    _answer(story_mgr, comms, mission_ctrl, "sortie_2_inflight", "neutral")
+    assert mission_ctrl.current_objective == SORTIE2_OBJECTIVE_NEUTRAL
+
+    _pump(manager, comms, CombatTelemetrySnapshot(elapsed_seconds=120.0, current_wave=SORTIE2_EXTRACTION_WAVE, casualties_count=1))
+    assert manager.dispatch_log[-1] == "act1_s2_extraction"
+    assert mission_ctrl.current_objective == CAMPAIGN_SORTIE_REGISTRY[2].extraction_objective
+
+
+@pytest.mark.parametrize(
+    ("stance", "delta", "objective"),
+    [
+        ("loyal", 8.0, SORTIE2_OBJECTIVE_LOYAL),
+        ("neutral", 0.0, SORTIE2_OBJECTIVE_NEUTRAL),
+        ("dissident", -8.0, SORTIE2_OBJECTIVE_DISSIDENT),
+    ],
+)
+def test_sortie2_choice_updates_loyalty_history_and_objective(story_mgr, mission_ctrl, comms, manager, stance, delta, objective):
+    """Each Sortie 2 stance moves loyalty, records history, sets the HUD objective and clears the overlay."""
+    _start(mission_ctrl, manager, 2)
+    _pump(manager, comms, CombatTelemetrySnapshot(elapsed_seconds=30.0, current_wave=1, any_helldiver_critical=True))
+    assert story_mgr.is_dialogue_active is True
+
+    _answer(story_mgr, comms, mission_ctrl, "sortie_2_inflight", stance)
+
+    assert story_mgr.loyalty == pytest.approx(DEFAULT_LOYALTY + delta)
+    assert story_mgr.dialogue_history[-1] == {
+        "node": "sortie_2_inflight",
+        "stance": stance,
+        "loyalty_delta": delta,
+        "act": 1,
+        "sortie": 2,
+    }
+    assert mission_ctrl.get_active_objective_text() == objective
+    assert story_mgr.is_dialogue_active is False
+    assert comms.is_active is False
+
+
+def test_sortie2_wave_jump_keeps_story_order(story_mgr, mission_ctrl, comms, manager):
+    """A jump straight to the final wave keeps story order and holds extraction behind the open dilemma."""
+    _start(mission_ctrl, manager, 2)
+    snapshot = CombatTelemetrySnapshot(current_wave=SORTIE2_EXTRACTION_WAVE)
+
+    fired = manager.evaluate(snapshot)
+    assert fired == ("act1_s2_perimeter_breach", "act1_s2_supply_dilemma", "act1_s2_extraction")
+
+    _pump(manager, comms, snapshot, frames=5)
+    assert manager.dispatch_log == ["act1_s2_perimeter_breach", "act1_s2_supply_dilemma"]
+
+    _answer(story_mgr, comms, mission_ctrl, "sortie_2_inflight", "loyal")
+    _pump(manager, comms, snapshot, frames=5)
+    assert manager.dispatch_log[-1] == "act1_s2_extraction"
+    assert mission_ctrl.current_objective == CAMPAIGN_SORTIE_REGISTRY[2].extraction_objective
+
+
+def test_sortie1_triggers_do_not_fire_in_sortie2(mission_ctrl, comms, manager):
+    """Sortie 1 triggers stay silent while Sortie 2 is active."""
+    _start(mission_ctrl, manager, 2)
+    _pump(manager, comms, CombatTelemetrySnapshot(elapsed_seconds=10.0, aerial_kills=20))
+    assert not any(tid.startswith("act1_s1_") for tid in manager.fired_trigger_ids)
+
