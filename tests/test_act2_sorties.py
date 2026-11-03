@@ -746,3 +746,36 @@ def test_act2_triggers_do_not_fire_in_other_sorties(mission_ctrl, comms, manager
     _start(mission_ctrl, manager, 3)
     _pump(manager, comms, CombatTelemetrySnapshot(current_wave=5, boss_active=True, boss_hp_ratio=0.1))
     assert all(not tid.startswith("act2_s4_") for tid in manager.fired_trigger_ids)
+
+
+# -----------------------------------------------------------------------------
+# 9. Public API exports
+# -----------------------------------------------------------------------------
+
+def test_act2_public_api_exports():
+    """The Act II campaign helpers are re-exported from the eagle1.story package."""
+    import eagle1.story as story_pkg
+
+    expected = {
+        "ACT2_CHOICE_OBJECTIVES",
+        "ACT2_TRIGGERS",
+        "SORTIE3_LOYAL_NET_LOYALTY_DELTA",
+        "SORTIE3_OBJECTIVE_DISSIDENT",
+        "SORTIE3_OBJECTIVE_LOYAL",
+        "SORTIE3_OBJECTIVE_NEUTRAL",
+        "SORTIE4_OBJECTIVE_DISSIDENT",
+        "SORTIE4_OBJECTIVE_LOYAL",
+        "SORTIE4_OBJECTIVE_NEUTRAL",
+        "Sortie3CrisisOutcome",
+        "apply_sortie4_choice_effect",
+        "emit_sortie4_casualty_check",
+        "get_sortie3_braker_survived",
+        "get_sortie4_casualty_check_banter",
+        "register_act2_triggers",
+        "resolve_act2_choice",
+        "resolve_sortie3_500kg_choice",
+    }
+    assert expected <= set(story_pkg.__all__)
+    for name in expected:
+        assert hasattr(story_pkg, name)
+    assert story_pkg.register_act2_triggers is register_act2_triggers
