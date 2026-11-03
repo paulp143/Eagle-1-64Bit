@@ -1,5 +1,19 @@
 """Campaign Story and Interactive Dialogue System for Eagle-1-64Bit."""
 
+from eagle1.story.campaign_act1 import (
+    ACT1_CHOICE_OBJECTIVES,
+    ACT1_TRIGGERS,
+    SORTIE1_OBJECTIVE_DISSIDENT,
+    SORTIE1_OBJECTIVE_LOYAL,
+    SORTIE1_OBJECTIVE_NEUTRAL,
+    SORTIE2_OBJECTIVE_DISSIDENT,
+    SORTIE2_OBJECTIVE_LOYAL,
+    SORTIE2_OBJECTIVE_NEUTRAL,
+    apply_sortie1_choice_effect,
+    apply_sortie2_choice_effect,
+    register_act1_triggers,
+    resolve_act1_choice,
+)
 from eagle1.story.campaign_save import (
     CAMPAIGN_SAVE_FILENAME,
     CAMPAIGN_SAVE_VERSION,
@@ -91,6 +105,8 @@ from eagle1.story.super_destroyer_view import (
 )
 
 __all__ = [
+    "ACT1_CHOICE_OBJECTIVES",
+    "ACT1_TRIGGERS",
     "BANTER_QUEUES",
     "BRANCH_COLD_PROTOCOL",
     "BRANCH_DISSIDENT_SURRENDER",
@@ -137,6 +153,12 @@ __all__ = [
     "PATRIOTISM_LABEL_NOMINAL",
     "PATRIOTISM_LABEL_ZEALOT",
     "SHIP_NPC_PROFILES",
+    "SORTIE1_OBJECTIVE_DISSIDENT",
+    "SORTIE1_OBJECTIVE_LOYAL",
+    "SORTIE1_OBJECTIVE_NEUTRAL",
+    "SORTIE2_OBJECTIVE_DISSIDENT",
+    "SORTIE2_OBJECTIVE_LOYAL",
+    "SORTIE2_OBJECTIVE_NEUTRAL",
     "SORTIE_BRIEFING_METADATA",
     "SORTIE_MISSION_MAP",
     "ShipNPCProfile",
@@ -155,6 +177,8 @@ __all__ = [
     "ZONE_HANGAR",
     "ZONE_METADATA",
     "ZONE_READY_ROOM",
+    "apply_sortie1_choice_effect",
+    "apply_sortie2_choice_effect",
     "get_contextual_banter",
     "get_debrief_dialogue_node",
     "get_dialogue_node",
@@ -162,6 +186,8 @@ __all__ = [
     "get_ship_npc_profile",
     "get_sortie_config",
     "get_viper_profile",
+    "register_act1_triggers",
+    "resolve_act1_choice",
     "validate_dialogue_database",
     "validate_sortie_event_trigger",
     "validate_sortie_registry",

@@ -504,3 +504,31 @@ def test_sortie1_triggers_do_not_fire_in_sortie2(mission_ctrl, comms, manager):
     _pump(manager, comms, CombatTelemetrySnapshot(elapsed_seconds=10.0, aerial_kills=20))
     assert not any(tid.startswith("act1_s1_") for tid in manager.fired_trigger_ids)
 
+
+
+# -----------------------------------------------------------------------------
+# 7. Public API exports
+# -----------------------------------------------------------------------------
+
+def test_act1_public_api_exports():
+    """The Act I campaign helpers are re-exported from the eagle1.story package."""
+    import eagle1.story as story_pkg
+
+    expected = {
+        "ACT1_CHOICE_OBJECTIVES",
+        "ACT1_TRIGGERS",
+        "SORTIE1_OBJECTIVE_DISSIDENT",
+        "SORTIE1_OBJECTIVE_LOYAL",
+        "SORTIE1_OBJECTIVE_NEUTRAL",
+        "SORTIE2_OBJECTIVE_DISSIDENT",
+        "SORTIE2_OBJECTIVE_LOYAL",
+        "SORTIE2_OBJECTIVE_NEUTRAL",
+        "apply_sortie1_choice_effect",
+        "apply_sortie2_choice_effect",
+        "register_act1_triggers",
+        "resolve_act1_choice",
+    }
+    assert expected <= set(story_pkg.__all__)
+    for name in expected:
+        assert hasattr(story_pkg, name)
+    assert story_pkg.register_act1_triggers is register_act1_triggers
