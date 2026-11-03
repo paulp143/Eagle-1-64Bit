@@ -58,7 +58,7 @@ class CampaignSortieConfig:
 
 # Canonical registry for campaign Sorties 1 through 4 across Act I & II.
 # Note: Act I in-flight nodes (sortie_1_inflight, sortie_2_inflight) are defined in dialogue_db (#69);
-# Act II in-flight nodes (sortie_3_500kg_crisis, sortie_4_strider_crisis) are implemented in #70.
+# Act II in-flight nodes (sortie_3_500kg_crisis, sortie_4_strider_crisis) are defined in dialogue_db (#70).
 CAMPAIGN_SORTIE_REGISTRY: Dict[int, CampaignSortieConfig] = {
     1: CampaignSortieConfig(
         sortie_num=1,
@@ -107,9 +107,9 @@ CAMPAIGN_SORTIE_REGISTRY: Dict[int, CampaignSortieConfig] = {
         has_boss_strider=False,
         initial_objective="Deliver precision 500kg ordnance to obliterate fortified Automaton fabricator complexes.",
         extraction_objective="Eliminate remaining outpost defenses and extract Viper Squad from Grid Charlie-4.",
-        briefing_node_id="bridge_reiner_scrutiny",
+        briefing_node_id="sortie_3_briefing",
         inflight_node_ids=("sortie_3_500kg_crisis",),
-        debrief_node_id="hangar_ortiz_maintenance",
+        debrief_node_id="sortie_3_hangar_debrief",
     ),
     4: CampaignSortieConfig(
         sortie_num=4,
@@ -124,9 +124,9 @@ CAMPAIGN_SORTIE_REGISTRY: Dict[int, CampaignSortieConfig] = {
         has_boss_strider=True,
         initial_objective="Neutralize the Automaton Factory Strider command fortress threatening Viper Squad extraction.",
         extraction_objective="Destroy the Factory Strider and secure emergency Pelican-1 extraction.",
-        briefing_node_id="bridge_reiner_scrutiny",
+        briefing_node_id="sortie_4_briefing",
         inflight_node_ids=("sortie_4_strider_crisis",),
-        debrief_node_id="viper_debrief_replacements",
+        debrief_node_id="sortie_4_hangar_debrief",
     ),
 }
 
