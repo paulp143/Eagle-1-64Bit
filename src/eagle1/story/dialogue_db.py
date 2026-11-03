@@ -292,6 +292,244 @@ DIALOGUE_DATABASE: Dict[str, DialogueNode] = {
         act=1,
         sortie=2,
     ),
+    "sortie_3_briefing": DialogueNode(
+        node_id="sortie_3_briefing",
+        speaker="Democracy Officer Karl Reiner",
+        location="SES Leviathan of Truth - Bridge",
+        portrait="images/portraits/npc_reiner.png",
+        prompt=(
+            "Lieutenant Val. Grid Charlie-4 hosts a fortified Automaton fabricator complex. Each furnace vent "
+            "rolls out a fresh platoon every eight seconds. You will deliver 500kg ordnance down those vents, "
+            "whatever stands beside them. Is that understood?"
+        ),
+        options={
+            "loyal": DialogueOption(
+                stance="loyal",
+                key_name="1",
+                key_code=pygame.K_1,
+                label="[1. LOYAL] Understood, sir. Every vent I seal saves a thousand Helldivers tomorrow.",
+                loyalty_delta=+10.0,
+                response="Reiner: 'Precisely. Arithmetic is the purest form of patriotism.'",
+            ),
+            "neutral": DialogueOption(
+                stance="neutral",
+                key_name="2",
+                key_code=pygame.K_2,
+                label="[2. NEUTRAL] Understood. I will request danger-close clearance before each release.",
+                loyalty_delta=0.0,
+                response="Reiner: 'Request what you like. The vents will not wait for paperwork.'",
+            ),
+            "dissident": DialogueOption(
+                stance="dissident",
+                key_name="3",
+                key_code=pygame.K_3,
+                label="[3. DISSIDENT] Understood, sir. 'Whatever stands beside them' had better not be Viper Squad.",
+                loyalty_delta=-10.0,
+                response="Reiner: 'Your concern for four soldiers over a front of eleven thousand has been noted, Lieutenant.'",
+            ),
+        },
+        act=2,
+        sortie=3,
+    ),
+    "sortie_3_500kg_crisis": DialogueNode(
+        node_id="sortie_3_500kg_crisis",
+        speaker="Viper-4 Doc vs Officer Reiner",
+        location="In-Flight Radio Comms",
+        portrait="images/portraits/viper_4_doc.png",
+        prompt=(
+            "Doc: 'Eagle-1, hold your drop! Braker is pinned under a collapsed girder right beside the fabricator vent!' "
+            "Reiner: 'Eagle-1, the vent is primed to spawn a full platoon. Release the 500kg immediately. "
+            "That is a direct order.'"
+        ),
+        options={
+            "loyal": DialogueOption(
+                stance="loyal",
+                key_name="1",
+                key_code=pygame.K_1,
+                label="[1. LOYAL] Releasing ordinance! Acceptable collateral damage.",
+                loyalty_delta=+12.0,
+                response="Apex: 'The vent is gone! Braker... Braker is not answering.'",
+                speaker_reaction="Doc: 'You dropped it right on him, Val. Right on him.'",
+            ),
+            "neutral": DialogueOption(
+                stance="neutral",
+                key_name="2",
+                key_code=pygame.K_2,
+                label="[2. NEUTRAL] Adjusting impact vector by 15 meters east.",
+                loyalty_delta=0.0,
+                response="Ghost: 'Impact offset confirmed. Perimeter is breached, the vent is still smoking.'",
+                speaker_reaction="Doc: 'Braker is alive but his legs are crushed. Stims going in now!'",
+            ),
+            "dissident": DialogueOption(
+                stance="dissident",
+                key_name="3",
+                key_code=pygame.K_3,
+                label="[3. DISSIDENT] Aborting drop! Coming in with cannons!",
+                loyalty_delta=-12.0,
+                response="Braker: 'Val, you magnificent idiot! Get that vent before it gets us!'",
+                speaker_reaction="Reiner: 'Insubordination under fire. This will follow you, Lieutenant.'",
+            ),
+        },
+        act=2,
+        sortie=3,
+    ),
+    "sortie_3_hangar_debrief": DialogueNode(
+        node_id="sortie_3_hangar_debrief",
+        speaker="Viper Squad & Chief Ortiz",
+        location="SES Leviathan of Truth - Hangar Deck",
+        portrait="images/portraits/npc_ortiz.png",
+        prompt=(
+            "Ortiz: 'Bomb rack telemetry says you held a 500kg over Charlie-4 for eleven seconds, Val.' "
+            "Doc: 'Eleven seconds. That is how long Braker had.' "
+            "Apex: 'The furnace is cold. The complex is ours. That is the only number that matters.'"
+        ),
+        options={
+            "loyal": DialogueOption(
+                stance="loyal",
+                key_name="1",
+                key_code=pygame.K_1,
+                label="[1. LOYAL] Apex is right. The complex fell, and Super Earth is safer for it.",
+                loyalty_delta=+10.0,
+                response="Apex: 'For Liberty!' Doc: '...For Liberty.'",
+            ),
+            "neutral": DialogueOption(
+                stance="neutral",
+                key_name="2",
+                key_code=pygame.K_2,
+                label="[2. NEUTRAL] Eleven seconds was within release tolerances. I will file the report.",
+                loyalty_delta=-1.0,
+                response="Ortiz: 'Tolerances again. I am running out of forms for them, Val.'",
+            ),
+            "dissident": DialogueOption(
+                stance="dissident",
+                key_name="3",
+                key_code=pygame.K_3,
+                label="[3. DISSIDENT] Nobody should have to choose between a vent and a squadmate. Command made that choice for me.",
+                loyalty_delta=-10.0,
+                response="Doc: 'Thank you for saying it.' Apex: 'Say it quieter, Lieutenant. The Officer reads every log.'",
+            ),
+        },
+        act=2,
+        sortie=3,
+    ),
+    "sortie_4_briefing": DialogueNode(
+        node_id="sortie_4_briefing",
+        speaker="Democracy Officer Karl Reiner",
+        location="SES Leviathan of Truth - Bridge",
+        portrait="images/portraits/npc_reiner.png",
+        prompt=(
+            "Lieutenant Val. A Class-IV Factory Strider is marching on Viper Squad's extraction zone. It is a walking "
+            "fabricator with chin turrets and a ventral core. Destroy it, and Vandalon Prime is ours. Fail, and "
+            "Pelican-1 lands in a graveyard."
+        ),
+        options={
+            "loyal": DialogueOption(
+                stance="loyal",
+                key_name="1",
+                key_code=pygame.K_1,
+                label="[1. LOYAL] The Strider falls today, sir. Whatever it costs.",
+                loyalty_delta=+10.0,
+                response="Reiner: 'Whatever it costs. I will hold you to those words.'",
+            ),
+            "neutral": DialogueOption(
+                stance="neutral",
+                key_name="2",
+                key_code=pygame.K_2,
+                label="[2. NEUTRAL] Core first, turrets second. I will fly the attack profile as briefed.",
+                loyalty_delta=0.0,
+                response="Reiner: 'Efficient. Let us hope the Strider reads the same briefing.'",
+            ),
+            "dissident": DialogueOption(
+                stance="dissident",
+                key_name="3",
+                key_code=pygame.K_3,
+                label="[3. DISSIDENT] Viper Squad gets out alive first. The Strider is just a very large target.",
+                loyalty_delta=-10.0,
+                response="Reiner: 'Priorities, Lieutenant. You keep confusing yours with mine.'",
+            ),
+        },
+        act=2,
+        sortie=4,
+    ),
+    "sortie_4_strider_crisis": DialogueNode(
+        node_id="sortie_4_strider_crisis",
+        speaker="Viper-1 Apex vs Officer Reiner",
+        location="In-Flight Radio Comms",
+        portrait="images/portraits/viper_1_apex.png",
+        prompt=(
+            "Apex: 'Eagle-1, the Strider's chin turrets have us pinned! We cannot reach the extraction beacon!' "
+            "Reiner: 'Eagle-1, its armor is cracking. Commit every pass to the ventral core. The squad will hold.'"
+        ),
+        options={
+            "loyal": DialogueOption(
+                stance="loyal",
+                key_name="1",
+                key_code=pygame.K_1,
+                label="[1. LOYAL] Committing all passes to the core. Viper Squad, dig in!",
+                loyalty_delta=+10.0,
+                response="Reiner: 'Good. Make every pass count.'",
+                speaker_reaction="Apex: 'Digging in! For Super Earth!'",
+            ),
+            "neutral": DialogueOption(
+                stance="neutral",
+                key_name="2",
+                key_code=pygame.K_2,
+                label="[2. NEUTRAL] Alternating passes: leg actuators, then turret suppression.",
+                loyalty_delta=0.0,
+                response="Ghost: 'Alternating runs logged. Turret fire dropping by half.'",
+                speaker_reaction="Apex: 'Half is better than nothing, Eagle!'",
+            ),
+            "dissident": DialogueOption(
+                stance="dissident",
+                key_name="3",
+                key_code=pygame.K_3,
+                label="[3. DISSIDENT] Breaking off the core! Silencing those turrets first!",
+                loyalty_delta=-10.0,
+                response="Doc: 'Turrets are down! We are moving, we are moving!'",
+                speaker_reaction="Reiner: 'You are prolonging this war, Lieutenant.'",
+            ),
+        },
+        act=2,
+        sortie=4,
+    ),
+    "sortie_4_hangar_debrief": DialogueNode(
+        node_id="sortie_4_hangar_debrief",
+        speaker="Viper Squad & Chief Ortiz",
+        location="SES Leviathan of Truth - Hangar Deck",
+        portrait="images/portraits/npc_ortiz.png",
+        prompt=(
+            "Ortiz: 'The Iron Colossus is scrap, Val. Fleet Command is already printing the posters.' "
+            "Apex: 'Act Two is over, Lieutenant. Command wants to know what kind of pilot it is sending into Act Three.'"
+        ),
+        options={
+            "loyal": DialogueOption(
+                stance="loyal",
+                key_name="1",
+                key_code=pygame.K_1,
+                label="[1. LOYAL] The kind that never hesitates. Super Earth can count on me.",
+                loyalty_delta=+12.0,
+                response="Apex: 'That is the pilot the posters promised!'",
+            ),
+            "neutral": DialogueOption(
+                stance="neutral",
+                key_name="2",
+                key_code=pygame.K_2,
+                label="[2. NEUTRAL] The kind that flies the profile and files the report.",
+                loyalty_delta=0.0,
+                response="Ortiz: 'Reliable. Boring. Alive. I can work with that.'",
+            ),
+            "dissident": DialogueOption(
+                stance="dissident",
+                key_name="3",
+                key_code=pygame.K_3,
+                label="[3. DISSIDENT] The kind that remembers every name on Braker's breastplate.",
+                loyalty_delta=-12.0,
+                response="Doc: 'Then remember them loudly, Val.' Apex: 'Careful. The deck mics are always listening.'",
+            ),
+        },
+        act=2,
+        sortie=4,
+    ),
     "bridge_vance_logistics": DialogueNode(
         node_id="bridge_vance_logistics",
         speaker="Ship Master Cynthia Vance",
