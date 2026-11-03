@@ -3,6 +3,9 @@
 import pytest
 
 from eagle1.story.mission_controller import CAMPAIGN_SORTIE_REGISTRY, validate_sortie_registry
+from eagle1.systems.ground_support import GroundSupportManager
+from eagle1.story.campaign_save import CampaignSaveManager
+from eagle1.story.story_manager import StoryManager
 from eagle1.story.dialogue_data import BANTER_QUEUES, get_contextual_banter, validate_viper_dialogue_data
 from eagle1.story.dialogue_db import (
     DIALOGUE_DATABASE,
@@ -138,3 +141,37 @@ def test_act2_banter_is_deterministic(category):
 def test_viper_dialogue_data_still_valid():
     """The Viper dialogue data, including Act II banter, still validates."""
     assert validate_viper_dialogue_data() is True
+
+
+# -----------------------------------------------------------------------------
+# 4. Scripted casualty hook
+# -----------------------------------------------------------------------------
+
+def test_apply_scripted_casualty_downs_living_unit():
+    """A scripted casualty downs a living Helldiver and clears the flawless flag."""
+    gsm = GroundSupportManager()
+    assert gsm.apply_scripted_casualty(1) is True
+    unit = next(u for u in gsm.units if u.index == 1)
+    assert unit.state == "DOWNED"
+    assert unit.health == 0.0
+    assert not unit.is_alive
+    assert 1 in gsm._downed_unit_ids
+    assert gsm.flawless_protection is False
+
+
+def test_apply_scripted_casualty_is_not_reported_twice(tmp_path):
+    """The downed unit is pre-marked so update() does not notify the StoryManager again."""
+    story = StoryManager(save_manager=CampaignSaveManager(data_dir=tmp_path))
+    gsm = GroundSupportManager()
+    gsm.set_story_manager(story)
+    assert gsm.apply_scripted_casualty(1) is True
+    assert story.total_casualties == 0
+    assert 1 in gsm._downed_unit_ids
+
+
+@pytest.mark.parametrize("bad_index", [1, 99, True, "1"])
+def test_apply_scripted_casualty_rejects_dead_or_unknown(bad_index):
+    """Unknown, non-int and already downed indices are rejected without mutation."""
+    gsm = GroundSupportManager()
+    gsm.apply_scripted_casualty(1)
+    assert gsm.apply_scripted_casualty(bad_index) is False
