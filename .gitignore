@@ -68,9 +68,19 @@ instance/
 # Scrapy stuff:
 .scrapy
 
-# Documentation & Campaign Data
+# Documentation
 docs/
+
+# User Data & Save Files (Profiles, Campaign Saves, Settings & Highscores)
 data/campaign_save.json
+data/player_profile.json
+data/audio_settings.json
+data/highscore.txt
+data/stratagem_hero_highscore.txt
+data/*.json
+data/*.txt
+data/*.bak
+data/*.tmp
 
 # PyBuilder
 .pybuilder/
