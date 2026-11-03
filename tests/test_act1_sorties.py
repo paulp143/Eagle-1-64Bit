@@ -2,7 +2,16 @@
 
 import pytest
 
-from eagle1.story.mission_controller import CAMPAIGN_SORTIE_REGISTRY, validate_sortie_registry
+from eagle1.story.campaign_act1 import ACT1_TRIGGERS, SORTIE2_EXTRACTION_WAVE, register_act1_triggers
+from eagle1.story.campaign_save import CampaignSaveManager
+from eagle1.story.comms_hud import CommsHUD
+from eagle1.story.mission_controller import CAMPAIGN_SORTIE_REGISTRY, MissionController, validate_sortie_registry
+from eagle1.story.narrative_trigger_manager import (
+    CombatTelemetrySnapshot,
+    NarrativeTriggerManager,
+    validate_sortie_event_trigger,
+)
+from eagle1.story.story_manager import StoryManager
 from eagle1.story.dialogue_data import BANTER_QUEUES, get_contextual_banter, validate_viper_dialogue_data
 from eagle1.story.dialogue_db import (
     DIALOGUE_DATABASE,
@@ -111,3 +120,111 @@ def test_act1_banter_is_deterministic(category):
 def test_viper_dialogue_data_still_valid():
     """Adding Act I categories keeps the Viper dialogue data valid."""
     assert validate_viper_dialogue_data() is True
+
+
+# -----------------------------------------------------------------------------
+# 4. Act I trigger table and registration
+# -----------------------------------------------------------------------------
+
+@pytest.fixture
+def story_mgr(tmp_path):
+    """Isolated StoryManager backed by a temporary save directory."""
+    return StoryManager(save_manager=CampaignSaveManager(data_dir=tmp_path))
+
+
+@pytest.fixture
+def mission_ctrl(story_mgr):
+    return MissionController(story_mgr)
+
+
+@pytest.fixture
+def comms(story_mgr):
+    return CommsHUD(story_manager=story_mgr)
+
+
+@pytest.fixture
+def manager(story_mgr, comms, mission_ctrl):
+    """NarrativeTriggerManager with all Act I triggers registered."""
+    mgr = NarrativeTriggerManager(story_mgr, comms_hud=comms, mission_controller=mission_ctrl)
+    register_act1_triggers(mgr)
+    return mgr
+
+
+def _predicate(trigger_id):
+    return next(t.predicate for t in ACT1_TRIGGERS if t.trigger_id == trigger_id)
+
+
+def test_act1_triggers_are_valid():
+    """Every Act I trigger passes the trigger validator."""
+    for trigger in ACT1_TRIGGERS:
+        validate_sortie_event_trigger(trigger)
+
+
+def test_act1_trigger_ids_unique_and_scoped():
+    """Trigger ids are unique, prefixed with act1_, and cover Sorties 1 and 2 only."""
+    ids = [t.trigger_id for t in ACT1_TRIGGERS]
+    assert len(set(ids)) == len(ids)
+    assert all(i.startswith("act1_") for i in ids)
+    assert {t.sortie_num for t in ACT1_TRIGGERS} == {1, 2}
+
+
+def test_act1_priorities_follow_story_order():
+    """Within each sortie, priorities strictly decrease in table order."""
+    for sortie_num in (1, 2):
+        prios = [t.priority for t in ACT1_TRIGGERS if t.sortie_num == sortie_num]
+        assert all(a > b for a, b in zip(prios, prios[1:]))
+
+
+def test_register_act1_triggers_returns_count(story_mgr):
+    """A fresh manager receives all Act I triggers, in story order per sortie."""
+    mgr = NarrativeTriggerManager(story_mgr)
+    assert register_act1_triggers(mgr) == len(ACT1_TRIGGERS) == 8
+    assert [t.trigger_id for t in mgr.get_triggers_for_sortie(1)] == [
+        "act1_s1_checkin_eagle",
+        "act1_s1_checkin_apex",
+        "act1_s1_vanguard_doc",
+        "act1_s1_radar_braker",
+        "act1_s1_reiner_override",
+    ]
+    assert [t.trigger_id for t in mgr.get_triggers_for_sortie(2)] == [
+        "act1_s2_perimeter_breach",
+        "act1_s2_supply_dilemma",
+        "act1_s2_extraction",
+    ]
+
+
+def test_register_act1_triggers_twice_is_rejected_atomically(manager):
+    """A second registration fails and leaves the manager's trigger lists untouched."""
+    with pytest.raises(ValueError, match="already registered"):
+        register_act1_triggers(manager)
+    assert len(manager.get_triggers_for_sortie(1)) == 5
+    assert len(manager.get_triggers_for_sortie(2)) == 3
+
+
+@pytest.mark.parametrize("bad_manager", [None, object(), "manager"])
+def test_register_act1_triggers_rejects_invalid_manager(bad_manager):
+    """Non-manager arguments raise TypeError."""
+    with pytest.raises(TypeError):
+        register_act1_triggers(bad_manager)
+
+
+def test_sortie2_extraction_wave_matches_registry():
+    """The Sortie 2 extraction callout uses the registry's target wave count."""
+    assert SORTIE2_EXTRACTION_WAVE == CAMPAIGN_SORTIE_REGISTRY[2].target_waves == 4
+
+
+def test_override_predicate():
+    """Reiner's override fires on wave 2 or at 10 aerial kills, not before."""
+    pred = _predicate("act1_s1_reiner_override")
+    assert pred(CombatTelemetrySnapshot(aerial_kills=9, current_wave=1)) is False
+    assert pred(CombatTelemetrySnapshot(aerial_kills=10)) is True
+    assert pred(CombatTelemetrySnapshot(current_wave=2)) is True
+
+
+def test_supply_dilemma_predicate():
+    """The Sortie 2 dilemma fires on a casualty, a critical Helldiver, or wave 2."""
+    pred = _predicate("act1_s2_supply_dilemma")
+    assert pred(CombatTelemetrySnapshot(current_wave=1)) is False
+    assert pred(CombatTelemetrySnapshot(casualties_count=1)) is True
+    assert pred(CombatTelemetrySnapshot(any_helldiver_critical=True)) is True
+    assert pred(CombatTelemetrySnapshot(current_wave=2)) is True
