@@ -3,6 +3,7 @@
 import pytest
 
 from eagle1.story.mission_controller import CAMPAIGN_SORTIE_REGISTRY, validate_sortie_registry
+from eagle1.story.dialogue_data import BANTER_QUEUES, get_contextual_banter, validate_viper_dialogue_data
 from eagle1.story.dialogue_db import (
     DIALOGUE_DATABASE,
     get_dialogue_node,
@@ -99,3 +100,41 @@ def test_sortie_registry_uses_act2_nodes():
     assert sortie4.briefing_node_id == "sortie_4_briefing"
     assert sortie4.inflight_node_ids == ("sortie_4_strider_crisis",)
     assert sortie4.debrief_node_id == "sortie_4_hangar_debrief"
+
+
+# -----------------------------------------------------------------------------
+# 3. Act II banter categories
+# -----------------------------------------------------------------------------
+
+ACT2_BANTER_CATEGORIES = (
+    "act2_s3_approach_ghost",
+    "act2_s3_extraction_pelican",
+    "act2_s4_strider_arrival_ghost",
+    "act2_s4_extraction_pelican",
+    "act2_s4_check_flawless_braker",
+    "act2_s4_check_flawless_memorial",
+    "act2_s4_check_partial_braker",
+    "act2_s4_check_partial_memorial",
+    "act2_s4_check_wiped",
+)
+
+
+@pytest.mark.parametrize("category", ACT2_BANTER_CATEGORIES)
+def test_act2_banter_categories_have_single_line(category):
+    """Each Act II banter category holds exactly one deterministic line."""
+    assert category in BANTER_QUEUES
+    lines = BANTER_QUEUES[category]
+    assert len(lines) == 1
+    assert lines[0].category == category
+    assert lines[0].line_id == f"{category}_01"
+
+
+@pytest.mark.parametrize("category", ACT2_BANTER_CATEGORIES)
+def test_act2_banter_is_deterministic(category):
+    """Selection ignores the index for single-line categories."""
+    assert get_contextual_banter(category, selection_index=0) is get_contextual_banter(category, selection_index=7)
+
+
+def test_viper_dialogue_data_still_valid():
+    """The Viper dialogue data, including Act II banter, still validates."""
+    assert validate_viper_dialogue_data() is True

@@ -499,6 +499,96 @@ BANTER_QUEUES: Dict[str, List[BanterLine]] = {
             portrait_path="",
         ),
     ],
+    "act2_s3_approach_ghost": [
+        BanterLine(
+            line_id="act2_s3_approach_ghost_01",
+            member_id="viper_3",
+            speaker='Viper-3 "Ghost"',
+            category="act2_s3_approach_ghost",
+            text="Eagle-1, Ghost. Stay low under the AA umbrella. Fabricator complex marked at Grid Charlie-4, three furnace vents hot.",
+            portrait_path="images/portraits/viper_3_ghost.png",
+        ),
+    ],
+    "act2_s3_extraction_pelican": [
+        BanterLine(
+            line_id="act2_s3_extraction_pelican_01",
+            member_id="pelican_1",
+            speaker="Pelican-1",
+            category="act2_s3_extraction_pelican",
+            text="Pelican-1 on approach to Charlie-4! Keep those hull-cutter batteries off my back, Eagle-1!",
+            portrait_path="",
+        ),
+    ],
+    "act2_s4_strider_arrival_ghost": [
+        BanterLine(
+            line_id="act2_s4_strider_arrival_ghost_01",
+            member_id="viper_3",
+            speaker='Viper-3 "Ghost"',
+            category="act2_s4_strider_arrival_ghost",
+            text="Seismic contact! Factory Strider breaching the tree line. Weak points are the ventral core and the leg actuators. Stay clear of the chin turrets!",
+            portrait_path="images/portraits/viper_3_ghost.png",
+        ),
+    ],
+    "act2_s4_extraction_pelican": [
+        BanterLine(
+            line_id="act2_s4_extraction_pelican_01",
+            member_id="pelican_1",
+            speaker="Pelican-1",
+            category="act2_s4_extraction_pelican",
+            text="Pelican-1 inbound through the Strider's smoke! Clear me a landing lane, Eagle-1, we are getting Viper Squad out!",
+            portrait_path="",
+        ),
+    ],
+    "act2_s4_check_flawless_braker": [
+        BanterLine(
+            line_id="act2_s4_check_flawless_braker_01",
+            member_id="viper_2",
+            speaker='Viper-2 "Braker"',
+            category="act2_s4_check_flawless_braker",
+            text="Headcount says four, Eagle-1. Four! No new tally marks tonight. First round at the mess is on me.",
+            portrait_path="images/portraits/viper_2_braker.png",
+        ),
+    ],
+    "act2_s4_check_flawless_memorial": [
+        BanterLine(
+            line_id="act2_s4_check_flawless_memorial_01",
+            member_id="viper_4",
+            speaker='Viper-4 "Doc"',
+            category="act2_s4_check_flawless_memorial",
+            text="All four of us made it, Val. Braker would have hated how quiet this extraction is.",
+            portrait_path="images/portraits/viper_4_doc.png",
+        ),
+    ],
+    "act2_s4_check_partial_braker": [
+        BanterLine(
+            line_id="act2_s4_check_partial_braker_01",
+            member_id="pelican_1",
+            speaker="Pelican-1",
+            category="act2_s4_check_partial_braker",
+            text="Pelican-1 to Eagle-1: wounded and fallen aboard. Braker is carving fresh tally marks into his breastplate on the ramp.",
+            portrait_path="",
+        ),
+    ],
+    "act2_s4_check_partial_memorial": [
+        BanterLine(
+            line_id="act2_s4_check_partial_memorial_01",
+            member_id="pelican_1",
+            speaker="Pelican-1",
+            category="act2_s4_check_partial_memorial",
+            text="Pelican-1 to Eagle-1: we are loading what is left of Viper Squad. No one here to carve the tally marks since Charlie-4.",
+            portrait_path="",
+        ),
+    ],
+    "act2_s4_check_wiped": [
+        BanterLine(
+            line_id="act2_s4_check_wiped_01",
+            member_id="pelican_1",
+            speaker="Pelican-1",
+            category="act2_s4_check_wiped",
+            text="Pelican-1 to Eagle-1... the LZ is silent. No Viper beacons responding. Returning to the Leviathan empty.",
+            portrait_path="",
+        ),
+    ],
 }
 
 
