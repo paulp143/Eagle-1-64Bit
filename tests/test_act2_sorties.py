@@ -5,10 +5,26 @@ import pytest
 from eagle1.story.mission_controller import CAMPAIGN_SORTIE_REGISTRY, validate_sortie_registry
 from eagle1.story.campaign_act1 import register_act1_triggers
 from eagle1.story.campaign_act2 import (
+    ACT2_CHOICE_OBJECTIVES,
     ACT2_TRIGGERS,
+    BRAKER_UNIT_INDEX,
+    SORTIE3_CRISIS_NODE_ID,
     SORTIE3_EXTRACTION_WAVE,
+    SORTIE3_LOYAL_NET_LOYALTY_DELTA,
+    SORTIE3_OBJECTIVE_DISSIDENT,
+    SORTIE3_OBJECTIVE_LOYAL,
+    SORTIE3_OBJECTIVE_NEUTRAL,
+    SORTIE3_OUTCOME_EXTRA_KEY,
+    SORTIE4_CRISIS_NODE_ID,
     SORTIE4_EXTRACTION_WAVE,
+    SORTIE4_OBJECTIVE_DISSIDENT,
+    SORTIE4_OBJECTIVE_LOYAL,
+    SORTIE4_OBJECTIVE_NEUTRAL,
+    apply_sortie4_choice_effect,
+    get_sortie3_braker_survived,
     register_act2_triggers,
+    resolve_act2_choice,
+    resolve_sortie3_500kg_choice,
 )
 from eagle1.story.campaign_save import CampaignSaveManager
 from eagle1.story.comms_hud import CommsHUD
@@ -19,7 +35,7 @@ from eagle1.story.narrative_trigger_manager import (
     validate_sortie_event_trigger,
 )
 from eagle1.systems.ground_support import GroundSupportManager
-from eagle1.story.story_manager import StoryManager
+from eagle1.story.story_manager import DEFAULT_LOYALTY, VALID_STANCES, StoryManager
 from eagle1.story.dialogue_data import BANTER_QUEUES, get_contextual_banter, validate_viper_dialogue_data
 from eagle1.story.dialogue_db import (
     DIALOGUE_DATABASE,
@@ -304,3 +320,211 @@ def test_sortie4_predicates():
     assert crisis(CombatTelemetrySnapshot(boss_active=True, boss_hp_ratio=0.49)) is True
     assert crisis(CombatTelemetrySnapshot(boss_active=True, boss_hp_ratio=0.9, any_helldiver_critical=True)) is True
     assert crisis(CombatTelemetrySnapshot(boss_active=False, boss_hp_ratio=0.1)) is False
+
+
+# -----------------------------------------------------------------------------
+# 6. 500kg crisis and Sortie 4 choice effects
+# -----------------------------------------------------------------------------
+
+def _fresh_gsm():
+    return GroundSupportManager()
+
+
+def _braker(gsm):
+    return next(u for u in gsm.units if u.index == BRAKER_UNIT_INDEX)
+
+
+def test_choice_objectives_cover_all_stances():
+    """Both in-flight Act II nodes map every stance to a non-empty HUD objective."""
+    for node_id in (SORTIE3_CRISIS_NODE_ID, SORTIE4_CRISIS_NODE_ID):
+        choices = ACT2_CHOICE_OBJECTIVES[node_id]
+        assert set(choices) == set(VALID_STANCES)
+        for text in choices.values():
+            assert text.strip()
+            assert len(text) <= 250
+
+
+def test_500kg_loyal_with_live_gsm(story_mgr, mission_ctrl):
+    """LOYAL destroys the fabricator, kills Braker and nets +8.5 loyalty after the casualty."""
+    gsm = _fresh_gsm()
+    fab = gsm.enemy_fabricators[0]
+    story_mgr.record_choice(SORTIE3_CRISIS_NODE_ID, "loyal")
+    outcome = resolve_sortie3_500kg_choice("loyal", story_mgr, gsm, mission_ctrl)
+    assert outcome.fabricator_destroyed
+    assert not fab.is_alive
+    assert outcome.braker_killed_by_strike
+    assert not outcome.braker_survived
+    assert not _braker(gsm).is_alive
+    assert BRAKER_UNIT_INDEX in gsm._downed_unit_ids
+    assert story_mgr.total_casualties == 1
+    assert story_mgr.loyalty == pytest.approx(DEFAULT_LOYALTY + SORTIE3_LOYAL_NET_LOYALTY_DELTA)
+    assert SORTIE3_LOYAL_NET_LOYALTY_DELTA == pytest.approx(12.0 - 3.5)
+    assert mission_ctrl.current_objective == SORTIE3_OBJECTIVE_LOYAL
+    assert get_sortie3_braker_survived(story_mgr) is False
+
+
+def test_500kg_neutral_with_live_gsm(story_mgr, mission_ctrl):
+    """NEUTRAL halves the fabricator and wounds Braker without killing him."""
+    gsm = _fresh_gsm()
+    fab = gsm.enemy_fabricators[0]
+    story_mgr.record_choice(SORTIE3_CRISIS_NODE_ID, "neutral")
+    outcome = resolve_sortie3_500kg_choice("neutral", story_mgr, gsm, mission_ctrl)
+    assert fab.health == pytest.approx(fab.max_health * 0.5)
+    assert fab.is_alive
+    assert not outcome.fabricator_destroyed
+    braker = _braker(gsm)
+    assert braker.is_alive
+    assert braker.health == pytest.approx(braker.max_health * 0.25)
+    assert braker.shield == 0.0
+    assert outcome.braker_wounded
+    assert outcome.braker_survived
+    assert story_mgr.total_casualties == 0
+    assert story_mgr.loyalty == pytest.approx(DEFAULT_LOYALTY)
+    assert mission_ctrl.current_objective == SORTIE3_OBJECTIVE_NEUTRAL
+    assert get_sortie3_braker_survived(story_mgr) is True
+
+
+def test_500kg_neutral_keeps_lower_braker_health(story_mgr):
+    """NEUTRAL never heals Braker when he already has less health than the wound level."""
+    gsm = _fresh_gsm()
+    _braker(gsm).health = 10.0
+    resolve_sortie3_500kg_choice("neutral", story_mgr, gsm)
+    assert _braker(gsm).health == pytest.approx(10.0)
+
+
+def test_500kg_dissident_with_live_gsm(story_mgr, mission_ctrl):
+    """DISSIDENT aborts the drop: no entity changes and loyalty drops by 12."""
+    gsm = _fresh_gsm()
+    fab = gsm.enemy_fabricators[0]
+    braker = _braker(gsm)
+    health_before = braker.health
+    shield_before = braker.shield
+    story_mgr.record_choice(SORTIE3_CRISIS_NODE_ID, "dissident")
+    outcome = resolve_sortie3_500kg_choice("dissident", story_mgr, gsm, mission_ctrl)
+    assert fab.health == pytest.approx(fab.max_health)
+    assert braker.health == pytest.approx(health_before)
+    assert braker.shield == pytest.approx(shield_before)
+    assert outcome.braker_survived
+    assert story_mgr.loyalty == pytest.approx(DEFAULT_LOYALTY - 12.0)
+    assert mission_ctrl.current_objective == SORTIE3_OBJECTIVE_DISSIDENT
+    assert story_mgr.total_casualties == 0
+
+
+def test_500kg_loyal_does_not_double_kill_dead_braker(story_mgr):
+    """A LOYAL drop on an already downed Braker records no second casualty."""
+    gsm = _fresh_gsm()
+    gsm.apply_scripted_casualty(BRAKER_UNIT_INDEX)
+    story_mgr.record_choice(SORTIE3_CRISIS_NODE_ID, "loyal")
+    outcome = resolve_sortie3_500kg_choice("loyal", story_mgr, gsm)
+    assert not outcome.braker_killed_by_strike
+    assert not outcome.braker_survived
+    assert story_mgr.total_casualties == 0
+    assert story_mgr.loyalty == pytest.approx(DEFAULT_LOYALTY + 12.0)
+
+
+@pytest.mark.parametrize(
+    "stance, killed, wounded, casualties",
+    [
+        ("loyal", True, False, 1),
+        ("neutral", False, True, 0),
+        ("dissident", False, False, 0),
+    ],
+)
+def test_500kg_without_gsm(story_mgr, stance, killed, wounded, casualties):
+    """Without a ground support manager Braker is assumed alive and no entity is touched."""
+    outcome = resolve_sortie3_500kg_choice(stance, story_mgr, None)
+    assert outcome.braker_killed_by_strike is killed
+    assert outcome.braker_wounded is wounded
+    assert outcome.fabricator_destroyed is False
+    assert story_mgr.total_casualties == casualties
+
+
+def test_500kg_without_fabricators_or_units(story_mgr):
+    """A mission without ground forces yields no fabricator kill and no Braker casualty."""
+    gsm = GroundSupportManager()
+    gsm._spawn_world({"has_ground": False})
+    outcome = resolve_sortie3_500kg_choice("loyal", story_mgr, gsm)
+    assert outcome.fabricator_destroyed is False
+    assert outcome.braker_killed_by_strike is False
+    assert outcome.braker_survived is False
+    assert story_mgr.total_casualties == 0
+
+
+@pytest.mark.parametrize("bad_stance", ["", "maybe", None, 4, True])
+def test_500kg_invalid_stance_mutates_nothing(story_mgr, bad_stance):
+    """An invalid stance returns None and leaves world and story state untouched."""
+    gsm = _fresh_gsm()
+    fab_health = gsm.enemy_fabricators[0].health
+    braker_health = _braker(gsm).health
+    assert resolve_sortie3_500kg_choice(bad_stance, story_mgr, gsm) is None
+    assert gsm.enemy_fabricators[0].health == fab_health
+    assert _braker(gsm).health == braker_health
+    assert SORTIE3_OUTCOME_EXTRA_KEY not in story_mgr.extra
+
+
+@pytest.mark.parametrize("alias, canonical", [("1", "loyal"), ("[NEUTRAL]", "neutral"), (" Dissident ", "dissident")])
+def test_500kg_accepts_aliases(story_mgr, alias, canonical):
+    """Key numbers, bracketed and padded stance names normalize to the canonical stance."""
+    outcome = resolve_sortie3_500kg_choice(alias, story_mgr, None)
+    assert outcome.stance == canonical
+
+
+def test_500kg_invalid_gsm_is_ignored(story_mgr):
+    """A non-manager object is ignored and the abstract mode applies."""
+    outcome = resolve_sortie3_500kg_choice("loyal", story_mgr, "gsm")
+    assert outcome.braker_killed_by_strike is True
+
+
+def test_500kg_without_story_manager():
+    """Entity effects still apply when no StoryManager is wired."""
+    gsm = _fresh_gsm()
+    outcome = resolve_sortie3_500kg_choice("loyal", None, gsm)
+    assert outcome.fabricator_destroyed
+    assert outcome.braker_killed_by_strike
+
+
+def test_500kg_outcome_is_persisted(tmp_path):
+    """The Sortie 3 outcome survives a save and reload of the campaign."""
+    story = StoryManager(save_manager=CampaignSaveManager(data_dir=tmp_path))
+    resolve_sortie3_500kg_choice("dissident", story, None)
+    reloaded = StoryManager(save_manager=CampaignSaveManager(data_dir=tmp_path))
+    assert get_sortie3_braker_survived(reloaded) is True
+    assert reloaded.extra[SORTIE3_OUTCOME_EXTRA_KEY]["stance"] == "dissident"
+
+
+def test_get_sortie3_braker_survived_defaults_to_true(story_mgr):
+    """Missing or malformed outcome records default to Braker surviving."""
+    assert get_sortie3_braker_survived(None) is True
+    assert get_sortie3_braker_survived(story_mgr) is True
+    story_mgr.extra[SORTIE3_OUTCOME_EXTRA_KEY] = "bad"
+    assert get_sortie3_braker_survived(story_mgr) is True
+    story_mgr.extra[SORTIE3_OUTCOME_EXTRA_KEY] = {"braker_survived": "no"}
+    assert get_sortie3_braker_survived(story_mgr) is True
+
+
+@pytest.mark.parametrize(
+    "stance, expected",
+    [
+        ("loyal", SORTIE4_OBJECTIVE_LOYAL),
+        ("neutral", SORTIE4_OBJECTIVE_NEUTRAL),
+        ("dissident", SORTIE4_OBJECTIVE_DISSIDENT),
+    ],
+)
+def test_apply_sortie4_choice_effect_sets_objective(mission_ctrl, stance, expected):
+    """Each Sortie 4 stance sets its HUD objective."""
+    assert apply_sortie4_choice_effect(stance, mission_ctrl) == expected
+    assert mission_ctrl.current_objective == expected
+
+
+def test_apply_sortie4_choice_effect_rejects_invalid(mission_ctrl):
+    """Invalid stances and a missing controller apply nothing."""
+    assert apply_sortie4_choice_effect("maybe", mission_ctrl) is None
+    assert apply_sortie4_choice_effect("loyal", None) is None
+
+
+def test_resolve_act2_choice_routes_and_ignores_foreign_nodes(story_mgr, mission_ctrl):
+    """The Act II router dispatches to its two in-flight nodes and ignores everything else."""
+    assert resolve_act2_choice(SORTIE3_CRISIS_NODE_ID, "dissident", story_mgr, None, mission_ctrl) == SORTIE3_OBJECTIVE_DISSIDENT
+    assert resolve_act2_choice(SORTIE4_CRISIS_NODE_ID, "neutral", story_mgr, None, mission_ctrl) == SORTIE4_OBJECTIVE_NEUTRAL
+    for foreign in ("sortie_1_inflight", "  ", None, True):
+        assert resolve_act2_choice(foreign, "loyal", story_mgr, None, mission_ctrl) is None
