@@ -57,8 +57,8 @@ class CampaignSortieConfig:
 
 
 # Canonical registry for campaign Sorties 1 through 4 across Act I & II.
-# Note: In-flight dialogue nodes referenced below (sortie_2_inflight, sortie_3_500kg_crisis,
-# sortie_4_strider_crisis) are implemented in Sub-Issues #69 (Act I) and #70 (Act II).
+# Note: Act I in-flight nodes (sortie_1_inflight, sortie_2_inflight) are defined in dialogue_db (#69);
+# Act II in-flight nodes (sortie_3_500kg_crisis, sortie_4_strider_crisis) are implemented in #70.
 CAMPAIGN_SORTIE_REGISTRY: Dict[int, CampaignSortieConfig] = {
     1: CampaignSortieConfig(
         sortie_num=1,
@@ -90,9 +90,9 @@ CAMPAIGN_SORTIE_REGISTRY: Dict[int, CampaignSortieConfig] = {
         has_boss_strider=False,
         initial_objective="Provide Close Air Support to Viper Squad defending the forward orbital relay outpost.",
         extraction_objective="Hold the relay perimeter until Pelican-1 completes squad extraction.",
-        briefing_node_id="bridge_vance_logistics",
+        briefing_node_id="sortie_2_briefing",
         inflight_node_ids=("sortie_2_inflight",),
-        debrief_node_id="viper_debrief_casualties",
+        debrief_node_id="sortie_2_hangar_debrief",
     ),
     3: CampaignSortieConfig(
         sortie_num=3,

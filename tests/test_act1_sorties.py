@@ -2,6 +2,7 @@
 
 import pytest
 
+from eagle1.story.mission_controller import CAMPAIGN_SORTIE_REGISTRY, validate_sortie_registry
 from eagle1.story.dialogue_db import (
     DIALOGUE_DATABASE,
     get_dialogue_node,
@@ -56,3 +57,24 @@ def test_inflight_loyalty_deltas(node_id, loyal, neutral, dissident):
     assert node.options["loyal"].loyalty_delta == pytest.approx(loyal)
     assert node.options["neutral"].loyalty_delta == pytest.approx(neutral)
     assert node.options["dissident"].loyalty_delta == pytest.approx(dissident)
+
+
+# -----------------------------------------------------------------------------
+# 2. Sortie registry wiring
+# -----------------------------------------------------------------------------
+
+@pytest.mark.parametrize("sortie_num", [1, 2])
+def test_sortie_registry_act1_node_ids_resolve(sortie_num):
+    """Every node id referenced by an Act I sortie config resolves to a dialogue node."""
+    cfg = CAMPAIGN_SORTIE_REGISTRY[sortie_num]
+    for node_id in (cfg.briefing_node_id, *cfg.inflight_node_ids, cfg.debrief_node_id):
+        assert get_dialogue_node(node_id) is not None, node_id
+
+
+def test_sortie_2_registry_uses_act1_nodes():
+    """Sortie 2 briefing and debrief point at the new Act I nodes; the registry stays valid."""
+    cfg = CAMPAIGN_SORTIE_REGISTRY[2]
+    assert cfg.briefing_node_id == "sortie_2_briefing"
+    assert cfg.inflight_node_ids == ("sortie_2_inflight",)
+    assert cfg.debrief_node_id == "sortie_2_hangar_debrief"
+    assert validate_sortie_registry() is True
