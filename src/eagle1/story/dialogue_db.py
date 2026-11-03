@@ -172,6 +172,126 @@ DIALOGUE_DATABASE: Dict[str, DialogueNode] = {
         act=1,
         sortie=1,
     ),
+    "sortie_2_briefing": DialogueNode(
+        node_id="sortie_2_briefing",
+        speaker="Democracy Officer Karl Reiner",
+        location="SES Leviathan of Truth - Bridge",
+        portrait="images/portraits/npc_reiner.png",
+        prompt=(
+            "Lieutenant Val. The forward orbital relay on the Red Perimeter is the only uplink between "
+            "Viper Squad and this destroyer. Automaton armor is massing at the ridge line. If the relay falls, "
+            "Fleet Command goes deaf over Vandalon Prime. Tell me, Lieutenant: what is that relay worth to you?"
+        ),
+        options={
+            "loyal": DialogueOption(
+                stance="loyal",
+                key_name="1",
+                key_code=pygame.K_1,
+                label="[1. LOYAL] More than any single squad, sir. The relay is the voice of Democracy. It will not fall.",
+                loyalty_delta=+8.0,
+                response="Reiner: 'Correct. Remember those words when the radio starts screaming.'",
+            ),
+            "neutral": DialogueOption(
+                stance="neutral",
+                key_name="2",
+                key_code=pygame.K_2,
+                label="[2. NEUTRAL] Relay uptime is the mission parameter. I will fly the defense profile as briefed.",
+                loyalty_delta=0.0,
+                response="Reiner: 'Adequate. Fly the profile and let the numbers speak for you.'",
+            ),
+            "dissident": DialogueOption(
+                stance="dissident",
+                key_name="3",
+                key_code=pygame.K_3,
+                label="[3. DISSIDENT] The relay is hardware, sir. Viper Squad are the ones standing in front of it.",
+                loyalty_delta=-8.0,
+                response="Reiner: 'Hardware that keeps eleven thousand troopers in contact with orbit. Recalibrate your sympathies, Val.'",
+            ),
+        },
+        act=1,
+        sortie=2,
+    ),
+    "sortie_2_inflight": DialogueNode(
+        node_id="sortie_2_inflight",
+        speaker="Viper-4 Doc vs Officer Reiner",
+        location="In-Flight Radio Comms",
+        portrait="images/portraits/viper_4_doc.png",
+        prompt=(
+            "Doc: 'Eagle-1, Braker is down and I am out of stims! I need a supply pod on my position and cover fire NOW!' "
+            "Reiner: 'Negative, Eagle-1. Ammunition conservation is in effect. Every round you carry is reserved "
+            "for the relay generator.'"
+        ),
+        options={
+            "loyal": DialogueOption(
+                stance="loyal",
+                key_name="1",
+                key_code=pygame.K_1,
+                label="[1. LOYAL] Copy, Command. Holding ordnance for the relay generator. Doc, hold on.",
+                loyalty_delta=+8.0,
+                response="Apex: 'You heard the Officer! The relay stands, Viper Squad stands!'",
+                speaker_reaction="Doc: '...Understood. I will make do with what I have.'",
+            ),
+            "neutral": DialogueOption(
+                stance="neutral",
+                key_name="2",
+                key_code=pygame.K_2,
+                label="[2. NEUTRAL] Rationing per Ordnance Table 4-B. One scheduled resupply window, no exceptions.",
+                loyalty_delta=0.0,
+                response="Ghost: 'Scheduled window logged. Doc, you have ninety seconds.'",
+                speaker_reaction="Doc: 'Ninety seconds... okay. Okay.'",
+            ),
+            "dissident": DialogueOption(
+                stance="dissident",
+                key_name="3",
+                key_code=pygame.K_3,
+                label="[3. DISSIDENT] Negative, Command. Dropping supply on Doc and covering the casualty evac!",
+                loyalty_delta=-8.0,
+                response="Braker: 'Pod is down! You beautiful lunatic, Val!'",
+                speaker_reaction="Reiner: 'This deviation has been logged, Lieutenant.'",
+            ),
+        },
+        act=1,
+        sortie=2,
+    ),
+    "sortie_2_hangar_debrief": DialogueNode(
+        node_id="sortie_2_hangar_debrief",
+        speaker="Viper Squad & Chief Ortiz",
+        location="SES Leviathan of Truth - Hangar Deck",
+        portrait="images/portraits/npc_ortiz.png",
+        prompt=(
+            "Ortiz: 'Relay is still transmitting, Val. Your cannon barrels are scorched black.' "
+            "Braker: 'And I have a fresh tally mark on my breastplate. Tell me it was worth an antenna.' "
+            "Apex: 'The relay held. That is all Super Earth asks of us.'"
+        ),
+        options={
+            "loyal": DialogueOption(
+                stance="loyal",
+                key_name="1",
+                key_code=pygame.K_1,
+                label="[1. LOYAL] It was worth it, Braker. Every tally mark is a debt paid in Liberty.",
+                loyalty_delta=+10.0,
+                response="Apex: 'Spoken like a true patriot!' Braker: 'Spoken like someone who never carries the bodies.'",
+            ),
+            "neutral": DialogueOption(
+                stance="neutral",
+                key_name="2",
+                key_code=pygame.K_2,
+                label="[2. NEUTRAL] Relay uptime was ninety-six percent. Losses stayed inside projected tolerances.",
+                loyalty_delta=+1.0,
+                response="Ortiz: 'Tolerances. Right. I will put that on the barrel replacement form.'",
+            ),
+            "dissident": DialogueOption(
+                stance="dissident",
+                key_name="3",
+                key_code=pygame.K_3,
+                label="[3. DISSIDENT] No, Braker. They traded your squadmate for an antenna, and nobody up here will say it.",
+                loyalty_delta=-10.0,
+                response="Braker: 'Finally, someone said it.' Apex: 'Careful, Lieutenant. The deck mics are always listening.'",
+            ),
+        },
+        act=1,
+        sortie=2,
+    ),
     "bridge_vance_logistics": DialogueNode(
         node_id="bridge_vance_logistics",
         speaker="Ship Master Cynthia Vance",
