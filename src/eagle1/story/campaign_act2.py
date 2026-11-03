@@ -7,8 +7,10 @@ NarrativeTriggerManager.
 
 from dataclasses import dataclass
 import logging
+import math
 from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 
+from eagle1.story.dialogue_data import BANTER_QUEUES, BanterLine
 from eagle1.story.mission_controller import CAMPAIGN_SORTIE_REGISTRY, MAX_SORTIE_NUM, MIN_SORTIE_NUM, MissionController
 from eagle1.story.narrative_trigger_manager import (
     CONDITION_CUSTOM,
@@ -20,6 +22,7 @@ from eagle1.story.narrative_trigger_manager import (
 from eagle1.story.story_manager import VALID_STANCES, StoryManager
 
 if TYPE_CHECKING:
+    from eagle1.story.comms_hud import CommsHUD
     from eagle1.systems.ground_support import GroundSupportManager
 
 logger = logging.getLogger(__name__)
@@ -389,3 +392,61 @@ def resolve_act2_choice(
     if clean_id == SORTIE4_CRISIS_NODE_ID:
         return apply_sortie4_choice_effect(stance, mission_controller)
     return None
+
+
+SQUAD_SIZE: int = 4
+
+CASUALTY_CHECK_FLAWLESS_BRAKER: str = "act2_s4_check_flawless_braker"
+CASUALTY_CHECK_FLAWLESS_MEMORIAL: str = "act2_s4_check_flawless_memorial"
+CASUALTY_CHECK_PARTIAL_BRAKER: str = "act2_s4_check_partial_braker"
+CASUALTY_CHECK_PARTIAL_MEMORIAL: str = "act2_s4_check_partial_memorial"
+CASUALTY_CHECK_WIPED: str = "act2_s4_check_wiped"
+
+
+def _sanitize_casualties(value: object) -> int:
+    """Coerce a casualty count to an int in [0, SQUAD_SIZE]; bools, NaN, inf and garbage become 0."""
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            return 0
+        return max(0, min(SQUAD_SIZE, int(value)))
+    if isinstance(value, int):
+        return max(0, min(SQUAD_SIZE, value))
+    return 0
+
+
+def get_sortie4_casualty_check_category(casualties_count: int, braker_survived: bool = True) -> str:
+    """Return the BANTER_QUEUES category for the Sortie 4 pre-extraction casualty check."""
+    count = _sanitize_casualties(casualties_count)
+    survived = braker_survived if isinstance(braker_survived, bool) else True
+    if count >= SQUAD_SIZE:
+        return CASUALTY_CHECK_WIPED
+    if count == 0:
+        return CASUALTY_CHECK_FLAWLESS_BRAKER if survived else CASUALTY_CHECK_FLAWLESS_MEMORIAL
+    return CASUALTY_CHECK_PARTIAL_BRAKER if survived else CASUALTY_CHECK_PARTIAL_MEMORIAL
+
+
+def get_sortie4_casualty_check_banter(casualties_count: int, braker_survived: bool = True) -> BanterLine:
+    """Return the radio line acknowledging surviving or fallen Viper members before extraction.
+
+    Args:
+        casualties_count: Viper Squad casualties in Sortie 4 (0 flawless, 1..3 partial, 4 wiped).
+        braker_survived: Whether Braker survived the Sortie 3 500kg crisis
+            (see get_sortie3_braker_survived()).
+    """
+    category = get_sortie4_casualty_check_category(casualties_count, braker_survived)
+    return BANTER_QUEUES[category][0]
+
+
+def emit_sortie4_casualty_check(
+    comms_hud: Optional["CommsHUD"],
+    casualties_count: int,
+    braker_survived: bool = True,
+) -> bool:
+    """Play the Sortie 4 casualty check on the comms HUD; return True if the callout was shown."""
+    if comms_hud is None:
+        logger.debug("No comms HUD wired; skipping Sortie 4 casualty check")
+        return False
+    line = get_sortie4_casualty_check_banter(casualties_count, braker_survived)
+    return bool(comms_hud.trigger_callout(line.speaker, line.text, portrait=line.portrait_path))

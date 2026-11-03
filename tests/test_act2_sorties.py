@@ -8,6 +8,11 @@ from eagle1.story.campaign_act2 import (
     ACT2_CHOICE_OBJECTIVES,
     ACT2_TRIGGERS,
     BRAKER_UNIT_INDEX,
+    CASUALTY_CHECK_FLAWLESS_BRAKER,
+    CASUALTY_CHECK_FLAWLESS_MEMORIAL,
+    CASUALTY_CHECK_PARTIAL_BRAKER,
+    CASUALTY_CHECK_PARTIAL_MEMORIAL,
+    CASUALTY_CHECK_WIPED,
     SORTIE3_CRISIS_NODE_ID,
     SORTIE3_EXTRACTION_WAVE,
     SORTIE3_LOYAL_NET_LOYALTY_DELTA,
@@ -21,7 +26,10 @@ from eagle1.story.campaign_act2 import (
     SORTIE4_OBJECTIVE_LOYAL,
     SORTIE4_OBJECTIVE_NEUTRAL,
     apply_sortie4_choice_effect,
+    emit_sortie4_casualty_check,
     get_sortie3_braker_survived,
+    get_sortie4_casualty_check_banter,
+    get_sortie4_casualty_check_category,
     register_act2_triggers,
     resolve_act2_choice,
     resolve_sortie3_500kg_choice,
@@ -528,3 +536,69 @@ def test_resolve_act2_choice_routes_and_ignores_foreign_nodes(story_mgr, mission
     assert resolve_act2_choice(SORTIE4_CRISIS_NODE_ID, "neutral", story_mgr, None, mission_ctrl) == SORTIE4_OBJECTIVE_NEUTRAL
     for foreign in ("sortie_1_inflight", "  ", None, True):
         assert resolve_act2_choice(foreign, "loyal", story_mgr, None, mission_ctrl) is None
+
+
+# -----------------------------------------------------------------------------
+# 7. Sortie 4 casualty check
+# -----------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "casualties, braker_survived, expected",
+    [
+        (0, True, CASUALTY_CHECK_FLAWLESS_BRAKER),
+        (0, False, CASUALTY_CHECK_FLAWLESS_MEMORIAL),
+        (1, True, CASUALTY_CHECK_PARTIAL_BRAKER),
+        (3, True, CASUALTY_CHECK_PARTIAL_BRAKER),
+        (2, False, CASUALTY_CHECK_PARTIAL_MEMORIAL),
+        (4, True, CASUALTY_CHECK_WIPED),
+        (4, False, CASUALTY_CHECK_WIPED),
+        (7, True, CASUALTY_CHECK_WIPED),
+    ],
+)
+def test_casualty_check_categories(casualties, braker_survived, expected):
+    """Casualty counts and the Sortie 3 outcome select the matching banter category."""
+    assert get_sortie4_casualty_check_category(casualties, braker_survived) == expected
+
+
+@pytest.mark.parametrize("bad_count", [-1, True, float("nan"), float("inf"), "3", None])
+def test_casualty_check_sanitizes_counts(bad_count):
+    """Garbage counts fall back to zero casualties."""
+    assert get_sortie4_casualty_check_category(bad_count) == CASUALTY_CHECK_FLAWLESS_BRAKER
+
+
+def test_casualty_check_truncates_float_counts():
+    """Fractional counts truncate toward zero."""
+    assert get_sortie4_casualty_check_category(2.9) == CASUALTY_CHECK_PARTIAL_BRAKER
+
+
+def test_casualty_check_invalid_braker_flag_defaults_to_survived():
+    """A non-bool braker flag is treated as Braker surviving."""
+    assert get_sortie4_casualty_check_category(0, "no") == CASUALTY_CHECK_FLAWLESS_BRAKER
+
+
+@pytest.mark.parametrize("casualties", [1, 2, 3, 4])
+def test_casualty_check_lines_are_spoken_by_pelican_after_losses(casualties):
+    """After any loss Pelican-1 speaks, so no possibly fallen squad member is heard."""
+    line = get_sortie4_casualty_check_banter(casualties, True)
+    assert line.speaker == "Pelican-1"
+    assert line.category == get_sortie4_casualty_check_category(casualties, True)
+
+
+def test_casualty_check_flawless_lines_name_the_right_speaker():
+    """A flawless extraction is spoken by Braker, or by Doc when Braker fell earlier."""
+    assert "Braker" in get_sortie4_casualty_check_banter(0, True).speaker
+    memorial = get_sortie4_casualty_check_banter(0, False)
+    assert "Doc" in memorial.speaker
+    assert "Braker" in memorial.text
+
+
+def test_emit_casualty_check_on_comms(comms):
+    """The casualty check is shown on the comms HUD with the selected line."""
+    assert emit_sortie4_casualty_check(comms, 2, False) is True
+    assert comms.is_active
+    assert comms.current_node.prompt == get_sortie4_casualty_check_banter(2, False).text
+
+
+def test_emit_casualty_check_without_comms():
+    """Without a comms HUD nothing is shown."""
+    assert emit_sortie4_casualty_check(None, 0) is False
