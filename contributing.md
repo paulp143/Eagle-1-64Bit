@@ -72,18 +72,27 @@ python run_game.py
 The project follows a standard `src/` layout with modular packages:
 
 - `src/eagle1/app/game.py` — game initialization, player aircraft, combat loop, UI, waves, and persistence.
+- `src/eagle1/story/` — narrative campaign architecture (Sorties 1–4 across Acts I & II), in-flight narrative trigger manager, dialogue database, radio banter queues, Super Destroyer hub deck, and atomic campaign save state.
 - `src/eagle1/systems/ground_support.py` — Helldiver units, Automaton ground forces, fabricators, air strikes, supply drops, and CAS missions.
 - `src/eagle1/systems/powerups.py` — power-up drops, abilities, escort drones, and homing micro-missiles.
 - `src/eagle1/systems/audio_manager.py` — 16-channel mixer, procedural SFX & dynamic combat music, persistence.
+- `src/eagle1/systems/academy_briefing.py` — Naval Academy flight drills and graduation ceremony.
 - `src/eagle1/ui/help_menu.py` — in-game tactical help menu and its six information tabs.
 - `src/eagle1/ui/settings_menu.py` — tabbed settings interface.
+- `src/eagle1/ui/enlistment_screen.py` & `debriefing_screen.py` — pilot contract enlistment and mission After-Action Report (AAR).
+- `docs/` — design specifications, player experience intent, and complete narrative story bible (`intent.md`, `spec.md`, `story.md`).
+- `frontend/` — official website landing page hosted on GitHub Pages (`index.html` & static assets).
 - `tools/generate_audio_assets.py` — standalone audio synthesis tool.
+- `tools/generate_portrait_assets.py` — pixel-art character dialogue portrait synthesizer.
+- `docs/` — design specifications, player experience intent, and complete narrative story bible (`intent.md`, `spec.md`, `story.md`).
+- `frontend/` — official website landing page hosted on GitHub Pages (`index.html` & static assets).
+- `tools/generate_portrait_assets.py` — pixel-art character dialogue portrait synthesizer.
 - `tools/build_macos_icon.py` — synthesizes Apple `.icns` multi-resolution icon bundle.
 - `tools/build_macos_dmg.py` — packages `Eagle-1.app` into a drag-and-drop `.dmg` disk image.
 - `tools/package_macos.py` — complete macOS standalone packaging pipeline (.app, .dmg, .zip).
-- `tests/` — automated headless test suite running under `pytest`.
+- `tests/` — automated headless test suite (672 tests across 42 test modules running under `pytest`).
 - `images/` — sprites, backgrounds, explosions, and interface assets.
-- `data/` — runtime data such as high scores and audio settings.
+- `data/` — runtime data such as high scores, player profiles, and campaign save states.
 - Root scripts (`run_game.py`, `main.py`, etc.) provide convenient launchers and compatibility shims.
 
 Read the relevant module and existing tests before changing behavior. Prefer extending existing systems over duplicating logic.

@@ -1,11 +1,15 @@
 # Eagle-1-64Bit
 
 [![Website](https://img.shields.io/badge/Website-paulp143.github.io%2FEagle--1--64Bit-ffbe0b?style=flat&logo=firefoxbrowser)](https://paulp143.github.io/Eagle-1-64Bit/)
-[![Download](https://img.shields.io/badge/Download-Windows%20.zip-00f0ff?style=flat&logo=windows)](https://paulp143.github.io/Eagle-1-64Bit/#download)
+[![Download Windows](https://img.shields.io/badge/Download-Windows%20.zip-00f0ff?style=flat&logo=windows)](https://github.com/paulp143/Eagle-1-64Bit/releases/latest/download/Eagle-1-Windows.zip)
+[![Download macOS](https://img.shields.io/badge/Download-macOS%20.dmg-a29bfe?style=flat&logo=apple)](https://github.com/paulp143/Eagle-1-64Bit/releases/latest/download/Eagle-1-macOS.dmg)
+[![Download Linux](https://img.shields.io/badge/Download-Linux%20.tar.gz-55efc4?style=flat&logo=linux)](https://github.com/paulp143/Eagle-1-64Bit/releases/latest/download/Eagle-1-Linux.tar.gz)
+[![Tests](https://img.shields.io/badge/Tests-672%20passed-brightgreen?style=flat&logo=pytest)](https://github.com/paulp143/Eagle-1-64Bit/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/badge/Release-v0.4.0-orange?style=flat&logo=github)](https://github.com/paulp143/Eagle-1-64Bit/releases/latest)
 
-A 2D top-down space combat arcade game built in Python using Pygame. The game features an expansive 3000×3000 scrolling arena, inertia-driven flight mechanics, quad-cannon combat, homing rockets, radar lock-on modes, a power-up system, friendly Helldiver ground squads, hostile Automaton ground forces, destructible fabricators, a stratagem air strike arsenal, a dynamic predictive aiming reticle, and a fully interactive 6-tab in-game help menu.
+A 2D top-down space combat arcade game built in Python using Pygame. The game features an expansive 3000×3000 scrolling arena, inertia-driven flight mechanics, quad-cannon combat, homing rockets, radar lock-on modes, a power-up system, friendly Helldiver ground squads, hostile Automaton ground forces, destructible fabricators, a stratagem air strike arsenal, a dynamic predictive aiming reticle, a multi-act narrative campaign with in-flight radio dilemmas and slow-motion choices, a Super Destroyer capital ship hub deck, and a fully interactive 6-tab in-game help menu.
 
-> 🌐 **Official Website & Easy Player Download:** [paulp143.github.io/Eagle-1-64Bit](https://paulp143.github.io/Eagle-1-64Bit/)
+> 🌐 **Official Website & Downloads:** [paulp143.github.io/Eagle-1-64Bit](https://paulp143.github.io/Eagle-1-64Bit/)
 
 ![Eagle-1-64Bit Main Menu](images/Documentation%20images/main_menu.png)
 
@@ -14,6 +18,12 @@ A 2D top-down space combat arcade game built in Python using Pygame. The game fe
 
 - [Overview](#overview)
 - [Key Features](#key-features)
+- [Story Campaign Subsystem (Acts I & II)](#story-campaign-subsystem-acts-i--ii)
+  - [Campaign Structure & Canonical Sorties 1–4](#campaign-structure--canonical-sorties-14)
+  - [In-Flight Narrative Dilemmas & Slow-Motion](#in-flight-narrative-dilemmas--slow-motion)
+  - [The 500kg Friendly-Fire Crisis (Sortie 3)](#the-500kg-friendly-fire-crisis-sortie-3)
+  - [Factory Strider Boss Raid & Dynamic Banter (Sortie 4)](#factory-strider-boss-raid--dynamic-banter-sortie-4)
+  - [Super Destroyer Catapult Launch & Debriefing Loop](#super-destroyer-catapult-launch--debriefing-loop)
 - [Ground Support & Helldivers Subsystem](#ground-support--helldivers-subsystem)
   - [Allied Helldiver Squad (Viper 1-4)](#allied-helldiver-squad-viper-1-4)
   - [Hostile Ground Forces & Fabricators](#hostile-ground-forces--fabricators)
@@ -60,47 +70,85 @@ A custom 2D camera tracks the player ship across the map, clamping to world bord
   - **The Bridge:** Confer with Democracy Officer Karl Reiner and Ship Master Cynthia Vance regarding high command directives and the Super Earth Patriotism Index.
   - **The Ready Room:** Debrief Fireteam Viper (Apex, Braker, Ghost, Doc) with dynamic dialogue reacting to recent sortie casualties, flawless squad extractions, and replacement reinforcements.
   - **The Hangar Deck:** Inspect real-time aircraft hull integrity with Chief Engineer Rylan Ortiz, review operational sortie briefing cards, and initiate hydraulic catapult launch into combat.
-- **Interactive 3-Choice Dialogue System:** Dynamic typewriter narrative interface with high-res character portraits and stance options (Zealot, Neutral, Cynical, Defiant) directly modulating player loyalty.
+- **Interactive 3-Choice Dialogue System:** Dynamic typewriter narrative interface with high-res character portraits and stance options (Loyal, Neutral, Dissident) directly modulating player loyalty and squad survival.
+- **Narrative Campaign Progression (Acts I & II, Milestone 4):** A 4-sortie story campaign linking low-altitude combat directly to character-driven radio decisions:
+  - **Sortie 1 ("Baptism of Fire"):** Air superiority dogfight against drone swarms with Officer Reiner's command override (fleet priority targets vs. squad cover).
+  - **Sortie 2 ("The Red Perimeter"):** Base defense holding action with mounting squad casualty radio traffic.
+  - **Sortie 3 ("The Fabricator Furnace"):** Outpost demolition with the pivotal 500kg friendly-fire dilemma where Viper-2 Braker is trapped near the primary vent.
+  - **Sortie 4 ("The Iron Colossus"):** Colossal Factory Strider boss raid, mid-fight armor crisis, and dynamic pre-extraction casualty check banter adapting to squad survival.
+- **Combat Telemetry & Narrative Trigger Engine (`NarrativeTriggerManager`):** Real-time 60 FPS evaluation of battlefield milestones (`CombatTelemetrySnapshot`) ensuring chronological cue dispatch.
+- **Tactical Time Dilation (0.4× Slow-Motion):** Radio dilemma transmissions automatically engage 0.4× slow-motion, providing critical reaction time while keeping thruster steering and quad-cannons fully responsive.
 - **Super Earth Naval Academy Tutorial Mission (`academy_briefing.py`):** The introductory campaign training sortie guided by Chief Flight Drill Instructor Commander Vance. Features 6 progressive training drills (yaw steering gates, afterburners & air brakes, hazard perimeter turnaround, convergence pip cannon accuracy, radar modes & missile lock, and 500kg CAS bunker strike) culminating in a graduation ceremony awarding the "Wings of Liberty" aviator badge and unlocking operational stratagems.
-- **Mission Selection System:** Tactical operational menu (`game_state = "mission_select"`) featuring 5 focused modes to prevent chaotic gameplay.
+- **Mission Selection System:** Tactical operational menu (`game_state = "mission_select"`) featuring 5 focused arcade modes alongside the story campaign.
 - **5 Focused Operational Modes:**
   - **Air Superiority:** Pure aerial dogfighting against 5 wave squadrons (ground hostiles disabled); extraction beacon deploys upon wave 5 completion.
   - **Orbital Base Defense:** Protect a stationary friendly Orbital Defense Base across 5 waves against rebalanced **Automaton Bombers** (75 HP). Extraction is strictly gated until all 5 bomber waves are repelled and bombers are no longer spawning, whereupon Pelican-1 deploys for evacuation.
   - **Factory Strider Boss Raid:** Cooperate with Helldivers to destroy a colossal 300 HP **Factory Strider** walking fortress firing heavy plasma bolts with laser targeting telegraphs. Defeating the boss auto-triggers Pelican extraction.
   - **Outpost Demolition:** Demolish 3 Automaton Fabricator foundries defended by Troopers & Walkers across 6 waves, auto-triggering Pelican extraction upon clearing the foundries.
   - **Endless War:** Combined full-scale classic operation featuring all ground and aerial hostiles.
-- **Factory Strider Boss Ground Unit:** Colossal 300 HP 6-legged walking fortress equipped with heavy plasma cannon (red laser targeting beam), twin chin dual lasers, and internal trooper spawn bay.
-- **Automaton Heavy Bombers:** Armored aerial bombers (75 HP, 15 damage bombs) targeting orbital base structures.
-- **Friendly Orbital Defense Base:** Stationed command base (300 HP + 100 Shield) with rotating radar and shield perimeter, displayed clearly on radar/minimap.
-- **Top HUD Mission Objective Tracker Banner:** Real-time top-center HUD objective tracker displaying active mission goals, base hull integrity, and boss HP bars.
-- **Post-Mission Debriefing Screen & Exploit Fix:** Once mission objectives are completed across any operational mode, combat simulation immediately halts to prevent post-mission point farming. A dedicated Helldivers-themed After-Action Report (AAR) screen displays military combat readiness evaluations (Rank S/A/B/C), highscore status, mission time, aerial and bomber kill counts, fabricators and bosses demolished, squad survival status (with Flawless +500 PTS callout), and options for Replay (`[R]`), Mission Select (`[SPACE]`), or Main Menu (`[ESC]`).
-- **Super Destroyer Orbital Rearm (`R`):** When stratagems are depleted, pressing `R` triggers a 15.0s cinematic return to the Super Destroyer maintenance bay in low orbit. Ground simulation and Helldivers are safely frozen during orbit while robotic gantry cranes rearm the 500kg bomb and rockets with steam vents and welding sparks. Eagle-1 then catapults back down with an atmospheric re-entry burn, full stock, and 1.0s invulnerability.
-- **Stratagem Hero Arcade Minigame:** Play the interactive arcade terminal inside the Super Destroyer hangar during rearm using Arrow Keys or WASD to match stratagem sequences for combo scores, saved to persistent leaderboard tracker (`data/stratagem_hero_highscore.txt`).
-- **Buffed Eagle 500kg Bomb:** Massive 480px blast radius with 38.0 heavy burst damage, devastating clustered structures and bosses.
-- **Light Enemy Anti-Ramming & Collision Physics:** `Light_Enemy` fighters execute break-away strafe maneuvers at <180px distance; physical collisions deal 12 damage absorbed by shields first with separation recoil.
-- **Prominent Health & Shield Feedback:** High-visibility 230×13px top-left shield and hull bars with numeric labels, accompanied by low-health red cardiac vignette + heartbeat SFX and low-shield warning vignette + chirp SFX.
-- **Large Continuous World Arena:** 3000×3000 pixel world with seamless background tiling and camera viewport clamping.
-- **Out-of-Bounds Hazard Zone:** World boundaries are highlighted with a 4-pixel red border. Flying beyond boundary coordinates inflicts continuous boundary damage.
-- **Inertia & Momentum Flight Dynamics:** Ships maintain continuous forward movement in their heading direction with smooth turn acceleration.
-- **Quad-Cannon Primary Fire:** Each primary attack unloads 4 bullets simultaneously from distinct wing-mounted offsets.
-- **Secondary Homing Rockets:** Players can launch steerable homing missiles that lock onto aerial hostiles, bombers, ground units, fabricators, and the Factory Strider.
-- **Dual Radar Lock-On Modes:** Switch between directional forward cone radar (`CONE`) and 360-degree close-range perimeter radar (`OMNI`).
-- **Allied Helldiver Ground Support Subsystem:** Deploy and protect a 4-trooper ground squad (Viper 1-4) with obstacle avoidance and anti-air cover fire.
-- **Hostile Ground Units (Automaton Troopers & Walkers):** Enemy ground forces advancing across the terrain and engaging Helldivers with red laser fire.
-- **Destructible Automaton Fabricators:** Heavy enemy foundry structures that continuously produce ground reinforcements until demolished by cannons, rockets, or bombs.
-- **Air-to-Ground Combat:** Quad-cannons, homing rockets, and stratagem air strikes directly damage and eliminate ground hostiles and structures.
-- **Tactical CAS Call-In Missions:** Helldivers under pressure call in Close Air Support strikes (equipped weapon-aware, supporting 500kg bombs and all other stratagems), awarding +500 PTS upon delivery.
-- **Dynamic Aiming Reticle:** Projects a forward gun convergence pip and a weapon-specific predictive bomb impact zone that leads the ship based on velocity and angle, highlighting target locks.
-- **Air Strike Stratagem Arsenal & Quickbar:** Interactive selection menu (`V` / `TAB`) or 5-slot flight quickbar (`1`–`5`, single-slot scroll wheel) featuring 8 devastating air strikes fired via `C`.
-- **Tactical Orbital Supply Drops:** Call in orbital supply pods (`X`) providing squad healing, ammo reloads, hull repair, and shield nanites.
-- **Danger Zone Alerts & Off-Screen Compass:** Real-time threat detection and directional guidance towards endangered allies.
-- **Dynamic Objectives & Pelican-1 Extraction:** Outpost defense transitioning into a 30-second extraction countdown with shuttle evacuation upon completing objectives.
-- **Modular Power-Up Subsystem:** 8 distinct abilities across Common, Rare, and Epic tiers, featuring drop chances with pity protection.
-- **Guaranteed Score Milestone Airdrops:** Reaching major score milestones automatically summons guaranteed supply crates.
-- **Dual Defense System (Shield + Health):** Energy shields absorb incoming damage before hull health is impacted.
-- **Autonomous Enemy Aircraft:** Hostile `Light_Enemy` units spawn in coordinated squadrons with flocking and combat AI.
-- **In-Game Help Menu (6 Tabs):** Multi-tab help overlay providing weapons, abilities, radar, controls, wave combat, and Helldiver support guidance.
-- **Automated Headless Test Suite:** 301 automated pytest tests covering mission configs, ground combat, fabricators, stratagems, flight physics, player profiles, enlistment, academy drills, Super Destroyer hub deck, NPC dialogue trees, aircraft diagnostics, and regression suites.
+- **Cross-Platform Standalone Packaging:** Native standalone distribution via PyInstaller for Windows (`.zip`), macOS (`.dmg` disk image and `.zip`), and Linux (`.tar.gz`) without requiring a local Python installation.
+- **Automated Headless Test Suite:** 672 automated pytest tests covering mission configs, ground combat, fabricators, stratagems, flight physics, player profiles, enlistment, academy drills, Super Destroyer hub deck, NPC dialogue trees, in-flight narrative triggers, campaign sessions, and full regression suites.
+
+
+
+## Story Campaign Subsystem (Acts I & II)
+
+The narrative campaign bridges high-speed flight mechanics and character-driven drama. Flight Lieutenant Val flies Close Air Support for Fireteam Viper under the watchful eye of Democracy Officer Karl Reiner, confronting the harsh moral arithmetic of Super Earth high command.
+
+### Campaign Structure & Canonical Sorties 1–4
+
+The campaign is orchestrated by `MissionController` and registered in `CAMPAIGN_SORTIE_REGISTRY`:
+
+1. **Sortie 1: Baptism of Fire (`MissionType.AIR_SUPERIORITY`)**:
+   - Initial dogfight over Vandalon Prime.
+   - **In-Flight Dilemma (`sortie_1_inflight`)**: Reiner orders immediate engagement of primary fighter wings, abandoning squad low-altitude cover. Choosing **[1] LOYAL** commits all passes to fighters (+8.0 loyalty), while **[3] DISSIDENT** breaks formation to cover Viper Squad (-8.0 loyalty).
+2. **Sortie 2: The Red Perimeter (`MissionType.ORBITAL_BASE_DEFENSE`)**:
+   - Holding action defending the orbital defense base.
+   - Radio chatter reports mounting squad casualties and desperate perimeter defense.
+3. **Sortie 3: The Fabricator Furnace (`MissionType.OUTPOST_DEMOLITION`)**:
+   - High-threat assault on fortified Automaton fabricator complexes.
+   - Low-altitude approach vector marked by Viper-3 Ghost.
+   - **The 500kg Friendly-Fire Crisis (`sortie_3_500kg_crisis`)**: See below.
+4. **Sortie 4: The Iron Colossus (`MissionType.STRIDER_RAID`)**:
+   - Direct assault on the Factory Strider command fortress.
+   - Mid-fight weakpoint crisis when boss HP falls below 50% or Helldivers are critically wounded.
+   - **Casualty Check Beat**: Pre-extraction radio lines acknowledging squad survivors and remembering fallen members.
+
+### In-Flight Narrative Dilemmas & Slow-Motion
+
+- **0.4× Decision Slow-Motion:** When an in-flight radio dilemma is triggered, `CampaignSortieSession` applies `DECISION_TIME_DILATION = 0.4` to entity velocities and weapon cooldowns. Flight steering, throttle, and quad-cannons remain fully responsive.
+- **Priority-Driven Firing:** Triggers carry strict descending priorities ($100 \to 80 \to 60$). If multiple events fire simultaneously (e.g. the Factory Strider spawning below 50% HP), the arrival callout is guaranteed to play before the crisis transmission.
+
+### The 500kg Friendly-Fire Crisis (Sortie 3)
+
+Triggered upon destroying the first fabricator or when wave 2 begins, Viper-4 Doc screams over the radio that Viper-2 Braker is trapped under a collapsed girder next to the primary furnace vent. Officer Reiner issues a direct order to release the bomb immediately:
+
+- **[1. LOYAL] Releasing ordnance! Acceptable collateral damage (`+12.0` Loyalty)**:
+  - Destroys the fabricator instantly.
+  - Inflicts fatal collateral damage on Viper-2 Braker (`apply_scripted_casualty(1)`).
+  - Net Loyalty shift is **`+8.5`** (`+12.0` obedience bonus minus `3.5` squad casualty penalty).
+- **[2. NEUTRAL] Adjusting impact vector by 15 meters east (`0.0` Loyalty)**:
+  - Breaches the perimeter, inflicting 50% max HP damage to the fabricator.
+  - Leaves Braker alive but heavily wounded (shields cleared, HP reduced to 25%).
+- **[3. DISSIDENT] Aborting drop! Coming in with cannons! (`-12.0` Loyalty)**:
+  - Aborts the 500kg drop; the fabricator remains intact.
+  - Braker survives uninjured; HUD objective updates to destroy the vent manually with guns and rockets.
+
+### Factory Strider Boss Raid & Dynamic Banter (Sortie 4)
+
+Before Pelican-1 extraction in Sortie 4, `emit_sortie4_casualty_check` queries both the current squad casualty count and whether Braker survived Sortie 3:
+- **Flawless (0 KIA, Braker alive)**: Braker boasts about buying the first round at the mess.
+- **Flawless Memorial (0 KIA in Sortie 4, Braker fallen in Sortie 3)**: Doc remarks that Braker would have hated how quiet the extraction is.
+- **Partial Casualties (1–3 KIA)**: Pelican-1 reports wounded and fallen aboard.
+- **Squad Wiped (4 KIA)**: Pelican-1 reports a silent LZ with no Viper beacons responding.
+
+### Super Destroyer Catapult Launch & Debriefing Loop
+
+Between sorties, the pilot returns to the *SES Leviathan of Truth*:
+- **The Bridge:** Review Patriotism Index (Loyalty: 0.0 to 100.0) with Officer Reiner.
+- **The Ready Room:** Check on surviving squad members and morale.
+- **The Hangar:** Review the sortie tactical briefing card and pull the catapult launch lever to deploy into the next operation.
+- **Debriefing Screen:** Mission victory triggers `MissionController.complete_current_sortie()`, calculating mission performance rank, squad survival bonuses, and advancing the campaign counter.
 
 
 
@@ -639,28 +687,58 @@ src/eagle1/
 ├── app/
 │   └── game.py               # 60 FPS main game loop, camera, player aircraft, aerial combat,
 │                             # wave management, combat state machine, rendering pipeline, HUD
+├── story/                    # Narrative Campaign Architecture (Acts I & II, Milestone 4)
+│   ├── campaign_act1.py      # Sorties 1 & 2 trigger definitions, objective mappings & choice effects
+│   ├── campaign_act2.py      # Sorties 3 & 4 trigger tables, 500kg friendly-fire crisis & casualty checks
+│   ├── campaign_session.py   # Runtime session driver linking combat loop, time dilation & telemetry
+│   ├── campaign_save.py      # Atomic JSON campaign persistence with tampering validation
+│   ├── comms_hud.py          # Time-dilated in-flight radio transmission and typewriter dialogue overlay
+│   ├── dialogue_data.py      # Character dialogue scripts, dynamic radio banter queues & NPC profiles
+│   ├── dialogue_db.py        # Centralized dialogue database (briefings, crises, debriefings)
+│   ├── mission_controller.py # Canonical 4-sortie registry, sortie lifecycle & objective state
+│   ├── narrative_trigger_manager.py # 60 FPS combat telemetry snapshot evaluator & priority dispatch
+│   ├── story_manager.py      # Persistent narrative state machine, Patriotism Index (loyalty vector)
+│   └── super_destroyer_view.py # 3-zone orbital hub deck screen (Bridge, Ready Room, Hangar Deck)
 ├── systems/
 │   ├── ground_support.py     # Helldivers (Viper 1-4), Automaton ground units, fabricators,
 │   │                         # Factory Strider boss, stratagems, CAS beacon requests,
 │   │                         # supply drops, predictive reticle, weapon selection menu
 │   ├── powerups.py           # 8 abilities across 3 rarities, drop mechanics with pity counter,
 │   │                         # magnetics, escort drones, swarm homing micro-missiles
-│   └── audio_manager.py      # Centralized 16-channel mixer, procedural SFX & dynamic combat music,
-│                             # thruster modulation, voice limiter, persistence
-└── ui/
-    ├── help_menu.py          # 6-tab tactical manual overlay (Weapons, Abilities, Radar, Controls, Waves, Helldivers)
-    └── settings_menu.py      # Tabbed settings interface (Audio, Gameplay/HUD, Flight Controls)
+│   ├── audio_manager.py      # Centralized 16-channel mixer, procedural SFX & dynamic combat music,
+│   │                         # thruster modulation, voice limiter, persistence
+│   ├── academy_briefing.py   # Naval Academy tutorial scenario & 6 progressive flight drills
+│   └── hangar_cinematic.py   # In-engine pre-sortie hangar launch and rearm cinematics
+├── ui/
+│   ├── help_menu.py          # 6-tab tactical manual overlay (Weapons, Abilities, Radar, Controls, Waves, Helldivers)
+│   ├── settings_menu.py      # Tabbed settings interface (Audio, Gameplay/HUD, Flight Controls)
+│   ├── enlistment_screen.py  # Pilot enlistment contract, callsign selection, and Oath of Democracy
+│   └── debriefing_screen.py  # Post-mission After-Action Report (AAR) and performance ranking (S/A/B/C)
+└── data/
+    └── player_profile.py     # Pilot profile persistence, flight hours, and medal tracking
 
 tools/
-└── generate_audio_assets.py  # Standalone procedural audio waveform generator (44.1kHz stereo PCM)
+├── generate_audio_assets.py  # Standalone procedural audio waveform generator (44.1kHz stereo PCM)
+├── generate_portrait_assets.py # Pixel-art character portrait synthesizer for comms and hub
+├── build_macos_icon.py       # Apple `.icns` multi-resolution icon bundle generator
+├── build_macos_dmg.py        # Drag-and-drop macOS `.dmg` installer packager
+└── package_macos.py          # Complete macOS standalone packaging pipeline (.app, .dmg, .zip)
 
-tests/                        # Automated headless pytest suite (25 unit and integration tests)
+tests/                        # Automated headless pytest suite (672 tests across 42 modules)
 ├── conftest.py               # Headless Pygame fixture & dummy rendering surface
+├── test_act1_sorties.py      # Sorties 1 & 2 dialogue, trigger evaluation, and objective shifts
+├── test_act2_sorties.py      # Sorties 3 & 4 500kg crisis, casualty checks, and debriefing nodes
+├── test_campaign_e2e_progression.py # Full campaign progression, catapult launches, and ending branches
+├── test_campaign_session.py  # Game loop integration, slow-motion time dilation, and HUD synchronization
 ├── test_ground_support.py    # Helldivers, ground units, CAS delivery, and supply drops
 ├── test_health_and_damage.py # Health, shield absorption, and invulnerability mechanics
 ├── test_math_and_physics.py  # Flight physics, camera clamping, and predictive reticle lead
+├── test_mission_progression.py # Mission controller, sortie registry, and debriefing transitions
+├── test_narrative_triggers.py # Telemetry evaluation, trigger predicates, and dispatch queue capping
 ├── test_persistence.py       # High score file I/O and audio settings fallback
 ├── test_powerups.py          # Power-up drops, pity system, drone companions, and abilities
+├── test_story_manager.py     # Narrative state mutations, loyalty vector calculation, and callbacks
+├── test_super_destroyer.py   # 3-zone hub deck interactions, NPC dialogue, and launch state machine
 ├── test_ui_and_menus.py      # Help and settings menu navigation and rendering
 └── test_weapons_and_cooldowns.py # Primary cannons, homing rockets, and stratagems
 ```
@@ -675,8 +753,9 @@ Root-level launcher scripts (`run_game.py`, `main.py`) and legacy wrappers (`gro
 .
 ├── .github/
 │   ├── workflows/
-│   │   ├── build-exe.yml
-│   │   └── ci.yml
+│   │   ├── build-exe.yml     # Standalone binary builder (Windows .zip, macOS .dmg/.zip, Linux .tar.gz)
+│   │   ├── ci.yml            # Multi-OS test matrix (Ubuntu, macOS, Windows on Python 3.10–3.12)
+│   │   └── deploy-pages.yml  # Automated GitHub Pages static website deployment
 │   ├── ISSUE_TEMPLATE/
 │   │   ├── bug_report.yml
 │   │   └── feature_request.yml
@@ -686,49 +765,36 @@ Root-level launcher scripts (`run_game.py`, `main.py`) and legacy wrappers (`gro
 │   └── sfx/
 ├── data/
 │   ├── audio_settings.json
-│   └── highscore.txt
+│   ├── campaign_save.json
+│   ├── highscore.txt
+│   ├── player_profile.json
+│   └── stratagem_hero_highscore.txt
+├── docs/
+│   ├── intent.md             # High-level creative vision & player experience intent
+│   ├── spec.md               # Core gameplay engineering specification & state contracts
+│   └── story.md              # Complete narrative story bible, dialogue matrix & ending branches
+├── frontend/                 # Official project landing page (deployed via GitHub Pages)
+│   ├── assets/
+│   └── index.html
 ├── images/
 │   ├── Documentation images/
-│   │   ├── game.png
-│   │   └── main_menu.png
-│   ├── 20260820_085135933_iOS.webp
-│   ├── LargeExplosionA_spritesheet.png
-│   ├── Space-Invaders-Ship.png
-│   ├── a10.png
-│   ├── backround.png
-│   ├── bullet.png
-│   ├── bullet_ui.png
-│   ├── enemy1.png
-│   ├── enemy_bullet.png
-│   ├── health.png
-│   ├── light_enemy_explosion.png
-│   └── newbackround.png
+│   ├── portraits/            # Character dialogue portraits (Reiner, Vance, Ortiz, Viper 1-4)
+│   └── sprites/
 ├── src/
 │   └── eagle1/
 │       ├── app/
 │       │   └── game.py
-│       ├── systems/
-│       │   ├── audio_manager.py
-│       │   ├── ground_support.py
-│       │   └── powerups.py
-│       ├── ui/
-│       │   ├── help_menu.py
-│       │   └── settings_menu.py
+│       ├── story/            # Narrative campaign, dialogue DB, and trigger manager
+│       ├── systems/          # Ground support, audio, powerups, and briefings
+│       ├── ui/               # Menus, HUD, enlistment, and debriefing screens
+│       ├── data/             # Player profile persistence
 │       ├── effects.py
 │       ├── paths.py
 │       └── __main__.py
-├── tests/
-│   ├── conftest.py
-│   ├── test_ground_support.py
-│   ├── test_health_and_damage.py
-│   ├── test_math_and_physics.py
-│   ├── test_persistence.py
-│   ├── test_powerups.py
-│   ├── test_ui_and_menus.py
-│   └── test_weapons_and_cooldowns.py
-├── tools/
-│   └── generate_audio_assets.py
+├── tests/                    # 672 automated tests in headless pytest environment
+├── tools/                    # Audio, portrait, and cross-platform packaging tools
 ├── .gitignore
+├── CODE_OF_CONDUCT.md
 ├── LICENSE
 ├── README.md
 ├── contributing.md
@@ -742,7 +808,7 @@ Root-level launcher scripts (`run_game.py`, `main.py`) and legacy wrappers (`gro
 ├── audio_manager.py
 ├── help_menu.py
 ├── settings_menu.py
-└── generate_audio_assets.py
+└── academy_briefing.py
 ```
 
 
