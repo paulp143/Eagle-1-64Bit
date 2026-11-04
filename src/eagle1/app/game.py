@@ -32,7 +32,14 @@ from eagle1.systems.hangar_cinematic import (
     PHASE_HANGAR,
     PHASE_DESCENT,
 )
-from eagle1.story import CommsHUD, StoryManager, SuperDestroyerView
+from eagle1.story import (
+    CAMPAIGN_SORTIE_CONFIG_KEY,
+    CampaignSortieSession,
+    CommsHUD,
+    StoryManager,
+    SuperDestroyerView,
+    build_campaign_mission_config,
+)
 
 BASE_DIR = str(PROJECT_ROOT)
 audio_manager = get_audio_manager()
@@ -2352,6 +2359,12 @@ def respawn(mission_config=None, selected_stratagems=None):
     if mission_config is not None:
         active_mission_config = mission_config
 
+    session = get_campaign_session()
+    if mission_config is not None and not mission_config.get(CAMPAIGN_SORTIE_CONFIG_KEY):
+        session.abort_flight()
+    elif mission_config is None and session.is_flight_active:
+        session.restart_flight()
+
     player.pos_x = float(PLAYER_X)
     player.pos_y = float(PLAYER_Y)
     player.x = PLAYER_X
@@ -2970,6 +2983,16 @@ player.rockets = []
 explosion_group = pygame.sprite.Group()
 
 
+campaign_session = CampaignSortieSession(story_manager=story_manager, comms_hud=comms_hud)
+
+
+def get_campaign_session():
+    """Return the campaign session, rebinding it if the module-level StoryManager was replaced."""
+    if campaign_session.story_manager is not story_manager:
+        campaign_session.bind_story_manager(story_manager)
+    return campaign_session
+
+
 def enter_super_destroyer(debrief_results=None):
     """Transition cleanly into the Super Destroyer hub deck state."""
     global game_state
@@ -2992,11 +3015,8 @@ def handle_super_destroyer_action(action):
         return None
     act_type = action.get("action")
     if act_type == "launch_sortie":
-        mission_id = action.get("mission_id") or super_destroyer_view.get_current_sortie_mission_id()
-        mission_cfg = MISSION_CONFIGS.get(
-            mission_id,
-            MISSION_CONFIGS[MissionType.OUTPOST_DEMOLITION],
-        )
+        sortie_cfg = get_campaign_session().launch_sortie()
+        mission_cfg = build_campaign_mission_config(sortie_cfg, MISSION_CONFIGS)
         super_destroyer_view.close_dialogue()
         super_destroyer_view.launch_initiated = False
         super_destroyer_view.hovered_launch = False

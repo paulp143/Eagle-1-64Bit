@@ -1483,6 +1483,8 @@ def test_super_destroyer_audio_and_input_isolation(monkeypatch, tmp_path):
     """Verify audio and input states are strictly isolated upon entering Super Destroyer."""
     import eagle1.app.game as game
 
+    monkeypatch.setattr(game, "story_manager", StoryManager(save_manager=CampaignSaveManager(data_dir=tmp_path)))
+
     mock_stop_engine = MagicMock()
     mock_play_music = MagicMock()
     monkeypatch.setattr(game.audio_manager, "stop_engine_sound", mock_stop_engine)
