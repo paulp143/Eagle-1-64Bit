@@ -255,6 +255,7 @@ footer a:hover{border-color:var(--ice)}
     <nav class="nav-links" aria-label="Sections">
       <a href="#gameplay">Gameplay</a>
       <a href="#hub">Super Destroyer</a>
+      <a href="#campaign">Campaign</a>
       <a href="#missions">Missions</a>
       <a href="#arsenal">Arsenal</a>
       <a href="#install">Install</a>
@@ -279,7 +280,7 @@ footer a:hover{border-color:var(--ice)}
 
   <div class="wrap hero-inner">
     <div class="eyebrow">
-      <span class="tag live">v0.3.0 out now</span>
+      <span class="tag live">v0.4.0 out now</span>
       <span class="tag">Free fan game · Helldivers universe</span>
     </div>
     <h1>Eagle<span>-1</span></h1>
@@ -288,18 +289,25 @@ footer a:hover{border-color:var(--ice)}
     <div class="cta-row">
       <a class="btn btn-primary" href="https://github.com/paulp143/Eagle-1-64Bit/releases/latest/download/Eagle-1-Windows.zip" target="_blank" rel="noopener">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M12 3v12"/><path d="M6 10l6 6 6-6"/><path d="M4 20h16"/></svg>
-        <span class="stack">Download for Windows<span class="meta">v0.3.0 · 39 MB · .zip</span></span>
+        <span class="stack">Download for Windows<span class="meta">v0.4.0 · 40 MB · .zip</span></span>
+      </a>
+      <a class="btn btn-ghost" href="https://github.com/paulp143/Eagle-1-64Bit/releases/latest/download/Eagle-1-macOS.dmg" target="_blank" rel="noopener">
+        <span class="stack">macOS (.dmg)<span class="meta">v0.4.0 · 34 MB</span></span>
+      </a>
+      <a class="btn btn-ghost" href="https://github.com/paulp143/Eagle-1-64Bit/releases/latest/download/Eagle-1-Linux.tar.gz" target="_blank" rel="noopener">
+        <span class="stack">Linux (.tar.gz)<span class="meta">v0.4.0 · 55 MB</span></span>
       </a>
       <a class="btn btn-ghost" href="#install">How to install</a>
     </div>
-    <p class="fine">No installer. Unzip, double-click, fly. Mac &amp; Linux can run it from source.</p>
+    <p class="fine">Standalone binaries for Windows, macOS &amp; Linux. Or run directly from Python source.</p>
   </div>
 </section>
 
 <div class="specs">
   <ul class="wrap" aria-label="Game at a glance">
+    <li><b>4</b><span>Campaign sorties</span></li>
     <li><b>3</b><span>Hub deck zones</span></li>
-    <li><b>5</b><span>Mission modes</span></li>
+    <li><b>5</b><span>Arcade modes</span></li>
     <li><b>8</b><span>Air strikes</span></li>
     <li><b>3000²</b><span>px battlefield</span></li>
     <li><b>4</b><span>Squadmates to cover</span></li>
@@ -351,6 +359,38 @@ footer a:hover{border-color:var(--ice)}
           <h3>The Hangar Deck</h3>
           <p>Chief Engineer Rylan Ortiz tracks your aircraft battle damage. Review the tactical mission briefing card and pull the catapult launch lever into combat.</p>
           <span class="meta">AIRCRAFT DIAGNOSTICS · CATAPULT LAUNCH</span>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="campaign" style="padding-top:0">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="label">Story Campaign · Milestone 4 · Act I &amp; Act II</span>
+        <h2>The War for Vandalon Prime.</h2>
+        <p>Fly sequential combat sorties that test your loyalty to Super Earth against the survival of Fireteam Viper. In-flight radio dilemmas trigger 0.4× slow-motion time dilation while keeping your thrusters and guns fully responsive.</p>
+      </div>
+      <div class="ops">
+        <article class="op">
+          <h3>Sortie 1: Baptism of Fire</h3>
+          <p>Dogfight heavy drone swarms over the front. Democracy Officer Reiner issues command overrides: prioritize fleet objectives or peel off to cover your squad.</p>
+          <span class="meta">ACT I · DOGFIGHT &amp; OVERRIDES</span>
+        </article>
+        <article class="op">
+          <h3>Sortie 2: The Red Perimeter</h3>
+          <p>Defend the orbital outpost perimeter against relentless Automaton waves while desperate ground radio traffic reports mounting squad casualties.</p>
+          <span class="meta">ACT I · BASE DEFENSE &amp; EXTRACTION</span>
+        </article>
+        <article class="op">
+          <h3>Sortie 3: The Fabricator Furnace</h3>
+          <p>Destroy fortified Automaton fabricator complexes. Face the pivotal 500kg friendly-fire dilemma when Viper-2 Braker is trapped near the primary vent.</p>
+          <span class="meta">ACT II · 500KG CRISIS &amp; MORAL BRANCHING</span>
+        </article>
+        <article class="op boss">
+          <h3>Sortie 4: The Iron Colossus</h3>
+          <p>Assault the colossal Factory Strider boss. Radio chatter reacts dynamically to live squad casualties before emergency Pelican-1 extraction.</p>
+          <span class="meta">ACT II BOSS · CASUALTY CHECK BEAT</span>
         </article>
       </div>
     </div>
@@ -438,9 +478,9 @@ footer a:hover{border-color:var(--ice)}
       <div class="install">
         <div>
           <ol class="steps">
-            <li><h3>Download</h3><p>Get <a href="https://github.com/paulp143/Eagle-1-64Bit/releases/latest/download/Eagle-1-Windows.zip" target="_blank" rel="noopener">Eagle-1-Windows.zip</a> from the latest release (39 MB).</p></li>
-            <li><h3>Extract</h3><p>Right-click the zip and choose <strong>Extract All</strong>. Keep the folder together: the game reads its images, audio and save data from it.</p></li>
-            <li><h3>Launch</h3><p>Open the <strong>Eagle-1</strong> folder and double-click <strong>Eagle-1.exe</strong>. Press <kbd>Shift</kbd> on the main menu to start.</p></li>
+            <li><h3>Download</h3><p>Get <a href="https://github.com/paulp143/Eagle-1-64Bit/releases/latest/download/Eagle-1-Windows.zip" target="_blank" rel="noopener">Eagle-1-Windows.zip</a> (40 MB), <a href="https://github.com/paulp143/Eagle-1-64Bit/releases/latest/download/Eagle-1-macOS.dmg" target="_blank" rel="noopener">Eagle-1-macOS.dmg</a> (34 MB), or <a href="https://github.com/paulp143/Eagle-1-64Bit/releases/latest/download/Eagle-1-Linux.tar.gz" target="_blank" rel="noopener">Eagle-1-Linux.tar.gz</a> (55 MB) from the latest release.</p></li>
+            <li><h3>Extract</h3><p>Extract or mount the download. Keep the folder together: the game reads its images, audio and save data from it.</p></li>
+            <li><h3>Launch</h3><p>Double-click the <strong>Eagle-1</strong> executable. Press <kbd>Shift</kbd> on the main menu to start.</p></li>
           </ol>
           <p class="warn"><strong>Blue "Windows protected your PC" box?</strong> The game is not code-signed yet, so SmartScreen warns about it. Click <strong>More info</strong>, then <strong>Run anyway</strong>.</p>
           <details class="source">
@@ -483,11 +523,17 @@ python run_game.py</pre>
   <div class="wrap">
     <div>
       <h2>The squad is on the radio.</h2>
-      <p>Free to play, open source, and about 39 MB away. Download, unzip and answer the call.</p>
+      <p>Free to play, open source, and about 40 MB away. Download, unpack and answer the call.</p>
       <div class="cta-row" style="margin-top:22px">
         <a class="btn btn-primary" href="https://github.com/paulp143/Eagle-1-64Bit/releases/latest/download/Eagle-1-Windows.zip" target="_blank" rel="noopener">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M12 3v12"/><path d="M6 10l6 6 6-6"/><path d="M4 20h16"/></svg>
-          <span class="stack">Download for Windows<span class="meta">v0.3.0 · 39 MB · .zip</span></span>
+          <span class="stack">Download for Windows<span class="meta">v0.4.0 · 40 MB · .zip</span></span>
+        </a>
+        <a class="btn btn-ghost" href="https://github.com/paulp143/Eagle-1-64Bit/releases/latest/download/Eagle-1-macOS.dmg" target="_blank" rel="noopener">
+          <span class="stack">macOS (.dmg)<span class="meta">v0.4.0 · 34 MB</span></span>
+        </a>
+        <a class="btn btn-ghost" href="https://github.com/paulp143/Eagle-1-64Bit/releases/latest/download/Eagle-1-Linux.tar.gz" target="_blank" rel="noopener">
+          <span class="stack">Linux (.tar.gz)<span class="meta">v0.4.0 · 55 MB</span></span>
         </a>
         <a class="btn btn-ghost" href="https://github.com/paulp143/Eagle-1-64Bit" target="_blank" rel="noopener">Source on GitHub</a>
       </div>
