@@ -32,7 +32,14 @@ from eagle1.systems.hangar_cinematic import (
     PHASE_HANGAR,
     PHASE_DESCENT,
 )
-from eagle1.story import CommsHUD, StoryManager, SuperDestroyerView
+from eagle1.story import (
+    CAMPAIGN_SORTIE_CONFIG_KEY,
+    CampaignSortieSession,
+    CommsHUD,
+    StoryManager,
+    SuperDestroyerView,
+    build_campaign_mission_config,
+)
 
 BASE_DIR = str(PROJECT_ROOT)
 audio_manager = get_audio_manager()
@@ -1956,8 +1963,8 @@ def trigger_mission_complete():
         "strider_destroyed": getattr(ground_support_manager, "strider_destroyed", False),
         "cas_kills": ground_support_manager.total_cas_kills,
         "survivors_count": ground_support_manager.survivors_count,
-        "casualties_count": max(0, 4 - int(ground_support_manager.survivors_count)),
-        "squad_wiped": bool(ground_support_manager.survivors_count <= 0),
+        "casualties_count": sum(1 for unit in ground_support_manager.units if unit.state == "DOWNED" or unit.health <= 0),
+        "squad_wiped": bool(ground_support_manager.units) and ground_support_manager.survivors_count <= 0,
         "hull_ratio": max(0.0, min(1.0, float(player.health) / max(1.0, float(player.max_health)))),
         "flawless_squad": ground_support_manager.flawless_protection,
         "hero_score": ground_support_manager.hero_score,
@@ -2022,6 +2029,10 @@ def move():
     if ground_support_manager.objective_phase == "COMPLETE":
         trigger_mission_complete()
         return
+
+    session = get_campaign_session()
+    if session.is_flight_active:
+        session.update(1.0 / 60.0, wave_manager.wave, mission_air_kills + mission_bomber_kills, ground_support_manager)
 
     # Update Bomber Enemies & Orbital Base Defense
     if active_mission_config.get("has_bombers"):
@@ -2351,6 +2362,12 @@ def respawn(mission_config=None, selected_stratagems=None):
     global mission_start_time, mission_air_kills, mission_bomber_kills
     if mission_config is not None:
         active_mission_config = mission_config
+
+    session = get_campaign_session()
+    if mission_config is not None and not mission_config.get(CAMPAIGN_SORTIE_CONFIG_KEY):
+        session.abort_flight()
+    elif mission_config is None and session.is_flight_active:
+        session.restart_flight()
 
     player.pos_x = float(PLAYER_X)
     player.pos_y = float(PLAYER_Y)
@@ -2739,7 +2756,9 @@ def draw(mouse_pos=None):
         # Controls & Radar Mode Hint
         mode_str = "CONE [FAR]" if player.radar_mode == "CONE" else "360° OMNI [CLOSE]"
         controls_hint = hud_small_font.render(f"[SPACE] Gun  [E/RMB] Missile  [Q] Radar: {mode_str}  [1-5] Weapons  [R] Rearm  [X] Supply", True, (210, 230, 255))
-        canvas.blit(controls_hint, (int(GAME_WIDTH / 2 - controls_hint.get_width() / 2), 38))
+        campaign_objective_surf = get_campaign_objective_surface()
+        hint_y = 58 if campaign_objective_surf is not None else 38
+        canvas.blit(controls_hint, (int(GAME_WIDTH / 2 - controls_hint.get_width() / 2), hint_y))
 
         # --- ROCKET HUD UI ---
         rocket_ui_x = GAME_WIDTH - 190
@@ -2929,13 +2948,26 @@ def draw(mouse_pos=None):
             if ground_support_manager.objective_phase == "EXTRACTION":
                 obj_text = "OBJECTIVE: AIRSPACE SECURED! FLY TO EXTRACTION BEACON"
             else:
-                obj_text = f"OBJECTIVE: AIR SUPERIORITY [WAVE {wave_manager.wave}/5]"
+                obj_text = f"OBJECTIVE: AIR SUPERIORITY [WAVE {wave_manager.wave}/{active_mission_config.get('max_waves', 5)}]"
 
         obj_surf = hud_small_font.render(obj_text, True, active_mission_config.get("icon_color", (255, 220, 80)))
         obj_bg = pygame.Rect(GAME_WIDTH // 2 - obj_surf.get_width() // 2 - 12, 8, obj_surf.get_width() + 24, 22)
         pygame.draw.rect(canvas, (14, 20, 32), obj_bg, border_radius=6)
         pygame.draw.rect(canvas, active_mission_config.get("icon_color", (0, 220, 255)), obj_bg, 1, border_radius=6)
         canvas.blit(obj_surf, (GAME_WIDTH // 2 - obj_surf.get_width() // 2, 12))
+
+        # --- CAMPAIGN NARRATIVE OBJECTIVE (campaign sorties only) ---
+        campaign_objective_surf = get_campaign_objective_surface()
+        if campaign_objective_surf is not None:
+            camp_bg = pygame.Rect(
+                GAME_WIDTH // 2 - campaign_objective_surf.get_width() // 2 - 10,
+                33,
+                campaign_objective_surf.get_width() + 20,
+                20,
+            )
+            pygame.draw.rect(canvas, (12, 18, 28), camp_bg, border_radius=4)
+            pygame.draw.rect(canvas, (70, 115, 160), camp_bg, 1, border_radius=4)
+            canvas.blit(campaign_objective_surf, (GAME_WIDTH // 2 - campaign_objective_surf.get_width() // 2, 35))
 
         # --- SLOW-MOTION VIGNETTE OVERLAY ---
         if ground_support_manager.is_slow_mo:
@@ -2970,6 +3002,47 @@ player.rockets = []
 explosion_group = pygame.sprite.Group()
 
 
+campaign_session = CampaignSortieSession(story_manager=story_manager, comms_hud=comms_hud)
+
+
+def get_campaign_session():
+    """Return the campaign session, rebinding it if the module-level StoryManager was replaced."""
+    if campaign_session.story_manager is not story_manager:
+        campaign_session.bind_story_manager(story_manager)
+    return campaign_session
+
+
+CAMPAIGN_OBJECTIVE_MAX_CHARS = 110
+CAMPAIGN_OBJECTIVE_COLOR = (200, 225, 240)
+_campaign_objective_cache = {"text": None, "surface": None}
+
+
+def get_campaign_objective_surface():
+    """Return a cached HUD surface for the active campaign objective, or None outside campaign flights."""
+    text = get_campaign_session().get_objective_text()
+    if not text:
+        return None
+    if _campaign_objective_cache["text"] != text:
+        if len(text) <= CAMPAIGN_OBJECTIVE_MAX_CHARS:
+            display = text
+        else:
+            display = text[: CAMPAIGN_OBJECTIVE_MAX_CHARS - 3].rstrip() + "..."
+        _campaign_objective_cache["text"] = text
+        _campaign_objective_cache["surface"] = hud_small_font.render(f"> {display}", True, CAMPAIGN_OBJECTIVE_COLOR)
+    return _campaign_objective_cache["surface"]
+
+
+def return_to_main_menu():
+    """Transition cleanly into the main menu state, aborting any active campaign flight."""
+    global game_state
+    session = get_campaign_session()
+    if session.is_flight_active:
+        session.abort_flight()
+    audio_manager.stop_engine_sound()
+    audio_manager.play_music("menu_theme")
+    game_state = "main_menu"
+
+
 def enter_super_destroyer(debrief_results=None):
     """Transition cleanly into the Super Destroyer hub deck state."""
     global game_state
@@ -2985,6 +3058,16 @@ def enter_super_destroyer(debrief_results=None):
     game_state = "super_destroyer"
 
 
+def return_to_super_destroyer_from_debrief():
+    """Record campaign sortie completion, then return to the Super Destroyer hub with the debrief stats."""
+    raw_results = getattr(debriefing_screen, "results", None)
+    debrief_data = dict(raw_results) if isinstance(raw_results, dict) else {}
+    debriefing_screen.close()
+    progression = get_campaign_session().complete_sortie(debrief_data)
+    enter_super_destroyer(debrief_data)
+    return progression
+
+
 def handle_super_destroyer_action(action):
     """Handle structured action payloads from SuperDestroyerView."""
     global game_state
@@ -2992,11 +3075,8 @@ def handle_super_destroyer_action(action):
         return None
     act_type = action.get("action")
     if act_type == "launch_sortie":
-        mission_id = action.get("mission_id") or super_destroyer_view.get_current_sortie_mission_id()
-        mission_cfg = MISSION_CONFIGS.get(
-            mission_id,
-            MISSION_CONFIGS[MissionType.OUTPOST_DEMOLITION],
-        )
+        sortie_cfg = get_campaign_session().launch_sortie()
+        mission_cfg = build_campaign_mission_config(sortie_cfg, MISSION_CONFIGS)
         super_destroyer_view.close_dialogue()
         super_destroyer_view.launch_initiated = False
         super_destroyer_view.hovered_launch = False
@@ -3013,14 +3093,12 @@ def handle_super_destroyer_action(action):
                 pygame.MOUSEBUTTONDOWN,
                 pygame.MOUSEBUTTONUP,
             ])
-        except Exception:
+        except (pygame.error, AttributeError):
             pass
         respawn(mission_config=mission_cfg)
         game_state = ""
     elif act_type in ("main_menu", "exit_to_menu"):
-        audio_manager.stop_engine_sound()
-        audio_manager.play_music("menu_theme")
-        game_state = "main_menu"
+        return_to_main_menu()
     return action
 
 
@@ -3038,8 +3116,8 @@ def run_game():
                     add_highscore(player.score)
                 running = False
                 break
-            if game_state == "" and player.health > 0 and comms_hud.is_active and event.type == pygame.KEYDOWN:
-                if comms_hud.handle_event(event):
+            if game_state == "" and player.health > 0 and event.type == pygame.KEYDOWN:
+                if get_campaign_session().handle_comms_keydown(event, ground_support_manager):
                     continue
             if event.type == SHOOTING_END:
                 player.shooting = False
@@ -3173,7 +3251,7 @@ def run_game():
                         settings_menu.sync_from_manager()
                         game_state = "settings_menu"
                     elif pause_menu_box.is_clicked(event, canvas_mouse_pos):
-                        game_state = "main_menu"
+                        return_to_main_menu()
 
                 elif game_state == "mission_debriefing":
                     action = debriefing_screen.handle_event(event, canvas_mouse_pos)
@@ -3182,15 +3260,16 @@ def run_game():
                         respawn()
                         game_state = ""
                     elif action == "super_destroyer":
-                        debrief_data = dict(debriefing_screen.results)
-                        debriefing_screen.close()
-                        enter_super_destroyer(debrief_data)
+                        return_to_super_destroyer_from_debrief()
                     elif action == "mission_select":
                         debriefing_screen.close()
+                        session = get_campaign_session()
+                        if session.is_flight_active:
+                            session.abort_flight()
                         game_state = "mission_select"
                     elif action == "main_menu":
                         debriefing_screen.close()
-                        game_state = "main_menu"
+                        return_to_main_menu()
 
                 elif game_state == "super_destroyer":
                     action = super_destroyer_view.handle_event(event, canvas_mouse_pos)
@@ -3205,7 +3284,7 @@ def run_game():
                             previous_game_state = ""
                             game_state = "help_menu"
                         elif gameover_lobby_box.is_clicked(event, canvas_mouse_pos):
-                            game_state = "main_menu"
+                            return_to_main_menu()
                     else:
                         if ground_support_manager.weapon_menu.is_open:
                             ground_support_manager.weapon_menu.handle_event(event, canvas_mouse_pos)
@@ -3331,7 +3410,7 @@ def run_game():
                         settings_menu.sync_from_manager()
                         game_state = "settings_menu"
                     elif event.key == pygame.K_ESCAPE:
-                        game_state = "main_menu"
+                        return_to_main_menu()
                     elif event.key == pygame.K_m:
                         is_muted = audio_manager.toggle_mute()
                         status_str = "MUTED" if is_muted else "UNMUTED"
@@ -3344,15 +3423,16 @@ def run_game():
                         respawn()
                         game_state = ""
                     elif action == "super_destroyer":
-                        debrief_data = dict(debriefing_screen.results)
-                        debriefing_screen.close()
-                        enter_super_destroyer(debrief_data)
+                        return_to_super_destroyer_from_debrief()
                     elif action == "mission_select":
                         debriefing_screen.close()
+                        session = get_campaign_session()
+                        if session.is_flight_active:
+                            session.abort_flight()
                         game_state = "mission_select"
                     elif action == "main_menu":
                         debriefing_screen.close()
-                        game_state = "main_menu"
+                        return_to_main_menu()
 
                 elif game_state == "super_destroyer":
                     action = super_destroyer_view.handle_event(event, canvas_mouse_pos)
@@ -3375,13 +3455,13 @@ def run_game():
                             settings_menu.sync_from_manager()
                             game_state = "settings_menu"
                         elif event.key == pygame.K_SPACE:
-                            game_state = "main_menu"
+                            return_to_main_menu()
                     else:
                         if ground_support_manager.objective_phase == "COMPLETE":
                             if event.key == pygame.K_r:
                                 respawn()
                             elif event.key == pygame.K_ESCAPE:
-                                game_state = "main_menu"
+                                return_to_main_menu()
 
                         sdm = ground_support_manager.super_destroyer
                         if sdm.is_active and sdm.phase == PHASE_HANGAR:

@@ -1,4 +1,4 @@
-# Antigravity Agent Guidelines — Eagle-1-64Bit
+# Agent Guidelines — Eagle-1-64Bit
 
 ## Project Overview
 
@@ -10,25 +10,33 @@
 
 ```text
 Eagle-1-64Bit/
-├── main.py                   # Game loop (60 FPS), camera, player aircraft, aerial combat,
-│                             # wave management, state machine, rendering pipeline, HUD.
-├── ground_support.py         # Helldivers (Viper 1-4), Automaton ground units, fabricators,
-│                             # Factory Strider boss, stratagem air strikes, CAS beacon requests,
-│                             # supply drops, predictive reticle, weapon selection menu.
-├── powerup_system.py         # 8 abilities across 3 rarities, drop mechanics with pity counter,
-│                             # magnetics, escort drones, swarm homing micro-missiles.
-├── audio_manager.py          # Centralized 16-channel mixer, procedural SFX & dynamic combat music,
-│                             # thruster modulation, voice limiter, persistence.
-├── generate_audio_assets.py  # Standalone procedural audio waveform generator (44.1kHz stereo PCM).
-├── help_menu.py              # 6-tab in-game tactical manual overlay (Weapons, Abilities,
-│                             # Radar, Controls, Wave Combat, Helldivers).
-├── settings_menu.py          # Tabbed settings interface (Audio, Gameplay/HUD, Flight Controls).
-├── data/
-│   ├── audio_settings.json   # Persistent volume & mute configuration.
-│   └── highscore.txt         # Persistent high score tracker (do not corrupt with test runs).
-├── images/                   # Sprites, spritesheets, backgrounds, and documentation screenshots.
-└── audio/                    # Synthesized and custom WAV audio assets (music/ and sfx/).
+├── run_game.py               # Repository-root launcher (also: `python -m eagle1`).
+├── main.py, ground_support.py, help_menu.py,
+│   audio_manager.py, academy_briefing.py   # Thin compatibility shims re-exporting src/eagle1/*.
+├── src/eagle1/
+│   ├── app/game.py           # Game loop (60 FPS), camera, Player, aerial combat, WaveManager,
+│   │                         # mission configs (MissionType), state machine, rendering pipeline, HUD.
+│   ├── systems/
+│   │   ├── ground_support.py # Helldivers (Viper 1-4), Automaton ground units, fabricators,
+│   │   │                     # Factory Strider boss, stratagems, CAS beacons, supply drops, reticle.
+│   │   ├── powerups.py       # 8 abilities across 3 rarities, drops with pity counter, drones, micro-missiles.
+│   │   ├── audio_manager.py  # 16-channel mixer, procedural SFX & dynamic combat music, persistence.
+│   │   ├── academy_briefing.py, hangar_cinematic.py   # Academy tutorial briefing and hangar cinematic.
+│   ├── story/                # Campaign: Super Destroyer hub view, MissionController, StoryManager,
+│   │                         # comms HUD, dialogue data/DB, campaign save.
+│   ├── ui/                   # Help menu (6 tabs), settings menu, enlistment, debriefing, layout helpers.
+│   ├── data/player_profile.py# Player profile persistence.
+│   ├── effects.py            # Visual combat effects.
+│   └── paths.py              # PROJECT_ROOT, asset dirs, platform-aware user data dir.
+├── tools/                    # generate_audio_assets.py, portrait/icon generators, macOS packaging.
+├── tests/                    # Headless pytest suite (conftest.py sets dummy SDL drivers).
+├── data/                     # audio_settings.json, highscores, player_profile.json, campaign_save.json.
+├── images/, audio/           # Sprites, backgrounds, screenshots; WAV assets (music/ and sfx/).
+├── docs/                     # intent.md, spec.md, story.md.
+└── frontend/                 # Project website (deployed via GitHub Pages).
 ```
+
+Newer subsystems: the story campaign (`story/`), the Naval Academy tutorial (`MissionType.ACADEMY_TUTORIAL`), enlistment and mission debriefing screens, and the Super Destroyer hub between sorties.
 
 ---
 
@@ -83,8 +91,8 @@ Always keep coordinate spaces strictly separated:
 - **Hostile Ground Units**: Automaton Troopers (35 HP), Heavy Walkers (120 HP), and Fabricators (220 HP, spawns troops every 8s).
 
 ### 4. Mission Flow & States
-- State machine managed in `main.py`: `"menu"`, `"mission_select"`, `"play"`, `"pause"`, `"game_over"`.
-- 5 operational modes: *Air Superiority*, *Orbital Base Defense*, *Factory Strider Boss Raid*, *Outpost Demolition*, and *Endless War*.
+- State machine managed in `src/eagle1/app/game.py` (`game_state`): `"main_menu"`, `"mission_select"`, `"stratagem_select"`, `"settings_menu"`, `"help_menu"`, `"pause_menu"`, `"enlistment"`, `"mission_debriefing"`, `"super_destroyer"`; the empty string `""` means active gameplay.
+- 6 operational modes (`MissionType`): *Academy Tutorial*, *Air Superiority*, *Orbital Base Defense*, *Factory Strider Boss Raid*, *Outpost Demolition*, and *Endless War*.
 - Always ensure `respawn()` properly resets wave timers, mission goals, entity lists, and HUD state.
 
 ---
@@ -92,11 +100,12 @@ Always keep coordinate spaces strictly separated:
 ## Engineering Guidelines for Modifications
 
 1. **Targeted, Incremental Changes**:
-   - `main.py` is large (~2,700 lines). Do not rewrite or restructure entire sections when making localized fixes or features.
-   - Prefer extending modular managers (`GroundSupportManager`, `PowerUpManager`, `AudioManager`, `SettingsMenu`, `HelpMenu`) rather than appending ad-hoc logic into `main.py`.
+   - `src/eagle1/app/game.py` (~3,600 lines) and `src/eagle1/systems/ground_support.py` (~3,200 lines) are very large. Do not rewrite or restructure entire sections when making localized fixes or features.
+   - Prefer extending modular managers (`GroundSupportManager`, `PowerUpManager`, `AudioManager`, `SettingsMenu`, `HelpMenu`) or adding a focused new module rather than appending ad-hoc logic into `game.py`.
+   - Edit code under `src/eagle1/`, not the root-level compatibility shims.
 2. **Path Resolution & Portability**:
    - Never hardcode absolute file paths (e.g. `C:\Users\...`).
-   - Use `PROJECT_ROOT` / `BASE_DIR` with `os.path.join(...)` for assets and configs.
+   - Use `eagle1.paths` (`PROJECT_ROOT`, asset dirs, `get_user_data_dir()`) with `pathlib` for assets and configs.
 3. **Performance & 60 FPS Frame Budget**:
    - Do not perform file I/O, heavy surface allocations, or font re-creations inside the render/update loop.
    - Cache fonts and pre-render text or transparent surfaces where applicable.
@@ -104,8 +113,9 @@ Always keep coordinate spaces strictly separated:
    - Always guard against empty collections, dead entities, or `None` targets before dereferencing properties.
    - Cleanly remove dead/expired entities from tracking lists (`[e for e in enemies if e.is_alive]`).
 5. **Preserve User Data**:
-   - Never overwrite or reset `data/highscore.txt` with dummy test scores.
+   - Never overwrite or reset `data/highscore.txt`, `data/stratagem_hero_highscore.txt`, `data/player_profile.json` or `data/campaign_save.json` with dummy test data.
    - Ensure `data/audio_settings.json` handles missing keys gracefully with fallback defaults.
+   - Do not swallow errors with bare `except Exception: pass`; catch concrete exceptions (`OSError`, `ValueError`, `pygame.error`) and log them.
 6. **Proactive Improvement Suggestions**:
    - Whenever you identify code, architecture, performance, test coverage, gameplay balancing, or usability that could be improved, **proactively state your observations and recommendations to the user**.
    - Outline the rationale, expected benefits, and possible implementation approach clearly, without performing unrequested invasive refactors.
@@ -118,11 +128,13 @@ Always keep coordinate spaces strictly separated:
 
 ## Testing & Verification Workflow
 
-### 1. Python Syntax & Import Validation
-Verify syntax and imports across all modules:
+### 1. Tests & Lint (same as CI)
 ```bash
-python -c "import main, ground_support, powerup_system, audio_manager, generate_audio_assets, help_menu, settings_menu; print('All modules loaded successfully')"
+python -m pip install -r requirements-dev.txt && python -m pip install -e .
+python -m pytest tests/
+ruff check .
 ```
+CI runs the suite headless on Python 3.10–3.12; the project supports Python >= 3.9.
 
 ### 2. Headless Execution
 When running automated scripts or test checks in environments without a physical display or audio hardware, configure headless dummy drivers before initializing Pygame:
@@ -137,13 +149,13 @@ pygame.init()
 ### 3. Audio Asset Generation
 If audio assets are missing or modified:
 ```bash
-python generate_audio_assets.py
+python tools/generate_audio_assets.py
 ```
 
 ### 4. Manual Gameplay Verification
 Whenever making user-visible gameplay, UI, control, or physics changes:
 ```bash
-python main.py
+python run_game.py   # or: python -m eagle1
 ```
 Verify:
 - Clean launch to Main Menu.

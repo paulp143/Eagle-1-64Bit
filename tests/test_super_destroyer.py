@@ -1416,8 +1416,8 @@ def test_game_super_destroyer_state_transitions_and_catapult_launch(monkeypatch,
 
     save_mgr = CampaignSaveManager(data_dir=tmp_path)
     test_story_mgr = StoryManager(save_manager=save_mgr)
-    game.story_manager = test_story_mgr
-    game.super_destroyer_view.story_manager = test_story_mgr
+    monkeypatch.setattr(game, "story_manager", test_story_mgr)
+    monkeypatch.setattr(game.super_destroyer_view, "story_manager", test_story_mgr)
 
     # Enter Super Destroyer
     game.enter_super_destroyer({"casualties_count": 1, "hull_ratio": 0.8})
@@ -1448,8 +1448,8 @@ def test_end_to_end_campaign_loop_menu_hub_sortie_debrief_return(monkeypatch, tm
 
     save_mgr = CampaignSaveManager(data_dir=tmp_path)
     test_story_mgr = StoryManager(save_manager=save_mgr)
-    game.story_manager = test_story_mgr
-    game.super_destroyer_view.story_manager = test_story_mgr
+    monkeypatch.setattr(game, "story_manager", test_story_mgr)
+    monkeypatch.setattr(game.super_destroyer_view, "story_manager", test_story_mgr)
 
     # Step 1: Start at main_menu and enter hub
     game.game_state = "main_menu"
@@ -1482,6 +1482,8 @@ def test_end_to_end_campaign_loop_menu_hub_sortie_debrief_return(monkeypatch, tm
 def test_super_destroyer_audio_and_input_isolation(monkeypatch, tmp_path):
     """Verify audio and input states are strictly isolated upon entering Super Destroyer."""
     import eagle1.app.game as game
+
+    monkeypatch.setattr(game, "story_manager", StoryManager(save_manager=CampaignSaveManager(data_dir=tmp_path)))
 
     mock_stop_engine = MagicMock()
     mock_play_music = MagicMock()

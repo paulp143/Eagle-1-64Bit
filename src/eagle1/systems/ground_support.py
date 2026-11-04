@@ -2473,6 +2473,29 @@ class GroundSupportManager:
         self.emit_squad_banter("supply_pod", member_id="viper_4")
         return True
 
+    def apply_scripted_casualty(self, index: int) -> bool:
+        """Down a living Helldiver for a scripted story event.
+
+        The unit is marked as already reported so update() does not notify the
+        StoryManager a second time; the caller records the story casualty.
+
+        Returns:
+            True if a living unit with that index was downed, False otherwise.
+        """
+        if isinstance(index, bool) or not isinstance(index, int):
+            return False
+        unit = next((u for u in self.units if u.index == index), None)
+        if unit is None or not unit.is_alive:
+            return False
+
+        unit.shield = 0.0
+        unit.health = 0.0
+        unit.state = "DOWNED"
+        self._downed_unit_ids.add(index)
+        self.flawless_protection = False
+        self.add_combat_popup(f"CASUALTY: {unit.callsign} KIA!", unit.pos_x, unit.pos_y, (255, 75, 75))
+        return True
+
     def add_combat_popup(self, text, x, y, color=(255, 255, 255)):
         self.floating_popups.append({
             "text": text,
