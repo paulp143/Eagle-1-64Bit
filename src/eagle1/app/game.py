@@ -1963,8 +1963,8 @@ def trigger_mission_complete():
         "strider_destroyed": getattr(ground_support_manager, "strider_destroyed", False),
         "cas_kills": ground_support_manager.total_cas_kills,
         "survivors_count": ground_support_manager.survivors_count,
-        "casualties_count": max(0, 4 - int(ground_support_manager.survivors_count)),
-        "squad_wiped": bool(ground_support_manager.survivors_count <= 0),
+        "casualties_count": sum(1 for unit in ground_support_manager.units if unit.state == "DOWNED" or unit.health <= 0),
+        "squad_wiped": bool(ground_support_manager.units) and ground_support_manager.survivors_count <= 0,
         "hull_ratio": max(0.0, min(1.0, float(player.health) / max(1.0, float(player.max_health)))),
         "flawless_squad": ground_support_manager.flawless_protection,
         "hero_score": ground_support_manager.hero_score,
@@ -2029,6 +2029,10 @@ def move():
     if ground_support_manager.objective_phase == "COMPLETE":
         trigger_mission_complete()
         return
+
+    session = get_campaign_session()
+    if session.is_flight_active:
+        session.update(1.0 / 60.0, wave_manager.wave, mission_air_kills + mission_bomber_kills, ground_support_manager)
 
     # Update Bomber Enemies & Orbital Base Defense
     if active_mission_config.get("has_bombers"):
@@ -3008,6 +3012,15 @@ def enter_super_destroyer(debrief_results=None):
     game_state = "super_destroyer"
 
 
+def return_to_super_destroyer_from_debrief():
+    """Record campaign sortie completion, then return to the Super Destroyer hub with the debrief stats."""
+    debrief_data = dict(debriefing_screen.results)
+    debriefing_screen.close()
+    progression = get_campaign_session().complete_sortie(debrief_data)
+    enter_super_destroyer(debrief_data)
+    return progression
+
+
 def handle_super_destroyer_action(action):
     """Handle structured action payloads from SuperDestroyerView."""
     global game_state
@@ -3058,8 +3071,8 @@ def run_game():
                     add_highscore(player.score)
                 running = False
                 break
-            if game_state == "" and player.health > 0 and comms_hud.is_active and event.type == pygame.KEYDOWN:
-                if comms_hud.handle_event(event):
+            if game_state == "" and player.health > 0 and event.type == pygame.KEYDOWN:
+                if get_campaign_session().handle_comms_keydown(event, ground_support_manager):
                     continue
             if event.type == SHOOTING_END:
                 player.shooting = False
@@ -3202,9 +3215,7 @@ def run_game():
                         respawn()
                         game_state = ""
                     elif action == "super_destroyer":
-                        debrief_data = dict(debriefing_screen.results)
-                        debriefing_screen.close()
-                        enter_super_destroyer(debrief_data)
+                        return_to_super_destroyer_from_debrief()
                     elif action == "mission_select":
                         debriefing_screen.close()
                         game_state = "mission_select"
@@ -3364,9 +3375,7 @@ def run_game():
                         respawn()
                         game_state = ""
                     elif action == "super_destroyer":
-                        debrief_data = dict(debriefing_screen.results)
-                        debriefing_screen.close()
-                        enter_super_destroyer(debrief_data)
+                        return_to_super_destroyer_from_debrief()
                     elif action == "mission_select":
                         debriefing_screen.close()
                         game_state = "mission_select"
