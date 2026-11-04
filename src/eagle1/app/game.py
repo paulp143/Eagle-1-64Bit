@@ -2946,13 +2946,18 @@ def draw(mouse_pos=None):
             if ground_support_manager.objective_phase == "EXTRACTION":
                 obj_text = "OBJECTIVE: AIRSPACE SECURED! FLY TO EXTRACTION BEACON"
             else:
-                obj_text = f"OBJECTIVE: AIR SUPERIORITY [WAVE {wave_manager.wave}/5]"
+                obj_text = f"OBJECTIVE: AIR SUPERIORITY [WAVE {wave_manager.wave}/{active_mission_config.get('max_waves', 5)}]"
 
         obj_surf = hud_small_font.render(obj_text, True, active_mission_config.get("icon_color", (255, 220, 80)))
         obj_bg = pygame.Rect(GAME_WIDTH // 2 - obj_surf.get_width() // 2 - 12, 8, obj_surf.get_width() + 24, 22)
         pygame.draw.rect(canvas, (14, 20, 32), obj_bg, border_radius=6)
         pygame.draw.rect(canvas, active_mission_config.get("icon_color", (0, 220, 255)), obj_bg, 1, border_radius=6)
         canvas.blit(obj_surf, (GAME_WIDTH // 2 - obj_surf.get_width() // 2, 12))
+
+        # --- CAMPAIGN NARRATIVE OBJECTIVE (campaign sorties only) ---
+        campaign_objective_surf = get_campaign_objective_surface()
+        if campaign_objective_surf is not None:
+            canvas.blit(campaign_objective_surf, (GAME_WIDTH // 2 - campaign_objective_surf.get_width() // 2, 34))
 
         # --- SLOW-MOTION VIGNETTE OVERLAY ---
         if ground_support_manager.is_slow_mo:
@@ -2995,6 +3000,26 @@ def get_campaign_session():
     if campaign_session.story_manager is not story_manager:
         campaign_session.bind_story_manager(story_manager)
     return campaign_session
+
+
+CAMPAIGN_OBJECTIVE_MAX_CHARS = 110
+CAMPAIGN_OBJECTIVE_COLOR = (200, 225, 240)
+_campaign_objective_cache = {"text": None, "surface": None}
+
+
+def get_campaign_objective_surface():
+    """Return a cached HUD surface for the active campaign objective, or None outside campaign flights."""
+    text = get_campaign_session().get_objective_text()
+    if not text:
+        return None
+    if _campaign_objective_cache["text"] != text:
+        if len(text) <= CAMPAIGN_OBJECTIVE_MAX_CHARS:
+            display = text
+        else:
+            display = text[: CAMPAIGN_OBJECTIVE_MAX_CHARS - 3].rstrip() + "..."
+        _campaign_objective_cache["text"] = text
+        _campaign_objective_cache["surface"] = hud_small_font.render(f"> {display}", True, CAMPAIGN_OBJECTIVE_COLOR)
+    return _campaign_objective_cache["surface"]
 
 
 def enter_super_destroyer(debrief_results=None):

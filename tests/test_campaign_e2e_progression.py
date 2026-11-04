@@ -280,3 +280,27 @@ def test_extracted_helldivers_are_not_casualties(game):
 @pytest.mark.parametrize("sortie_num", [1, 2, 3, 4])
 def test_sortie_registry_matches_hub_briefing_metadata(sortie_num):
     assert SORTIE_BRIEFING_METADATA[sortie_num] == CAMPAIGN_SORTIE_REGISTRY[sortie_num].to_briefing_dict()
+
+
+def test_campaign_objective_surface_only_in_campaign(game):
+    game.respawn(game.MISSION_CONFIGS[game.MissionType.ENDLESS_WAR])
+    assert game.get_campaign_objective_surface() is None
+
+    _launch_from_hub(game)
+    surf = game.get_campaign_objective_surface()
+    assert isinstance(surf, pygame.Surface)
+    assert game.get_campaign_objective_surface() is surf
+
+
+def test_campaign_objective_truncates_long_text(game):
+    _launch_from_hub(game)
+    game.get_campaign_session().mission_controller.set_active_objective_text("X" * 240)
+    surf = game.get_campaign_objective_surface()
+    assert game._campaign_objective_cache["text"] == "X" * 240
+    assert surf.get_width() <= game.hud_small_font.render("> " + "X" * 110, True, (0, 0, 0)).get_width()
+
+
+def test_draw_with_campaign_objective_smoke(game):
+    _launch_from_hub(game)
+    game.game_state = ""
+    game.draw(mouse_pos=(640, 360))
