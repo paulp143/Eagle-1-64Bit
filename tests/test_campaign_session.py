@@ -339,3 +339,17 @@ def test_bind_story_manager_rebinds(story, tmp_path, session):
     assert session.story_manager is other
     assert session.is_flight_active is False
     assert session.trigger_manager.story_manager is other
+
+
+def test_story_package_exports_session_api():
+    import eagle1.story as story_pkg
+    from eagle1.story.campaign_session import CampaignSortieSession as SessionCls
+
+    for name in (
+        "CAMPAIGN_SORTIE_CONFIG_KEY",
+        "CampaignSortieSession",
+        "build_campaign_mission_config",
+        "build_combat_telemetry",
+    ):
+        assert name in story_pkg.__all__
+    assert story_pkg.CampaignSortieSession is SessionCls

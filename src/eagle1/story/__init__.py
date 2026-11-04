@@ -42,6 +42,12 @@ from eagle1.story.campaign_save import (
     CampaignSaveManager,
     CampaignSaveState,
 )
+from eagle1.story.campaign_session import (
+    CAMPAIGN_SORTIE_CONFIG_KEY,
+    CampaignSortieSession,
+    build_campaign_mission_config,
+    build_combat_telemetry,
+)
 from eagle1.story.comms_hud import CommsHUD
 from eagle1.story.dialogue_data import (
     BANTER_QUEUES,
@@ -135,6 +141,7 @@ __all__ = [
     "BanterLine",
     "CAMPAIGN_SAVE_FILENAME",
     "CAMPAIGN_SAVE_VERSION",
+    "CAMPAIGN_SORTIE_CONFIG_KEY",
     "CAMPAIGN_SORTIE_REGISTRY",
     "CONDITION_AERIAL_KILLS",
     "CONDITION_BOSS_HP_BELOW",
@@ -146,6 +153,7 @@ __all__ = [
     "CampaignSaveManager",
     "CampaignSaveState",
     "CampaignSortieConfig",
+    "CampaignSortieSession",
     "CombatTelemetrySnapshot",
     "CommsHUD",
     "DECISION_TIME_DILATION",
@@ -209,6 +217,8 @@ __all__ = [
     "apply_sortie1_choice_effect",
     "apply_sortie2_choice_effect",
     "apply_sortie4_choice_effect",
+    "build_campaign_mission_config",
+    "build_combat_telemetry",
     "emit_sortie4_casualty_check",
     "get_contextual_banter",
     "get_debrief_dialogue_node",
