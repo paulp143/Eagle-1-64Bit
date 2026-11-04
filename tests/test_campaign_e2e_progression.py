@@ -44,6 +44,9 @@ def game(monkeypatch, tmp_path):
     yield game_module
     game_module.comms_hud.dismiss()
     game_module.game_state = "main_menu"
+    game_module.active_mission_config = game_module.MISSION_CONFIGS[game_module.MissionType.ENDLESS_WAR]
+    game_module._campaign_objective_cache["text"] = None
+    game_module._campaign_objective_cache["surface"] = None
 
 
 def _launch_from_hub(g):
@@ -304,3 +307,56 @@ def test_draw_with_campaign_objective_smoke(game):
     _launch_from_hub(game)
     game.game_state = ""
     game.draw(mouse_pos=(640, 360))
+
+
+def test_campaign_flight_player_death_respawn_resets_sortie(game):
+    """Verify in-flight death and 'R' respawn cleanly restarts the active campaign sortie."""
+    _launch_from_hub(game)
+    session = game.get_campaign_session()
+    assert session.is_flight_active is True
+    assert session.active_sortie_num == 1
+
+    # Simulate player death and comms banner
+    game.player.health = 0
+    game.player.shooting = True
+    game.comms_hud.trigger_callout("TEST", "Radio broadcast during death")
+
+    # Respawn via gameover key 'R' (respawn called with mission_config=None)
+    game.respawn()
+
+    assert game.player.health == game.player.max_health
+    assert session.is_flight_active is True
+    assert session.active_sortie_num == 1
+    assert session.flight_seconds == 0.0
+    assert session.trigger_manager.fired_trigger_ids == set()
+    assert game.story_manager.current_sortie == 1
+    assert game.comms_hud.is_active is False
+    assert game.active_mission_config["campaign_sortie"] == 1
+
+
+def test_campaign_objective_surface_updates_on_narrative_transition(game):
+    """Verify objective HUD surface invalidates cache when narrative objective changes."""
+    _launch_from_hub(game)
+    surf_initial = game.get_campaign_objective_surface()
+    initial_text = game.get_campaign_session().get_objective_text()
+
+    # Trigger dialogue choice which mutates objective text
+    assert _pump(game, _awaiting_choice(game))
+    _press(game, pygame.K_1)
+
+    choice_text = game.get_campaign_session().get_objective_text()
+    assert choice_text != initial_text
+    surf_updated = game.get_campaign_objective_surface()
+    assert surf_updated is not surf_initial
+
+
+def test_campaign_flight_aborted_on_main_menu_exit(game):
+    """Verify leaving active campaign sortie for main menu cleanly aborts the session."""
+    _launch_from_hub(game)
+    session = game.get_campaign_session()
+    assert session.is_flight_active is True
+
+    game.return_to_main_menu()
+    assert game.game_state == "main_menu"
+    assert session.is_flight_active is False
+    assert session.mission_controller.is_sortie_active is False
