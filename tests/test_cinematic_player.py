@@ -26,6 +26,7 @@ from eagle1.story.cinematic_player import (
     format_ending_branch_label,
     validate_cinematic_sequence,
     wrap_cinematic_text,
+    _is_finite_number,
 )
 from eagle1.story.story_manager import BRANCH_OBEDIENCE_PURGE, DEFAULT_LOYALTY
 
@@ -605,3 +606,102 @@ def test_story_package_exports_cinematic_api():
         assert hasattr(story, name)
     assert story.__all__ == sorted(story.__all__)
     assert story.CinematicPlayer is CinematicPlayer
+
+
+def test_is_finite_number_handles_huge_integers_without_overflow():
+    assert _is_finite_number(10**400) is False
+    assert _is_finite_number(-(10**400)) is False
+
+
+def test_draw_suicide_dive_extreme_low_zoom_does_not_crash(dummy_surface):
+    seq = _single_keyframe_sequence(
+        scene_type=CINEMATIC_SCENE_SUICIDE_DIVE,
+        camera_start=(0.0, 0.0, 0.001),
+        camera_end=(0.0, 0.0, 0.001),
+    )
+    player = _started_player(sequence=seq)
+    player.update(0.1)
+    player.draw(dummy_surface)
+
+
+def test_on_audio_cue_exception_is_safely_caught():
+    def _exploding_cue(cue):
+        raise RuntimeError("Custom audio system unavailable")
+
+    player = CinematicPlayer()
+    player.on_audio_cue = _exploding_cue
+    player.start_sequence(_make_sequence(), _make_stats())
+    assert player.fired_audio_cues == ["cue_a"]
+    player.update(0.1)
+    assert player.is_playing is True
+
+
+def test_sequence_restart_from_epilogue_and_finished_phases():
+    player = _started_player()
+    player.update(10.0)
+    assert player.phase == CINEMATIC_PHASE_EPILOGUE
+
+    player.start_sequence(_make_sequence(), _make_stats())
+    assert player.phase == CINEMATIC_PHASE_PLAYING
+    assert player.keyframe_index == 0
+    assert player.epilogue_elapsed == 0.0
+
+    player.update(10.0)
+    player.handle_event(_key(pygame.K_RETURN))
+    assert player.phase == CINEMATIC_PHASE_FINISHED
+
+    player.start_sequence(_make_sequence(), _make_stats())
+    assert player.phase == CINEMATIC_PHASE_PLAYING
+    assert player.is_active is True
+
+
+def test_skip_is_noop_in_non_playing_phases():
+    player = CinematicPlayer()
+    player.skip_to_epilogue()
+    assert player.phase == CINEMATIC_PHASE_IDLE
+
+    player.start_sequence(_make_sequence(), _make_stats())
+    player.skip_to_epilogue()
+    assert player.phase == CINEMATIC_PHASE_EPILOGUE
+    player.skip_to_epilogue()
+    assert player.phase == CINEMATIC_PHASE_EPILOGUE
+
+
+def test_active_subtitle_tie_break_same_start_time():
+    kf = CinematicKeyframe(
+        keyframe_id="tie",
+        duration=3.0,
+        scene_type=CINEMATIC_SCENE_EPILOGUE_CARD,
+        subtitles=(
+            CinematicSubtitle(0.5, 2.0, "FIRST", "Line 1"),
+            CinematicSubtitle(0.5, 2.0, "SECOND", "Line 2"),
+        ),
+    )
+    player = _started_player(sequence=_make_sequence(keyframes=(kf,)))
+    player.update(1.0)
+    assert player.get_active_subtitle().speaker == "SECOND"
+
+
+def test_epilogue_lines_clamped_to_max():
+    stats = _make_stats(epilogue_lines=tuple(f"Line {i}" for i in range(20)))
+    player = _started_player(stats=stats)
+    player.update(10.0)
+    assert len(player._epilogue_line_surfs) == 8
+
+
+def test_player_resolution_sanitization():
+    player = CinematicPlayer(screen_w=0, screen_h=-500)
+    assert player.screen_w == 1280
+    assert player.screen_h == 720
+
+    player2 = CinematicPlayer(screen_w=float("nan"), screen_h=float("inf"))
+    assert player2.screen_w == 1280
+    assert player2.screen_h == 720
+
+
+def test_rebuild_keyframe_text_cache_without_sequence_is_safe():
+    player = CinematicPlayer()
+    player.sequence = None
+    player._rebuild_keyframe_text_cache()
+    assert player._subtitle_cache == {}
+

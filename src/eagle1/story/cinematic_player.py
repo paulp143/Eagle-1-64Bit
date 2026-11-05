@@ -63,7 +63,12 @@ ENDING_BRANCH_LABELS: Dict[str, str] = {
 
 def _is_finite_number(value: Any) -> bool:
     """Return True for finite int/float values that are not bools."""
-    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
 
 
 def _sanitize_dt(value: Any) -> float:
@@ -325,8 +330,8 @@ class CinematicPlayer:
     """Plays a CinematicSequence at 60 FPS and finishes on the epilogue statistics screen."""
 
     def __init__(self, screen_w: int = 1280, screen_h: int = 720, audio_manager: Optional[Any] = None) -> None:
-        self.screen_w = int(screen_w) if _is_finite_number(screen_w) and screen_w > 0 else 1280
-        self.screen_h = int(screen_h) if _is_finite_number(screen_h) and screen_h > 0 else 720
+        self.screen_w = max(320, min(7680, int(screen_w))) if _is_finite_number(screen_w) and screen_w > 0 else 1280
+        self.screen_h = max(240, min(4320, int(screen_h))) if _is_finite_number(screen_h) and screen_h > 0 else 720
         self.audio = audio_manager
         self.on_audio_cue: Optional[Callable[[str], None]] = None
 
@@ -414,10 +419,11 @@ class CinematicPlayer:
         return None if best is None else best[1]
 
     def get_active_subtitle(self) -> Optional[CinematicSubtitle]:
+        kf = self.current_keyframe
         idx = self._active_subtitle_index()
-        if idx is None:
+        if kf is None or idx is None:
             return None
-        return self.current_keyframe.subtitles[idx]
+        return kf.subtitles[idx]
 
     def get_epilogue_lines(self) -> Tuple[str, ...]:
         if self.stats is not None and self.stats.epilogue_lines:
@@ -543,8 +549,8 @@ class CinematicPlayer:
         self._letterbox_surf.fill(_COLOR_LETTERBOX)
         self._fade_surf = pygame.Surface((self.screen_w, self.screen_h))
         self._fade_surf.fill((0, 0, 0))
-        panel_w = min(1000, self.screen_w - 80)
-        panel_h = min(560, self.screen_h - 80)
+        panel_w = max(1, min(1000, self.screen_w - 80))
+        panel_h = max(1, min(560, self.screen_h - 80))
         self._epilogue_panel = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
         self._epilogue_panel.fill((14, 20, 32, 220))
         pygame.draw.rect(self._epilogue_panel, _COLOR_EPILOGUE_TITLE, self._epilogue_panel.get_rect(), width=2)
@@ -619,7 +625,7 @@ class CinematicPlayer:
         if callable(self.on_audio_cue):
             try:
                 self.on_audio_cue(cue)
-            except (pygame.error, TypeError, ValueError, AttributeError) as exc:
+            except Exception as exc:
                 logger.warning("Cinematic audio cue callback failed for %r: %s", cue, exc)
             return
         if self.audio is None:
@@ -643,6 +649,8 @@ class CinematicPlayer:
 
     def _rebuild_keyframe_text_cache(self) -> None:
         self._subtitle_cache.clear()
+        if self.sequence is None or self.keyframe_index >= len(self.sequence.keyframes):
+            return
         kf = self.sequence.keyframes[self.keyframe_index]
         caption = kf.title_caption.strip()
         self._caption_surf = self._render_text(self.font_title, caption, _COLOR_CAPTION) if caption else None
@@ -728,7 +736,7 @@ class CinematicPlayer:
                 self._draw_letterbox_and_subtitles(surface)
             else:
                 self._draw_epilogue(surface)
-        except pygame.error as exc:
+        except (pygame.error, ValueError, OverflowError) as exc:
             logger.warning("CinematicPlayer draw failed: %s", exc)
 
     def _project(self, wx: float, wy: float) -> Tuple[int, int]:
@@ -757,8 +765,9 @@ class CinematicPlayer:
     def _draw_scene_suicide_dive(self, surface: pygame.Surface) -> None:
         surface.fill((18, 10, 14))
         self._draw_starfield(surface, 0.3)
+        radius = self._scale(170)
         pygame.draw.circle(surface, (90, 30, 30), self._project(0, -40), self._scale(150))
-        pygame.draw.circle(surface, (200, 60, 40), self._project(0, -40), self._scale(170), width=3)
+        pygame.draw.circle(surface, (200, 60, 40), self._project(0, -40), radius, width=min(3, radius))
         silhouette = [self._project(x, y) for x, y in [(0, 230), (-38, 300), (0, 282), (38, 300)]]
         pygame.draw.polygon(surface, (220, 225, 235), silhouette)
         for tip in [(-14, 380), (0, 400), (14, 380)]:
@@ -772,8 +781,8 @@ class CinematicPlayer:
                 cx = -330 + col * 110
                 cy = -110 + row * 110
                 pygame.draw.circle(surface, (150, 160, 175), self._project(cx, cy - 26), self._scale(12))
-                body = pygame.Rect(self._project(cx - 14, cy - 12), (self._scale(28), self._scale(48)))
-                pygame.draw.rect(surface, (110, 120, 135), body)
+                pos = self._project(cx - 14, cy - 12)
+                pygame.draw.rect(surface, (110, 120, 135), (*pos, self._scale(28), self._scale(48)))
 
     def _draw_scene_scrap_yard_execution(self, surface: pygame.Surface) -> None:
         surface.fill((26, 20, 16))
@@ -781,25 +790,27 @@ class CinematicPlayer:
         pygame.draw.polygon(surface, (60, 50, 42), [self._project(x, y) for x, y in [(-520, 60), (-420, -40), (-300, 60)]])
         pygame.draw.polygon(surface, (60, 50, 42), [self._project(x, y) for x, y in [(260, 60), (380, -70), (520, 60)]])
         pygame.draw.circle(surface, (200, 190, 170), self._project(0, 10), self._scale(11))
-        kneeling = pygame.Rect(self._project(-12, 22), (self._scale(24), self._scale(30)))
-        pygame.draw.rect(surface, (150, 140, 120), kneeling)
+        kneeling_pos = self._project(-12, 22)
+        pygame.draw.rect(surface, (150, 140, 120), (*kneeling_pos, self._scale(24), self._scale(30)))
         for x in (-90, 90):
-            frame = pygame.Rect(self._project(x - 16, -40), (self._scale(32), self._scale(80)))
-            pygame.draw.rect(surface, (40, 40, 46), frame)
+            frame_pos = self._project(x - 16, -40)
+            pygame.draw.rect(surface, (40, 40, 46), (*frame_pos, self._scale(32), self._scale(80)))
             pygame.draw.circle(surface, (255, 40, 30), self._project(x, -28), self._scale(4))
 
     def _draw_scene_observation_deck_funeral(self, surface: pygame.Surface) -> None:
         surface.fill((8, 10, 20))
         self._draw_starfield(surface, 0.15)
         pygame.draw.circle(surface, (40, 70, 120), self._project(260, -120), self._scale(120))
-        frame = pygame.Rect(self._project(-560, -220), (self._scale(1120), self._scale(380)))
-        pygame.draw.rect(surface, (60, 70, 85), frame, width=self._scale(6))
+        frame_pos = self._project(-560, -220)
+        pygame.draw.rect(
+            surface, (60, 70, 85), (*frame_pos, self._scale(1120), self._scale(380)), width=self._scale(6)
+        )
         pygame.draw.line(surface, (60, 70, 85), self._project(0, -220), self._project(0, 160), self._scale(6))
         for x in (-270, -90, 90, 270):
-            coffin = pygame.Rect(self._project(x - 60, 190), (self._scale(120), self._scale(36)))
-            pygame.draw.rect(surface, (70, 60, 50), coffin)
-            flag = pygame.Rect(self._project(x - 60, 202), (self._scale(120), self._scale(8)))
-            pygame.draw.rect(surface, (255, 215, 0), flag)
+            coffin_pos = self._project(x - 60, 190)
+            pygame.draw.rect(surface, (70, 60, 50), (*coffin_pos, self._scale(120), self._scale(36)))
+            flag_pos = self._project(x - 60, 202)
+            pygame.draw.rect(surface, (255, 215, 0), (*flag_pos, self._scale(120), self._scale(8)))
 
     def _draw_scene_epilogue_card(self, surface: pygame.Surface) -> None:
         surface.fill((5, 5, 8))
