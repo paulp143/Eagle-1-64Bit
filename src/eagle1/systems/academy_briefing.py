@@ -10,6 +10,7 @@ import pygame
 from typing import List, Optional
 
 from eagle1.data.player_profile import PlayerProfileManager
+from eagle1.ui import theme, widgets
 
 try:
     from eagle1.systems.audio_manager import get_audio_manager
@@ -17,17 +18,8 @@ except Exception:
     get_audio_manager = None
 
 
-def _get_font(name: str, size: int, bold: bool = False) -> pygame.font.Font:
-    """Safe font loader with Fallback for headless environments."""
-    if not pygame.font.get_init():
-        try:
-            pygame.font.init()
-        except Exception:
-            pass
-    try:
-        return pygame.font.SysFont(name, size, bold=bold)
-    except Exception:
-        return pygame.font.Font(None, size)
+# Shared cache for world-space labels (gates, bunker) so static text is rendered once.
+_LABEL_CACHE = widgets.TextCache(64)
 
 
 # Academy Training Drill States
@@ -158,8 +150,9 @@ class AcademyWaypointGate:
         pygame.draw.circle(surface, (0, 240, 255), (screen_x, screen_y), max(1, pulse_r - 8), width=1)
 
         # Gate Label
-        label_surf = font.render(f"GATE {self.label}", True, (255, 215, 0))
-        surface.blit(label_surf, label_surf.get_rect(center=(screen_x, screen_y - pulse_r - 16)))
+        if font is not None:
+            label_surf = _LABEL_CACHE.render(font, f"GATE {self.label}", theme.ACCENT)
+            surface.blit(label_surf, label_surf.get_rect(center=(screen_x, screen_y - pulse_r - 16)))
 
 
 class AcademyTargetDrone(pygame.Rect):
@@ -284,8 +277,9 @@ class AcademyTargetBunker(pygame.Rect):
         pygame.draw.circle(surface, (255, 215, 0), (screen_x, screen_y), 65, width=2)
         pygame.draw.circle(surface, (255, 0, 0), (screen_x, screen_y), 8)
 
-        lbl = font.render(self.label, True, (255, 215, 0))
-        surface.blit(lbl, lbl.get_rect(center=(screen_x, screen_y - 65)))
+        if font is not None:
+            lbl = _LABEL_CACHE.render(font, self.label, theme.ACCENT)
+            surface.blit(lbl, lbl.get_rect(center=(screen_x, screen_y - 65)))
 
 
 class AcademyCelebrationParticle:
@@ -332,7 +326,9 @@ class AcademyCelebrationParticle:
 class CommsHUDBox:
     """Typewriter tactical radio transmission display from Commander Vance."""
 
-    def __init__(self, x: int = 80, y: int = 70, w: int = 640, h: int = 110):
+    MAX_LINES = 4
+
+    def __init__(self, x: int = 280, y: int = 64, w: int = 560, h: int = 124):
         self.rect = pygame.Rect(x, y, w, h)
         self.speaker_title = "CDR. VANCE // NAVAL ACADEMY CHIEF INSTRUCTOR"
         self.full_text = ""
@@ -340,15 +336,28 @@ class CommsHUDBox:
         self.chars_per_second = 38.0
         self.is_finished = False
 
-        self.font_title = _get_font("arial", 13, bold=True)
-        self.font_msg = _get_font("arial", 16)
+        self.font_title = theme.get_font("label")
+        self.font_msg = theme.get_font("body")
         self.audio = get_audio_manager() if get_audio_manager else None
+
+        # Everything static is created once here (no per-frame allocation in draw()).
+        self._bg_surf = widgets.make_overlay(self.rect.size, theme.with_alpha(theme.PANEL, 230))
+        self._cache = widgets.TextCache(64)
+        self._lines: List[str] = []
+        self._title_surf: Optional[pygame.Surface] = (
+            self.font_title.render(self.speaker_title, True, theme.INFO) if self.font_title else None
+        )
 
     def set_message(self, text: str, sfx_cue: Optional[str] = "radio_chatter"):
         """Queue and begin typewriter rendering of dialogue."""
         self.full_text = text
         self.displayed_chars = 0
         self.is_finished = False
+        # Wrap the full text once; the typewriter only reveals characters of these stable lines.
+        self._lines = (
+            widgets.wrap_text_px(self.font_msg, text, self.rect.w - 32, max_lines=self.MAX_LINES)
+            if (self.font_msg and text) else []
+        )
         if sfx_cue and self.audio:
             self.audio.play_sfx(sfx_cue)
 
@@ -362,49 +371,27 @@ class CommsHUDBox:
 
     def draw(self, surface: pygame.Surface):
         """Render comms HUD frame."""
-        if not self.full_text:
+        if not self.full_text or self.font_msg is None or self._title_surf is None:
             return
 
-        # Semi-transparent background
-        box_surf = pygame.Surface((self.rect.w, self.rect.h), pygame.SRCALPHA)
-        box_surf.fill((12, 18, 28, 230))
-        surface.blit(box_surf, self.rect.topleft)
+        surface.blit(self._bg_surf, self.rect.topleft)
+        widgets.draw_panel(surface, self.rect, None, theme.ACCENT_DIM, theme.ACCENT)
 
-        # Golden hazard border
-        pygame.draw.rect(surface, (220, 180, 50), self.rect, width=2, border_radius=6)
+        badge_rect = pygame.Rect(self.rect.x + 8, self.rect.y + 8, self.rect.w - 16, 22)
+        pygame.draw.rect(surface, theme.PANEL_RAISED, badge_rect)
+        surface.blit(self._title_surf, (badge_rect.x + 8, badge_rect.centery - self._title_surf.get_height() // 2))
 
-        # Speaker badge
-        badge_rect = pygame.Rect(self.rect.x + 8, self.rect.y + 6, self.rect.w - 16, 22)
-        pygame.draw.rect(surface, (25, 35, 55), badge_rect, border_radius=4)
-        title_surf = self.font_title.render(self.speaker_title, True, (0, 230, 255))
-        surface.blit(title_surf, (badge_rect.x + 8, badge_rect.y + 3))
-
-        # Typewriter text content
-        current_len = int(self.displayed_chars)
-        visible_text = self.full_text[:current_len]
-
-        # Word wrap rendering
-        words = visible_text.split(" ")
-        lines = []
-        cur_line = ""
-        max_w = self.rect.w - 32
-
-        for w in words:
-            test = f"{cur_line} {w}".strip()
-            if self.font_msg.size(test)[0] <= max_w:
-                cur_line = test
-            else:
-                if cur_line:
-                    lines.append(cur_line)
-                cur_line = w
-        if cur_line:
-            lines.append(cur_line)
-
-        y_offset = self.rect.y + 36
-        for line in lines[:3]:
-            msg_surf = self.font_msg.render(line, True, (245, 245, 255))
-            surface.blit(msg_surf, (self.rect.x + 16, y_offset))
-            y_offset += 21
+        # Typewriter: reveal characters of the pre-wrapped lines (only the last visible line changes).
+        remaining = int(self.displayed_chars)
+        y_offset = self.rect.y + 38
+        step = self.font_msg.get_linesize()
+        for line in self._lines:
+            if remaining <= 0:
+                break
+            visible = line[:remaining]
+            remaining -= len(line) + 1  # +1 for the space removed by wrapping
+            surface.blit(self._cache.render(self.font_msg, visible, theme.TEXT), (self.rect.x + 16, y_offset))
+            y_offset += step
 
 
 class AcademyTutorialManager:
@@ -431,11 +418,13 @@ class AcademyTutorialManager:
         self.border_cleared = False
         self.celebration_particles: List[AcademyCelebrationParticle] = []
 
-        self.font_obj = _get_font("arial", 18, bold=True)
-        self.font_sub = _get_font("arial", 14)
-        self.font_ceremony_title = _get_font("arial", 22, bold=True)
-        self.font_ceremony_sub = _get_font("arial", 13, bold=True)
-        self.font_ceremony_name = _get_font("arial", 15, bold=True)
+        self.font_obj = theme.get_font("label")
+        self.font_sub = theme.get_font("body_small")
+        self.font_ceremony_title = theme.get_font("title")
+        self.font_ceremony_sub = theme.get_font("label")
+        self.font_ceremony_name = theme.get_font("heading")
+        self._graduate_callsign = "PILOT"
+        self._grad_assets = None  # lazily built once per surface size when the ceremony starts drawing
         self.audio = get_audio_manager() if get_audio_manager else None
 
         self._init_briefing_dialogue()
@@ -568,6 +557,7 @@ class AcademyTutorialManager:
                 prof_mgr = PlayerProfileManager()
                 if prof_mgr.has_active_profile():
                     prof = prof_mgr.load_profile()
+                    self._graduate_callsign = prof.username.upper()
                     prof.academy_completed = True
                     prof.missions_cleared = max(1, prof.missions_cleared)
                     if prof.active_mission in ("academy_tutorial", ""):
@@ -773,17 +763,37 @@ class AcademyTutorialManager:
         if self.state == DRILL_STRATAGEM and self.target_bunker:
             self.target_bunker.draw(surface, camera_x, camera_y, self.font_obj)
 
+    def _ensure_graduation_assets(self, w: int, h: int):
+        """Build overlay, card and ceremony text once per surface size (no per-frame allocation)."""
+        if self._grad_assets is not None and self._grad_assets["size"] == (w, h):
+            return self._grad_assets
+        card_w, card_h = 640, 240
+        card_surf = widgets.make_overlay((card_w, card_h), theme.with_alpha(theme.PANEL, 240))
+        assets = {
+            "size": (w, h),
+            "overlay": widgets.make_overlay((w, h), (5, 10, 18, 160)),
+            "card": card_surf,
+            "title": self.font_ceremony_title.render("SUPER EARTH NAVAL AVIATOR", True, theme.ACCENT),
+            "sub": self.font_ceremony_sub.render("WINGS OF LIBERTY — FLIGHT QUALIFICATION CERTIFIED", True, theme.INFO),
+            "name": self.font_ceremony_name.render(
+                f"COMMENDATION CONFERRED UPON: CADET {self._graduate_callsign}", True, theme.TEXT
+            ),
+        }
+        self._grad_assets = assets
+        return assets
+
     def _draw_graduation_badge(self, surface: pygame.Surface):
         """Render golden 'Wings of Liberty' aviator badge ceremony overlay."""
+        if None in (self.font_ceremony_title, self.font_ceremony_sub, self.font_ceremony_name):
+            return
         w = surface.get_width()
         h = surface.get_height()
         cx = w // 2
         cy = h // 2 - 20
+        assets = self._ensure_graduation_assets(w, h)
 
         # Semi-transparent backdrop vignette
-        overlay = pygame.Surface((w, h), pygame.SRCALPHA)
-        overlay.fill((5, 10, 18, 160))
-        surface.blit(overlay, (0, 0))
+        surface.blit(assets["overlay"], (0, 0))
 
         # Draw particles
         for p in self.celebration_particles:
@@ -793,13 +803,11 @@ class AcademyTutorialManager:
         card_w = 640
         card_h = 240
         card_rect = pygame.Rect(cx - card_w // 2, cy - card_h // 2, card_w, card_h)
-        card_surf = pygame.Surface((card_w, card_h), pygame.SRCALPHA)
-        card_surf.fill((12, 18, 30, 240))
-        surface.blit(card_surf, card_rect.topleft)
+        surface.blit(assets["card"], card_rect.topleft)
 
-        # Ornate golden border
-        pygame.draw.rect(surface, (255, 215, 0), card_rect, width=3, border_radius=12)
-        pygame.draw.rect(surface, (0, 220, 255), card_rect.inflate(-8, -8), width=1, border_radius=8)
+        # Sharp border with gold brackets
+        widgets.draw_panel(surface, card_rect, None, theme.ACCENT_DIM, theme.ACCENT)
+        pygame.draw.rect(surface, theme.INFO, card_rect.inflate(-10, -10), width=1)
 
         # Aviator Wings geometry (Golden wings left and right)
         wing_y = cy - 45
@@ -838,36 +846,28 @@ class AcademyTutorialManager:
             star_points.append((cx + math.cos(ang) * r, wing_y + math.sin(ang) * r))
         pygame.draw.polygon(surface, (255, 220, 50), star_points)
 
-        # Typography
-        title = self.font_ceremony_title.render("SUPER EARTH NAVAL AVIATOR", True, (255, 220, 50))
+        # Typography (pre-rendered in _ensure_graduation_assets)
+        title = assets["title"]
         surface.blit(title, title.get_rect(center=(cx, cy + 18)))
-
-        sub = self.font_ceremony_sub.render("WINGS OF LIBERTY — FLIGHT QUALIFICATION CERTIFIED", True, (0, 230, 255))
-        surface.blit(sub, sub.get_rect(center=(cx, cy + 46)))
-
-        # Get pilot callsign
-        callsign = "PILOT"
-        try:
-            mgr = PlayerProfileManager()
-            if mgr.has_active_profile():
-                callsign = mgr.load_profile().username.upper()
-        except Exception:
-            pass
-
-        congrats = self.font_ceremony_name.render(f"COMMENDATION CONFERRED UPON: CADET {callsign}", True, (255, 255, 255))
-        surface.blit(congrats, congrats.get_rect(center=(cx, cy + 76)))
+        sub = assets["sub"]
+        surface.blit(sub, sub.get_rect(center=(cx, cy + 50)))
+        congrats = assets["name"]
+        surface.blit(congrats, congrats.get_rect(center=(cx, cy + 82)))
 
     def draw_hud(self, surface: pygame.Surface, player=None):
         """Render objective tracker, progress gauge, and Vance comms box in screen space."""
         # Commander Vance comms
         self.comms_box.draw(surface)
 
-        # Top Objective tracker banner
-        banner_rect = pygame.Rect(surface.get_width() - 480, 70, 430, 80)
-        pygame.draw.rect(surface, (14, 20, 32, 230), banner_rect, border_radius=8)
-        pygame.draw.rect(surface, (0, 200, 255), banner_rect, width=2, border_radius=8)
+        if self.font_obj is None or self.font_sub is None:
+            return
 
-        title_surf = self.font_obj.render(self.get_active_drill_title(), True, (255, 215, 0))
+        # Objective tracker banner (below the weapon panel zone at the top right)
+        banner_rect = pygame.Rect(surface.get_width() - 16 - 404, 148, 404, 72)
+        widgets.draw_panel(surface, banner_rect, theme.PANEL, theme.INFO, theme.ACCENT)
+
+        title = widgets.fit_text(self.font_obj, self.get_active_drill_title().upper(), banner_rect.w - 28)
+        title_surf = _LABEL_CACHE.render(self.font_obj, title, theme.ACCENT)
         surface.blit(title_surf, (banner_rect.x + 14, banner_rect.y + 10))
 
         # Dynamic sub-status
@@ -892,8 +892,9 @@ class AcademyTutorialManager:
         elif self.state == DRILL_GRADUATION:
             sub_text = "STATUS: CERTIFIED! Returning to Fleet..."
 
-        sub_surf = self.font_sub.render(sub_text, True, (230, 240, 255))
-        surface.blit(sub_surf, (banner_rect.x + 14, banner_rect.y + 44))
+        sub_text = widgets.fit_text(self.font_sub, sub_text, banner_rect.w - 28)
+        sub_surf = _LABEL_CACHE.render(self.font_sub, sub_text, theme.TEXT)
+        surface.blit(sub_surf, (banner_rect.x + 14, banner_rect.y + 40))
 
         # Graduation ceremony badge overlay
         if self.state == DRILL_GRADUATION:
