@@ -45,6 +45,11 @@ SLIDER_KEY_STEP = 0.05
 
 _TEXT_CACHE = widgets.TextCache(768)
 
+# Controls tab grid: two columns centered inside the settings panel (x 40..1240) with equal side margins.
+CONTROLS_MARGIN_X = 40
+CONTROLS_COL_GAP = 30
+CONTROLS_COL_W = (1280 - 80 - 2 * CONTROLS_MARGIN_X - CONTROLS_COL_GAP) // 2
+
 
 class SliderWidget:
     """Interactive horizontal slider widget supporting mouse drag, keyboard steps and focus."""
@@ -348,7 +353,7 @@ class SettingsMenu:
             self._gameplay_info.append((title, widgets.wrap_text_px(self.font_body, desc, info_w)))
 
         # Controls grid: two columns of (kind, text...) rows, categories keep declaration order.
-        col_w = 560
+        col_w = CONTROLS_COL_W
         key_w = 190
         columns = [[], []]
         col_for = {"FLIGHT": 0, "WEAPONS": 0, "STRATAGEMS": 1, "SYSTEM": 1}
@@ -608,14 +613,14 @@ class SettingsMenu:
             surface, "FLIGHT CONTROLS & KEYBINDINGS",
             "Primary flight, targeting, and tactical support keybindings.",
         )
-        start_x = 90
+        start_x = self.panel_rect.x + CONTROLS_MARGIN_X
         start_y = 175
         row_h = 28
         step = 32
         col_w = self._controls_col_w
         key_w = self._controls_key_w
         for col, rows in enumerate(self._controls_rows):
-            rx = start_x + col * (col_w + 30)
+            rx = start_x + col * (col_w + CONTROLS_COL_GAP)
             ry = start_y
             for entry in rows:
                 if entry[0] == "header":

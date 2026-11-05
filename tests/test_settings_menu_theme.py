@@ -115,3 +115,12 @@ def test_warning_toggle_hides_vignette_but_keeps_alarm_audio(monkeypatch):
 def test_speedometer_toggle_controls_speed_gauge(monkeypatch):
     assert _draw_critical_frame(monkeypatch, True, True)[2] is True
     assert _draw_critical_frame(monkeypatch, True, False)[2] is False
+
+
+def test_controls_grid_stays_inside_the_panel_with_equal_margins():
+    from eagle1.ui.settings_menu import CONTROLS_COL_GAP, CONTROLS_COL_W, CONTROLS_MARGIN_X
+
+    menu = SettingsMenu(1280, 720)
+    left = menu.panel_rect.x + CONTROLS_MARGIN_X
+    right = left + 2 * CONTROLS_COL_W + CONTROLS_COL_GAP
+    assert menu.panel_rect.right - right in (CONTROLS_MARGIN_X, CONTROLS_MARGIN_X + 1)

@@ -155,3 +155,14 @@ def test_game_draw_has_no_hud_surface_allocations_left():
     assert "ice_surf = pygame.Surface" not in source
     assert "minimap_surface = pygame.Surface" not in source
     assert "dim_overlay = pygame.Surface" not in source
+
+
+def test_objective_banner_is_clamped_between_status_and_weapon_panels(dummy_surface):
+    hud = HudRenderer(1280, 720)
+    dummy_surface.fill((0, 0, 0))
+    hud.draw_objective_banner(dummy_surface, "OBJECTIVE: " + "DESTROY THE FABRICATOR " * 10, theme.ACCENT)
+    gap_left = hud_layout.STATUS_PANEL.right
+    gap_right = hud_layout.WEAPON_PANEL.left
+    y = hud_layout.OBJECTIVE_BANNER_Y + 12
+    assert tuple(dummy_surface.get_at((gap_left - 1, y)))[:3] == (0, 0, 0)
+    assert tuple(dummy_surface.get_at((gap_right + 1, y)))[:3] == (0, 0, 0)

@@ -27,6 +27,8 @@ SCORE_ANCHOR = (640, 720 - 12)                        # midbottom of the score l
 SCORE_RECT = pygame.Rect(560, 672, 160, 36)
 CONTROLS_HINT_RECT = pygame.Rect(200, 644, 600, 26)   # bottom row between minimap and weapon dock
 WAVE_BANNER_CENTER = (640, 300)
+# The objective banner is centered on screen, so it may only grow as wide as the narrower side gap allows.
+OBJECTIVE_BANNER_MAX_W = 2 * (min(640 - STATUS_PANEL.right, WEAPON_PANEL.left - 640) - HUD_MARGIN)
 
 # Zones that are on screen at the same time and therefore must never overlap.
 ALL_ZONES = (

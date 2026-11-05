@@ -1956,7 +1956,7 @@ class AirStrikeWeaponMenu:
         surface.blit(title_surf, (self.width // 2 - title_surf.get_width() // 2, 82))
 
         hint_surf = cache.render(
-            small_font, "CLICK A STRATAGEM TO SELECT · FIRE [C] · CLOSE [V] / [ESC]", theme.TEXT_MUTED
+            small_font, "CLICK A STRATAGEM TO SELECT · QUICKBAR [1-5] · FIRE [C] · CLOSE [V] / [ESC]", theme.TEXT_MUTED
         )
         surface.blit(hint_surf, (self.width // 2 - hint_surf.get_width() // 2, 122))
 

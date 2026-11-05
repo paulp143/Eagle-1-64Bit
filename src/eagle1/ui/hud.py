@@ -120,6 +120,7 @@ class HudRenderer:
         """Mission objective plate at the top center."""
         if not self._ready:
             return
+        text = widgets.fit_text(self._font_label, text, hud_layout.OBJECTIVE_BANNER_MAX_W - 28)
         label = self._cache.render(self._font_label, text, color)
         rect = pygame.Rect(0, hud_layout.OBJECTIVE_BANNER_Y, label.get_width() + 28, 24)
         rect.centerx = self.width // 2
