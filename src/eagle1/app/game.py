@@ -23,6 +23,7 @@ from eagle1.systems.powerups import (
     PowerUpManager,
 )
 from eagle1.ui import theme, widgets
+from eagle1.ui.hud import HudRenderer
 from eagle1.ui.help_menu import HelpMenu
 from eagle1.ui.mission_select_menu import MissionSelectMenu
 from eagle1.ui.menu_nav import MenuButton, MenuNavigator, VARIANT_DANGER, VARIANT_PRIMARY
@@ -519,6 +520,7 @@ title_font = theme.get_font("display_xl") or safe_font("arial", 48, bold=True)
 speed_font = theme.get_font("heading") or safe_font("arial", 18, bold=True)
 hud_small_font = theme.get_font("label") or safe_font("arial", 13, bold=True)
 ui_text_cache = widgets.TextCache(1024)
+hud_renderer = HudRenderer(GAME_WIDTH, GAME_HEIGHT)
 profile_manager = PlayerProfileManager()
 clock = pygame.time.Clock()
 window = _set_display_mode((GAME_WIDTH, GAME_HEIGHT), pygame.RESIZABLE)
@@ -946,8 +948,6 @@ pause_title_surf = (theme.get_font("title") or font).render("OPERATION PAUSED", 
 gameover_title_surf = (theme.get_font("display") or title_font).render("SIGNAL LOST", True, theme.DANGER)
 gameover_sub_surf = _mono_small_font.render("EAGLE-1 HAS GONE DOWN", True, theme.TEXT_MUTED)
 
-score_box = TextBox("Score: 0", font, centerx=GAME_WIDTH//2, bottom=GAME_HEIGHT-10)
-highscore_box = TextBox("highscore: 0", font, centerx=GAME_WIDTH//2, bottom=GAME_HEIGHT-30)
 speed_box = TextBox("Speed: 0.0 / 0.0", speed_font, topleft=(20, GAME_HEIGHT - MINIMAP_SIZE - 50))
 
 # Pre-allocated transparent surfaces for HUD vignettes to eliminate 60 FPS allocations
@@ -2492,82 +2492,26 @@ def draw(mouse_pos=None):
             ground_support_manager.draw_reticle(canvas, camera_x, camera_y, player, extra_targets=extra_tgts)
 
         # UI elements (Screen space, fixed overlay)
-        score_box.set_text(f"Score: {player.score}")
-        score_box.draw(canvas)
+        campaign_objective_surf = get_campaign_objective_surface()
+        hud_renderer.draw_score(canvas, player.score, player.highscore)
 
-        highscore_box.set_text(f"highscore: {player.highscore}")
-        highscore_box.draw(canvas)
-
-        # Wave Counter HUD Box
-        # Modern Prominent Health & Shield Gauges (Upper Left, x=24)
-        gauge_x = 24
-        gauge_y = 18
-        gauge_w = 210
-        gauge_h = 13
-
-        # Shield Gauge
-        pygame.draw.rect(canvas, (14, 20, 32), (gauge_x, gauge_y, gauge_w, gauge_h), border_radius=4)
-        pygame.draw.rect(canvas, (50, 75, 110), (gauge_x, gauge_y, gauge_w, gauge_h), 1, border_radius=4)
-        sh_pct = max(0.0, min(1.0, player.shield / PLAYER_MAX_SHIELD))
-        sh_col = (255, 180, 0) if player.shield > PLAYER_MAX_SHIELD else (0, 220, 255)
-        pygame.draw.rect(canvas, sh_col, (gauge_x + 1, gauge_y + 1, int((gauge_w - 2) * sh_pct), gauge_h - 2), border_radius=3)
-        sh_lbl = hud_small_font.render(f"SHIELD: {int(player.shield)}/{PLAYER_MAX_SHIELD}", True, (255, 255, 255))
-        canvas.blit(sh_lbl, (gauge_x + gauge_w // 2 - sh_lbl.get_width() // 2, gauge_y - 1))
-
-        # Hull Armor Gauge
-        hull_y = gauge_y + gauge_h + 5
-        pygame.draw.rect(canvas, (14, 20, 32), (gauge_x, hull_y, gauge_w, gauge_h), border_radius=4)
-        pygame.draw.rect(canvas, (50, 75, 110), (gauge_x, hull_y, gauge_w, gauge_h), 1, border_radius=4)
-        hp_pct = max(0.0, min(1.0, player.health / player.max_health))
-        hp_col = (46, 204, 113) if player.health > 2 else (255, 60, 60)
-        pygame.draw.rect(canvas, hp_col, (gauge_x + 1, hull_y + 1, int((gauge_w - 2) * hp_pct), gauge_h - 2), border_radius=3)
-        hp_lbl = hud_small_font.render(f"HULL ARMOR: {int(player.health)}/{player.max_health}", True, (255, 255, 255))
-        canvas.blit(hp_lbl, (gauge_x + gauge_w // 2 - hp_lbl.get_width() // 2, hull_y - 1))
-
-        # Wave Counter HUD Box (Adjacent to Gauges at x=248)
-        if active_mission_config.get("id") != MissionType.ACADEMY_TUTORIAL:
-            living_count = len([e for e in wave_manager.enemies if not getattr(e, 'exploding', False)])
-            wave_box_w = 165
-            wave_box_h = 42
-            wave_box_x = 248
-            wave_box_y = 16
-            pygame.draw.rect(canvas, (18, 24, 36), (wave_box_x, wave_box_y, wave_box_w, wave_box_h), border_radius=6)
-            pygame.draw.rect(canvas, (60, 90, 130), (wave_box_x, wave_box_y, wave_box_w, wave_box_h), 1, border_radius=6)
-
-            wave_label = font.render(f"WAVE {wave_manager.wave}/{MAX_WAVE_LEVEL}", True, (255, 215, 0))
-            canvas.blit(wave_label, (wave_box_x + 8, wave_box_y + 3))
-
-            hostiles_label = hud_small_font.render(f"HOSTILES: {living_count}", True, (255, 100, 100) if living_count > 0 else (100, 255, 100))
-            canvas.blit(hostiles_label, (wave_box_x + 8, wave_box_y + 24))
+        is_academy = active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL
+        hud_renderer.draw_status_panel(
+            canvas,
+            player.shield, PLAYER_MAX_SHIELD, player.shield > PLAYER_MAX_SHIELD,
+            player.health, player.max_health, ADRENALINE_HEALTH_THRESHOLD,
+            None if is_academy else wave_manager.wave,
+            active_mission_config.get("max_waves", MAX_WAVE_LEVEL),
+            None if is_academy else len([e for e in wave_manager.enemies if not getattr(e, 'exploding', False)]),
+        )
 
         # Adrenaline Overdrive HUD indicator (displayed when player is at critical HP)
         if 0 < player.health <= ADRENALINE_HEALTH_THRESHOLD:
-            adren_pulse = int(180 + 75 * math.sin(pygame.time.get_ticks() * 0.01))
-            adren_surf = hud_small_font.render("! ADRENALINE OVERDRIVE !", True, (255, adren_pulse, 50))
-            if active_mission_config.get("id") != MissionType.ACADEMY_TUTORIAL:
-                adren_x = 248
-                adren_y = 16 + 42 + 6
-                adren_w = 165
-            else:
-                adren_x = gauge_x
-                adren_y = hull_y + gauge_h + 6
-                adren_w = gauge_w
-            adren_bg = pygame.Rect(adren_x, adren_y, adren_w, 20)
-            pygame.draw.rect(canvas, (60, 15, 15), adren_bg, border_radius=4)
-            pygame.draw.rect(canvas, (255, 80, 50), adren_bg, 1, border_radius=4)
-            canvas.blit(adren_surf, (adren_x + adren_w // 2 - adren_surf.get_width() // 2, adren_y + 3))
+            hud_renderer.draw_adrenaline(canvas, pygame.time.get_ticks())
 
         # Wave announcement banner (centered in upper third of canvas)
-        if wave_manager.announcement_timer > 0 and active_mission_config.get("id") != MissionType.ACADEMY_TUTORIAL:
-            banner_surf = title_font.render(wave_manager.wave_announcement, True, (255, 230, 80))
-            banner_bg = banner_surf.get_rect(center=(GAME_WIDTH // 2, GAME_HEIGHT // 3))
-            pad_x, pad_y = 30, 15
-            bg_rect = banner_bg.inflate(pad_x * 2, pad_y * 2)
-            banner_surface = pygame.Surface((bg_rect.width, bg_rect.height), pygame.SRCALPHA)
-            banner_surface.fill((10, 15, 25, 210))
-            pygame.draw.rect(banner_surface, (255, 200, 50), (0, 0, bg_rect.width, bg_rect.height), 2, border_radius=10)
-            canvas.blit(banner_surface, bg_rect.topleft)
-            canvas.blit(banner_surf, banner_bg.topleft)
+        if wave_manager.announcement_timer > 0 and not is_academy:
+            hud_renderer.draw_wave_banner(canvas, wave_manager.wave_announcement)
 
         # Warning Feedback: Vignettes (Zero per-frame allocations) & Heartbeat Audio
         if settings_menu.toggle_warnings.state and player.health <= 2 and player.health > 0:
@@ -2594,7 +2538,6 @@ def draw(mouse_pos=None):
         # Controls & Radar Mode Hint
         mode_str = "CONE [FAR]" if player.radar_mode == "CONE" else "360° OMNI [CLOSE]"
         controls_hint = hud_small_font.render(f"[SPACE] Gun  [E/RMB] Missile  [Q] Radar: {mode_str}  [1-5] Weapons  [R] Rearm  [X] Supply", True, (210, 230, 255))
-        campaign_objective_surf = get_campaign_objective_surface()
         hint_y = 58 if campaign_objective_surf is not None else 38
         canvas.blit(controls_hint, (int(GAME_WIDTH / 2 - controls_hint.get_width() / 2), hint_y))
 
@@ -2789,24 +2732,11 @@ def draw(mouse_pos=None):
             else:
                 obj_text = f"OBJECTIVE: AIR SUPERIORITY [WAVE {wave_manager.wave}/{active_mission_config.get('max_waves', 5)}]"
 
-        obj_surf = hud_small_font.render(obj_text, True, active_mission_config.get("icon_color", (255, 220, 80)))
-        obj_bg = pygame.Rect(GAME_WIDTH // 2 - obj_surf.get_width() // 2 - 12, 8, obj_surf.get_width() + 24, 22)
-        pygame.draw.rect(canvas, (14, 20, 32), obj_bg, border_radius=6)
-        pygame.draw.rect(canvas, active_mission_config.get("icon_color", (0, 220, 255)), obj_bg, 1, border_radius=6)
-        canvas.blit(obj_surf, (GAME_WIDTH // 2 - obj_surf.get_width() // 2, 12))
+        hud_renderer.draw_objective_banner(canvas, obj_text, active_mission_config.get("icon_color", theme.ACCENT))
 
         # --- CAMPAIGN NARRATIVE OBJECTIVE (campaign sorties only) ---
-        campaign_objective_surf = get_campaign_objective_surface()
         if campaign_objective_surf is not None:
-            camp_bg = pygame.Rect(
-                GAME_WIDTH // 2 - campaign_objective_surf.get_width() // 2 - 10,
-                33,
-                campaign_objective_surf.get_width() + 20,
-                20,
-            )
-            pygame.draw.rect(canvas, (12, 18, 28), camp_bg, border_radius=4)
-            pygame.draw.rect(canvas, (70, 115, 160), camp_bg, 1, border_radius=4)
-            canvas.blit(campaign_objective_surf, (GAME_WIDTH // 2 - campaign_objective_surf.get_width() // 2, 35))
+            hud_renderer.draw_campaign_objective(canvas, campaign_objective_surf)
 
         # --- SLOW-MOTION VIGNETTE OVERLAY ---
         if ground_support_manager.is_slow_mo:
