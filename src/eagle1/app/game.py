@@ -2278,6 +2278,11 @@ def main_menu(mouse_pos=None):
         canvas.blit(main_menu_hint_surf, (96, GAME_HEIGHT - 56))
     canvas.blit(main_menu_footer_surf, (96, GAME_HEIGHT - 24 - main_menu_footer_surf.get_height()))
 
+    _draw_menu_toast()
+
+
+def _draw_menu_toast():
+    """Bottom-right status toast (e.g. AUDIO MUTED) shared by the main menu and game-over screen."""
     if menu_toast_text and pygame.time.get_ticks() < menu_toast_until:
         toast = ui_text_cache.render(_mono_small_font, menu_toast_text, theme.INFO)
         canvas.blit(toast, (GAME_WIDTH - 24 - toast.get_width(), GAME_HEIGHT - 24 - toast.get_height()))
@@ -2353,6 +2358,7 @@ def draw(mouse_pos=None):
         canvas.blit(gameover_title_surf, (gameover_panel_rect.centerx - gameover_title_surf.get_width() // 2, 196))
         canvas.blit(gameover_sub_surf, (gameover_panel_rect.centerx - gameover_sub_surf.get_width() // 2, 244))
         gameover_nav.draw(canvas, mouse_pos)
+        _draw_menu_toast()
 
     else:
         # Draw ground support world entities (Helldivers, obstacles, beacon, airstrikes, supply pods)
@@ -2831,6 +2837,58 @@ def activate_main_menu_action(action):
     return False
 
 
+def handle_main_menu_keydown(event, mouse_pos=None):
+    """Handle one KEYDOWN on the main menu. Returns True when the game should quit.
+
+    ESC / Q first moves focus to QUIT TO DESKTOP; a second press quits.
+    """
+    idx = main_menu_nav.handle_event(event, mouse_pos)
+    if idx is not None:
+        return bool(activate_main_menu_action(MAIN_MENU_ACTIONS[idx]))
+    if event.key == pygame.K_n:
+        activate_main_menu_action("new_game")
+    elif event.key == pygame.K_c and profile_manager.has_active_profile():
+        activate_main_menu_action("continue")
+    elif event.key == pygame.K_s:
+        enter_super_destroyer()
+    elif event.key == pygame.K_h:
+        activate_main_menu_action("help")
+    elif event.key == pygame.K_o:
+        activate_main_menu_action("settings")
+    elif event.key in (pygame.K_ESCAPE, pygame.K_q):
+        if main_menu_nav.focus_index != MAIN_MENU_QUIT_INDEX:
+            main_menu_nav.focus(MAIN_MENU_QUIT_INDEX)
+            audio_manager.play_sfx("ui_hover")
+        else:
+            return True
+    elif event.key == pygame.K_m:
+        is_muted = audio_manager.toggle_mute()
+        show_menu_toast("AUDIO MUTED" if is_muted else "AUDIO UNMUTED")
+    return False
+
+
+def handle_gameover_keydown(event, mouse_pos=None):
+    """Handle one KEYDOWN on the game-over screen (player destroyed, game_state == "")."""
+    global game_state, previous_game_state
+    go_idx = gameover_nav.handle_event(event, mouse_pos)
+    if go_idx is not None:
+        activate_gameover_action(GAMEOVER_ACTIONS[go_idx])
+    elif event.key == pygame.K_m:
+        is_muted = audio_manager.toggle_mute()
+        show_menu_toast("AUDIO MUTED" if is_muted else "AUDIO UNMUTED")
+    elif event.key == pygame.K_r:
+        respawn()
+    elif event.key == pygame.K_h:
+        previous_game_state = ""
+        game_state = "help_menu"
+    elif event.key == pygame.K_o:
+        previous_game_state = ""
+        settings_menu.sync_from_manager()
+        game_state = "settings_menu"
+    elif event.key == pygame.K_SPACE:
+        return_to_main_menu()
+
+
 def activate_pause_action(action):
     """Run a pause-menu action."""
     global game_state, previous_game_state
@@ -3081,29 +3139,8 @@ def run_game():
                         ground_support_manager.add_combat_popup(f"AUDIO {status_str}", player.pos_x, player.pos_y, (255, 80, 80) if is_muted else (80, 255, 120))
 
                 elif game_state == "main_menu":
-                    idx = main_menu_nav.handle_event(event, canvas_mouse_pos)
-                    if idx is not None:
-                        if activate_main_menu_action(MAIN_MENU_ACTIONS[idx]):
-                            running = False
-                    elif event.key == pygame.K_n:
-                        activate_main_menu_action("new_game")
-                    elif event.key == pygame.K_c and profile_manager.has_active_profile():
-                        activate_main_menu_action("continue")
-                    elif event.key == pygame.K_s:
-                        enter_super_destroyer()
-                    elif event.key == pygame.K_h:
-                        activate_main_menu_action("help")
-                    elif event.key == pygame.K_o:
-                        activate_main_menu_action("settings")
-                    elif event.key in (pygame.K_ESCAPE, pygame.K_q):
-                        if main_menu_nav.focus_index != MAIN_MENU_QUIT_INDEX:
-                            main_menu_nav.focus(MAIN_MENU_QUIT_INDEX)
-                            audio_manager.play_sfx("ui_hover")
-                        else:
-                            running = False
-                    elif event.key == pygame.K_m:
-                        is_muted = audio_manager.toggle_mute()
-                        show_menu_toast("AUDIO MUTED" if is_muted else "AUDIO UNMUTED")
+                    if handle_main_menu_keydown(event, canvas_mouse_pos):
+                        running = False
 
                 elif game_state == "enlistment":
                     action = enlistment_screen.handle_event(event, canvas_mouse_pos)
@@ -3187,22 +3224,7 @@ def run_game():
 
                 elif game_state == "":
                     if player.health <= 0:
-                        go_idx = gameover_nav.handle_event(event, canvas_mouse_pos)
-                        if go_idx is not None:
-                            activate_gameover_action(GAMEOVER_ACTIONS[go_idx])
-                        elif event.key == pygame.K_m:
-                            audio_manager.toggle_mute()
-                        elif event.key == pygame.K_r:
-                            respawn()
-                        elif event.key == pygame.K_h:
-                            previous_game_state = ""
-                            game_state = "help_menu"
-                        elif event.key == pygame.K_o:
-                            previous_game_state = ""
-                            settings_menu.sync_from_manager()
-                            game_state = "settings_menu"
-                        elif event.key == pygame.K_SPACE:
-                            return_to_main_menu()
+                        handle_gameover_keydown(event, canvas_mouse_pos)
                     else:
                         if ground_support_manager.objective_phase == "COMPLETE":
                             if event.key == pygame.K_r:

@@ -72,6 +72,22 @@ def test_no_per_frame_mute_polling():
     assert "keys[pygame.K_m]" not in inspect.getsource(game.run_game)
 
 
+def test_gameover_m_key_toggles_mute_exactly_once_and_shows_toast(monkeypatch):
+    calls = []
+    monkeypatch.setattr(game.audio_manager, "toggle_mute", lambda: calls.append(1) or True)
+    monkeypatch.setattr(game, "menu_toast_text", "")
+    game.handle_gameover_keydown(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_m))
+    assert calls == [1]
+    assert game.menu_toast_text == "AUDIO MUTED"
+
+
+def test_gameover_space_returns_to_main_menu(monkeypatch):
+    calls = []
+    monkeypatch.setattr(game, "return_to_main_menu", lambda: calls.append("main"))
+    game.handle_gameover_keydown(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_SPACE))
+    assert calls == ["main"]
+
+
 def test_pause_navigation_enter_returns_resume_index():
     game.pause_nav.focus(0)
     ev = pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN)

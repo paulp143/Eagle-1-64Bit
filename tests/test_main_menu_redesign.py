@@ -94,3 +94,26 @@ def test_main_menu_buttons_do_not_overlap_and_fit_screen():
     assert validate_rects_no_overlap(rects) == []
     screen = pygame.Rect(0, 0, game.GAME_WIDTH, game.GAME_HEIGHT)
     assert all(screen.contains(r) for r in rects)
+
+
+def test_escape_twice_quits_and_first_press_only_focuses_quit(monkeypatch):
+    monkeypatch.setattr(game.audio_manager, "play_sfx", lambda *a, **k: None)
+    game.main_menu_nav.focus(0)
+    for key in (pygame.K_ESCAPE, pygame.K_q):
+        game.main_menu_nav.focus(0)
+        assert game.handle_main_menu_keydown(_key(key)) is False
+        assert game.main_menu_nav.focus_index == game.MAIN_MENU_QUIT_INDEX
+        assert game.handle_main_menu_keydown(_key(key)) is True
+    game.main_menu_nav.focus(0)
+
+
+def test_main_menu_hotkey_opens_settings(monkeypatch):
+    old_state = game.game_state
+    monkeypatch.setattr(game.settings_menu, "sync_from_manager", lambda: None)
+    try:
+        assert game.handle_main_menu_keydown(_key(pygame.K_o)) is False
+        assert game.game_state == "settings_menu"
+    finally:
+        game.game_state = old_state
+        game.previous_game_state = "main_menu"
+
