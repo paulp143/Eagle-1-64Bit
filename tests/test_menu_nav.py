@@ -2,7 +2,7 @@
 
 import pygame
 
-from eagle1.ui import theme
+from eagle1.ui import theme, widgets
 from eagle1.ui.menu_nav import MenuButton, MenuNavigator
 
 
@@ -93,3 +93,19 @@ def test_draw_allocates_no_surfaces_after_warmup(dummy_surface, monkeypatch):
 def test_empty_navigator_returns_none():
     nav = MenuNavigator([])
     assert nav.handle_event(_key(pygame.K_RETURN)) is None
+
+
+def test_label_fit_is_computed_once_until_text_changes(dummy_surface, monkeypatch):
+    from eagle1.ui import menu_nav
+
+    calls = []
+    real_fit = widgets.fit_text
+    monkeypatch.setattr(menu_nav.widgets, "fit_text", lambda *a: calls.append(a) or real_fit(*a))
+    btn = MenuButton("CONTINUE : CADET " + "W" * 18, pygame.Rect(0, 0, 360, 48), hotkey="C")
+    for _ in range(5):
+        btn.draw(dummy_surface)
+    assert len(calls) == 1
+    btn.set_text("CONTINUE : CADET ACE")
+    btn.draw(dummy_surface)
+    btn.draw(dummy_surface)
+    assert len(calls) == 2

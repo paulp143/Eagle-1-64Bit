@@ -39,6 +39,22 @@ class MenuButton:
         self._key_font = theme.get_font("mono_small")
         self._cache = text_cache if text_cache is not None else widgets.TextCache(64)
         self._was_hovered = False
+        self._layout_key = None
+        self._layout = ("", 0, 0)
+
+    def _label_layout(self):
+        """Return (fitted label, key badge width, key badge height), recomputed only when text or width change."""
+        key = (self.text, self.rect.w, self.hotkey)
+        if key != self._layout_key:
+            key_w = key_h = 0
+            if self.hotkey and self._key_font is not None:
+                key_w = self._key_font.size(self.hotkey.upper())[0] + 10
+                key_h = self._key_font.get_height() + 4
+            badge_w = key_w + 12 if key_w else 0
+            label = widgets.fit_text(self._font, self.text.upper(), self.rect.w - 40 - badge_w)
+            self._layout = (label, key_w, key_h)
+            self._layout_key = key
+        return self._layout
 
     def set_text(self, new_text: str) -> None:
         self.text = str(new_text)
@@ -86,15 +102,10 @@ class MenuButton:
 
         if self._font is None:
             return
-        badge_w = 0
-        if self.hotkey and self._key_font is not None:
-            badge_w = self._key_font.size(self.hotkey.upper())[0] + 10 + 12
-        label = widgets.fit_text(self._font, self.text.upper(), self.rect.w - 40 - badge_w)
+        label, key_w, key_h = self._label_layout()
         label_surf = self._cache.render(self._font, label, text_color)
         surface.blit(label_surf, (self.rect.x + 20, self.rect.centery - label_surf.get_height() // 2))
-        if self.hotkey and self._key_font is not None:
-            key_w = self._key_font.size(self.hotkey.upper())[0] + 10
-            key_h = self._key_font.get_height() + 4
+        if key_w:
             widgets.draw_key_badge(
                 surface,
                 self._cache,
