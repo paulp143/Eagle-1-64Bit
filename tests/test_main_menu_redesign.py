@@ -51,6 +51,21 @@ def test_main_menu_refreshes_after_profile_created(temp_profile_env):
     assert "ACE" in game.menu_continue_box.text
 
 
+def test_main_menu_does_not_touch_the_file_system_per_frame(temp_profile_env, monkeypatch):
+    """Once the profile state is known, menu frames neither stat nor parse the profile file."""
+    game.profile_manager.create_profile("ACE", citizenship_grade="E")
+    game.main_menu()
+
+    def _raise(*args, **kwargs):
+        raise AssertionError("profile file touched per frame")
+
+    monkeypatch.setattr(game.profile_manager, "get_profile_path", _raise)
+    monkeypatch.setattr(game.profile_manager, "has_active_profile", _raise)
+    for _ in range(5):
+        game.main_menu()
+    assert "ACE" in game.menu_continue_box.text
+
+
 def test_main_menu_nav_skips_disabled_continue(temp_profile_env):
     game.profile_manager.clear_profile()
     game.main_menu()

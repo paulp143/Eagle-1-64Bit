@@ -887,14 +887,17 @@ menu_toast_until = 0
 _menu_profile_state = {"key": None, "has_profile": False, "callsign": ""}
 
 
+def invalidate_main_menu_profile_state():
+    """Force the next main-menu frame to re-check the profile (e.g. when returning to the menu)."""
+    _menu_profile_state["key"] = None
+
+
 def _refresh_main_menu_profile_state():
-    """Re-read the player profile only when the profile file's existence/mtime/size changed."""
-    path = profile_manager.get_profile_path()
-    try:
-        st = path.stat()
-        key = (True, st.st_mtime_ns, st.st_size)
-    except OSError:
-        key = (False, 0, 0)
+    """Re-read the player profile only after it was saved or cleared (or the state was invalidated).
+
+    Keyed on ``PlayerProfileManager.revision`` so the render loop does no per-frame file system access.
+    """
+    key = PlayerProfileManager.revision
     if key == _menu_profile_state["key"]:
         return
     has_profile = profile_manager.has_active_profile()
@@ -2733,6 +2736,7 @@ def get_campaign_objective_surface():
 def return_to_main_menu():
     """Transition cleanly into the main menu state, aborting any active campaign flight."""
     global game_state
+    invalidate_main_menu_profile_state()
     session = get_campaign_session()
     if session.is_flight_active:
         session.abort_flight()
