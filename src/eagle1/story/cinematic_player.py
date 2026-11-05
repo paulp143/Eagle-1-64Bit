@@ -14,6 +14,7 @@ from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 import pygame
 
+from eagle1.ui import theme, widgets
 from eagle1.story.story_manager import (
     BRANCH_COLD_PROTOCOL,
     BRANCH_DISSIDENT_SURRENDER,
@@ -310,12 +311,12 @@ def validate_cinematic_sequence(sequence: Any) -> bool:
 
 
 _COLOR_LETTERBOX: Tuple[int, int, int] = (0, 0, 0)
-_COLOR_CAPTION: Tuple[int, int, int] = (255, 215, 0)
-_COLOR_SPEAKER: Tuple[int, int, int] = (255, 220, 100)
-_COLOR_PROMPT: Tuple[int, int, int] = (150, 165, 185)
-_COLOR_EPILOGUE_TITLE: Tuple[int, int, int] = (255, 215, 0)
-_COLOR_EPILOGUE_STAT: Tuple[int, int, int] = (200, 220, 240)
-_COLOR_EPILOGUE_TEXT: Tuple[int, int, int] = (225, 230, 240)
+_COLOR_CAPTION: Tuple[int, int, int] = theme.ACCENT
+_COLOR_SPEAKER: Tuple[int, int, int] = theme.ACCENT
+_COLOR_PROMPT: Tuple[int, int, int] = theme.TEXT_MUTED
+_COLOR_EPILOGUE_TITLE: Tuple[int, int, int] = theme.ACCENT
+_COLOR_EPILOGUE_STAT: Tuple[int, int, int] = theme.TEXT
+_COLOR_EPILOGUE_TEXT: Tuple[int, int, int] = theme.TEXT
 _SUBTITLE_MAX_WIDTH: int = 1040
 _EPILOGUE_TEXT_MAX_WIDTH: int = 900
 _SKIP_PROMPT_TEXT: str = "[ESC / SPACE] SKIP"
@@ -524,15 +525,17 @@ class CinematicPlayer:
         self.font_prompt = None
         self._fonts_ready = False
         try:
-            if not pygame.font.get_init():
-                pygame.font.init()
-            self.font_title = pygame.font.SysFont("courier", 34, bold=True)
-            self.font_speaker = pygame.font.SysFont("courier", 15, bold=True)
-            self.font_subtitle = pygame.font.SysFont("arial", 18)
-            self.font_epilogue = pygame.font.SysFont("arial", 20)
-            self.font_prompt = pygame.font.SysFont("courier", 13, bold=True)
+            # theme.get_font initialises the font module on demand and returns None when it is unavailable.
+            self.font_title = theme.get_font("display")
+            self.font_speaker = theme.get_font("mono")
+            self.font_subtitle = theme.get_font("subtitle")
+            self.font_epilogue = theme.get_font("subtitle")
+            self.font_prompt = theme.get_font("mono_small")
         except (pygame.error, OSError) as exc:
             logger.warning("CinematicPlayer fonts unavailable, rendering without text: %s", exc)
+            self.font_title = None
+        if None in (self.font_title, self.font_speaker, self.font_subtitle, self.font_epilogue, self.font_prompt):
+            logger.warning("CinematicPlayer fonts unavailable, rendering without text")
             self.font_title = None
             self.font_speaker = None
             self.font_subtitle = None
@@ -542,7 +545,7 @@ class CinematicPlayer:
         self._fonts_ready = True
         self._skip_prompt_surf = self._render_text(self.font_prompt, _SKIP_PROMPT_TEXT, _COLOR_PROMPT)
         self._epilogue_prompt_surf = self._render_text(self.font_prompt, _EPILOGUE_PROMPT_TEXT, _COLOR_PROMPT)
-        self._epilogue_header_surf = self._render_text(self.font_prompt, _EPILOGUE_HEADER_TEXT, _COLOR_PROMPT)
+        self._epilogue_header_surf = self._render_text(self.font_speaker, _EPILOGUE_HEADER_TEXT, theme.ACCENT)
 
     def _init_surfaces(self) -> None:
         self._letterbox_surf = pygame.Surface((self.screen_w, CINEMATIC_LETTERBOX_HEIGHT))
@@ -552,8 +555,10 @@ class CinematicPlayer:
         panel_w = max(1, min(1000, self.screen_w - 80))
         panel_h = max(1, min(560, self.screen_h - 80))
         self._epilogue_panel = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
-        self._epilogue_panel.fill((14, 20, 32, 220))
-        pygame.draw.rect(self._epilogue_panel, _COLOR_EPILOGUE_TITLE, self._epilogue_panel.get_rect(), width=2)
+        self._epilogue_panel.fill(theme.with_alpha(theme.PANEL, 220))
+        widgets.draw_panel(
+            self._epilogue_panel, self._epilogue_panel.get_rect(), None, theme.ACCENT_DIM, _COLOR_EPILOGUE_TITLE
+        )
 
     def _init_starfield(self) -> None:
         rng = random.Random(_STAR_SEED)
@@ -826,13 +831,13 @@ class CinematicPlayer:
         if idx is None or idx not in self._subtitle_cache:
             return
         speaker_surf, line_surfs = self._subtitle_cache[idx]
-        y = self.screen_h - h + 6
+        y = self.screen_h - h + 4
         if speaker_surf is not None:
             surface.blit(speaker_surf, ((self.screen_w - speaker_surf.get_width()) // 2, y))
-            y += 18
+            y += speaker_surf.get_height()
         for line in line_surfs:
             surface.blit(line, ((self.screen_w - line.get_width()) // 2, y))
-            y += 21
+            y += line.get_height()
 
     def _blit_centered(self, surface: pygame.Surface, surf: Optional[pygame.Surface], y: int) -> None:
         if surf is None:
@@ -840,7 +845,7 @@ class CinematicPlayer:
         surface.blit(surf, ((self.screen_w - surf.get_width()) // 2, y))
 
     def _draw_epilogue(self, surface: pygame.Surface) -> None:
-        surface.fill((6, 8, 14))
+        surface.fill(theme.BG_DEEP)
         pw, ph = self._epilogue_panel.get_size()
         px = (self.screen_w - pw) // 2
         py = (self.screen_h - ph) // 2
@@ -848,15 +853,17 @@ class CinematicPlayer:
 
         y = py + 24
         self._blit_centered(surface, self._epilogue_header_surf, y)
-        y += 26
+        if self._epilogue_header_surf is not None:
+            y += self._epilogue_header_surf.get_height() + 9
         self._blit_centered(surface, self._epilogue_title_surf, y)
-        y += 52
+        if self._epilogue_title_surf is not None:
+            y += self._epilogue_title_surf.get_height() + 8
         for surf in self._epilogue_stat_surfs:
             self._blit_centered(surface, surf, y)
-            y += 30
+            y += surf.get_height() + 6
         y += 14
         for surf in self._epilogue_line_surfs:
             self._blit_centered(surface, surf, y)
-            y += 26
+            y += surf.get_height() + 4
         if self.epilogue_elapsed >= CINEMATIC_EPILOGUE_CONFIRM_DELAY:
             self._blit_centered(surface, self._epilogue_prompt_surf, py + ph - 32)
