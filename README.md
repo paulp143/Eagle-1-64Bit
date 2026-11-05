@@ -437,7 +437,7 @@ Eagle-1-64Bit features a centralized, 16-channel audio system (`audio_manager.py
 - **Dynamic Combat Music**: Automatically scales musical intensity between normal synthwave combat loops and high-threat themes based on active agro enemies, bombers, Factory Striders, or low health.
 - **Flight Velocity-Modulated Engine Hum**: Continuous jet thruster frequency and volume scale smoothly with player acceleration and flight speed.
 - **Anti-Clipping & Voice Limiting**: Configurable minimum intervals prevent audio stacking during intense bullet storms.
-- **Extensible Settings Menu**: Modular, tabbed interface (`1. Audio Settings`, `2. Gameplay & HUD`, `3. Flight Controls`) with interactive volume sliders (Master, Music, SFX), Mute toggle switch, SFX test button, and persistence to `data/audio_settings.json`. Easily extended with new categories and options.
+- **Extensible Settings Menu**: Modular, tabbed interface (`1. Audio Settings`, `2. Gameplay & HUD`, `3. Flight Controls`) with interactive volume sliders (Master, Music, SFX), Mute toggle switch, SFX test button, and persistence to `data/audio_settings.json`. Gameplay & HUD toggles (screen shake, speedometer, low hull/shield vignettes; the alarm audio always plays) persist to `data/gameplay_settings.json`. Easily extended with new categories and options.
 
 
 
@@ -726,6 +726,7 @@ src/eagle1/
 │   ├── mission_select_menu.py # Operation selection list
 │   ├── help_menu.py          # 6-tab tactical manual overlay (Weapons, Abilities, Radar, Controls, Enemies, Squad)
 │   ├── settings_menu.py      # Tabbed settings interface (Audio, Gameplay/HUD, Flight Controls)
+│   ├── gameplay_settings.py  # Persistence of the Gameplay/HUD toggles (gameplay_settings.json)
 │   ├── enlistment_screen.py  # Pilot enlistment contract, callsign selection, and Oath of Democracy
 │   └── debriefing_screen.py  # Post-mission After-Action Report (AAR) and performance ranking (S/A/B/C)
 └── data/
@@ -780,6 +781,7 @@ Root-level launcher scripts (`run_game.py`, `main.py`) and legacy wrappers (`gro
 ├── data/
 │   ├── audio_settings.json
 │   ├── campaign_save.json
+│   ├── gameplay_settings.json
 │   ├── highscore.txt
 │   ├── player_profile.json
 │   └── stratagem_hero_highscore.txt

@@ -14,6 +14,7 @@ import pygame
 from eagle1.systems.audio_manager import get_audio_manager
 from eagle1.ui import theme, widgets
 from eagle1.ui.controls_reference import CATEGORY_ORDER, bindings_by_category
+from eagle1.ui.gameplay_settings import load_gameplay_settings, save_gameplay_settings
 
 # Color palette (aliases of the central theme tokens; names kept for compatibility)
 COLOR_BG_OVERLAY = theme.OVERLAY_RGBA
@@ -219,7 +220,7 @@ class SettingsMenu:
     GAMEPLAY_INFO = [
         ("SCREEN SHAKE", "Camera shake on impacts and explosions."),
         ("SPEEDOMETER", "Shows the throttle gauge above the minimap."),
-        ("LOW HULL / SHIELD WARNINGS", "Red and cyan screen-edge vignettes plus the heartbeat alarm at critical levels."),
+        ("LOW HULL / SHIELD WARNINGS", "Red and cyan screen-edge vignettes at critical levels. The alarm audio always plays."),
     ]
 
     def __init__(self, width=1280, height=720):
@@ -310,11 +311,27 @@ class SettingsMenu:
         gh = 48
         spacing = 60
 
-        self.toggle_screen_shake = ToggleWidget(gx, gy, gw, gh, label="Tactical Screen Shake", initial_state=True)
-        self.toggle_speedometer = ToggleWidget(gx, gy + spacing, gw, gh, label="Display Speedometer HUD", initial_state=True)
-        self.toggle_warnings = ToggleWidget(
-            gx, gy + spacing * 2, gw, gh, label="Low Hull / Shield Warnings", initial_state=True
+        saved = load_gameplay_settings()
+        self.toggle_screen_shake = ToggleWidget(
+            gx, gy, gw, gh, label="Tactical Screen Shake", initial_state=saved["screen_shake"],
+            on_toggle=lambda _state: self._save_gameplay_toggles(),
         )
+        self.toggle_speedometer = ToggleWidget(
+            gx, gy + spacing, gw, gh, label="Display Speedometer HUD", initial_state=saved["show_speedometer"],
+            on_toggle=lambda _state: self._save_gameplay_toggles(),
+        )
+        self.toggle_warnings = ToggleWidget(
+            gx, gy + spacing * 2, gw, gh, label="Low Hull / Shield Warnings", initial_state=saved["show_warnings"],
+            on_toggle=lambda _state: self._save_gameplay_toggles(),
+        )
+
+    def _save_gameplay_toggles(self):
+        """Persist the gameplay toggles so they survive a restart."""
+        save_gameplay_settings({
+            "screen_shake": self.toggle_screen_shake.state,
+            "show_speedometer": self.toggle_speedometer.state,
+            "show_warnings": self.toggle_warnings.state,
+        })
 
     def _build_static_content(self):
         """Pre-compute wrapped info text and the controls grid (no per-frame layout work)."""

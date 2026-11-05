@@ -80,9 +80,38 @@ def test_tab_and_close_rects_do_not_overlap():
     assert validate_rects_no_overlap(menu.tab_rects + [menu.close_btn_rect]) == []
 
 
-def test_speedometer_and_warning_toggles_are_wired_in_game():
-    import inspect
+class _RecordingSurface(pygame.Surface):
+    """Surface that records fill() calls so a test can tell whether a vignette was drawn."""
 
-    source = inspect.getsource(game.draw)
-    assert "toggle_speedometer.state" in source
-    assert "toggle_warnings.state" in source
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fills = 0
+
+    def fill(self, *args, **kwargs):
+        self.fills += 1
+        return super().fill(*args, **kwargs)
+
+
+def _draw_critical_frame(monkeypatch, warnings_on, speedometer_on):
+    """Draw one gameplay frame at critical hull and report (vignette drawn, sfx played, speed drawn)."""
+    game.respawn()
+    game.player.health = 1
+    vignette = _RecordingSurface((game.GAME_WIDTH, game.GAME_HEIGHT), pygame.SRCALPHA)
+    sfx, speed_calls = [], []
+    monkeypatch.setattr(game, "vignette_health_surf", vignette)
+    monkeypatch.setattr(game.audio_manager, "play_sfx", lambda name, *a, **k: sfx.append(name))
+    monkeypatch.setattr(game.hud_renderer, "draw_speed", lambda *a, **k: speed_calls.append(a))
+    monkeypatch.setattr(game.settings_menu.toggle_warnings, "state", warnings_on)
+    monkeypatch.setattr(game.settings_menu.toggle_speedometer, "state", speedometer_on)
+    game.draw((640, 360))
+    return vignette.fills > 0, "low_health" in sfx, bool(speed_calls)
+
+
+def test_warning_toggle_hides_vignette_but_keeps_alarm_audio(monkeypatch):
+    assert _draw_critical_frame(monkeypatch, True, True)[:2] == (True, True)
+    assert _draw_critical_frame(monkeypatch, False, True)[:2] == (False, True)
+
+
+def test_speedometer_toggle_controls_speed_gauge(monkeypatch):
+    assert _draw_critical_frame(monkeypatch, True, True)[2] is True
+    assert _draw_critical_frame(monkeypatch, True, False)[2] is False

@@ -2520,17 +2520,21 @@ def draw(mouse_pos=None):
         if wave_manager.announcement_timer > 0 and not is_academy:
             hud_renderer.draw_wave_banner(canvas, wave_manager.wave_announcement)
 
-        # Warning Feedback: Vignettes (Zero per-frame allocations) & Heartbeat Audio
-        if settings_menu.toggle_warnings.state and player.health <= 2 and player.health > 0:
-            pulse = int(140 + 80 * math.sin(pygame.time.get_ticks() * 0.008))
-            vignette_health_surf.fill((0, 0, 0, 0))
-            pygame.draw.rect(vignette_health_surf, (220, 20, 20, max(25, min(90, pulse // 3))), (0, 0, GAME_WIDTH, GAME_HEIGHT), width=20)
-            canvas.blit(vignette_health_surf, (0, 0))
+        # Warning Feedback: Vignettes (Zero per-frame allocations) & Heartbeat Audio.
+        # The settings toggle only hides the visual vignette; the alarm audio always plays.
+        show_warnings = settings_menu.toggle_warnings.state
+        if player.health <= 2 and player.health > 0:
+            if show_warnings:
+                pulse = int(140 + 80 * math.sin(pygame.time.get_ticks() * 0.008))
+                vignette_health_surf.fill((0, 0, 0, 0))
+                pygame.draw.rect(vignette_health_surf, (220, 20, 20, max(25, min(90, pulse // 3))), (0, 0, GAME_WIDTH, GAME_HEIGHT), width=20)
+                canvas.blit(vignette_health_surf, (0, 0))
             audio_manager.play_sfx("low_health")
-        elif settings_menu.toggle_warnings.state and player.shield <= 5 and player.shield > 0:
-            vignette_shield_surf.fill((0, 0, 0, 0))
-            pygame.draw.rect(vignette_shield_surf, (0, 200, 255, 30), (0, 0, GAME_WIDTH, GAME_HEIGHT), width=12)
-            canvas.blit(vignette_shield_surf, (0, 0))
+        elif player.shield <= 5 and player.shield > 0:
+            if show_warnings:
+                vignette_shield_surf.fill((0, 0, 0, 0))
+                pygame.draw.rect(vignette_shield_surf, (0, 200, 255, 30), (0, 0, GAME_WIDTH, GAME_HEIGHT), width=12)
+                canvas.blit(vignette_shield_surf, (0, 0))
             audio_manager.play_sfx("low_shield")
 
         # Weapons panel (cannon ammo, rockets, radar), speed gauge and controls hint
