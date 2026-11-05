@@ -30,16 +30,13 @@ def test_arrows_and_tab_cycle_tabs():
 
 def test_focus_down_then_plus_raises_slider():
     menu = SettingsMenu(1280, 720)
-    old_music = menu.audio_manager.get_music_volume()
-    try:
-        menu.slider_music.set_value(0.5)
-        menu.handle_event(_key(pygame.K_DOWN))
-        menu.handle_event(_key(pygame.K_EQUALS))
-        assert abs(menu.slider_music.value - 0.55) < 1e-6
-        menu.handle_event(_key(pygame.K_MINUS))
-        assert abs(menu.slider_music.value - 0.5) < 1e-6
-    finally:
-        menu.audio_manager.set_music_volume(old_music)
+    menu.slider_music.on_change = None  # never persist audio settings from tests
+    menu.slider_music.set_value(0.5)
+    menu.handle_event(_key(pygame.K_DOWN))
+    menu.handle_event(_key(pygame.K_EQUALS))
+    assert abs(menu.slider_music.value - 0.55) < 1e-6
+    menu.handle_event(_key(pygame.K_MINUS))
+    assert abs(menu.slider_music.value - 0.5) < 1e-6
 
 
 def test_enter_toggles_focused_gameplay_toggle():
