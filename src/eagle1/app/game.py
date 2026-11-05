@@ -22,7 +22,7 @@ from eagle1.systems.powerups import (
     SHIELD_BUBBLE_BONUS,
     PowerUpManager,
 )
-from eagle1.ui import theme, widgets
+from eagle1.ui import hud_layout, theme, widgets
 from eagle1.ui.hud import HudRenderer
 from eagle1.ui.help_menu import HelpMenu
 from eagle1.ui.mission_select_menu import MissionSelectMenu
@@ -948,7 +948,6 @@ pause_title_surf = (theme.get_font("title") or font).render("OPERATION PAUSED", 
 gameover_title_surf = (theme.get_font("display") or title_font).render("SIGNAL LOST", True, theme.DANGER)
 gameover_sub_surf = _mono_small_font.render("EAGLE-1 HAS GONE DOWN", True, theme.TEXT_MUTED)
 
-speed_box = TextBox("Speed: 0.0 / 0.0", speed_font, topleft=(20, GAME_HEIGHT - MINIMAP_SIZE - 50))
 
 # Pre-allocated transparent surfaces for HUD vignettes to eliminate 60 FPS allocations
 vignette_health_surf = pygame.Surface((GAME_WIDTH, GAME_HEIGHT), pygame.SRCALPHA)
@@ -2447,10 +2446,7 @@ def draw(mouse_pos=None):
 
                 # Frost / Freeze visual overlay
                 if powerup_manager.is_enemy_frozen() and enemy == primary_enemy:
-                    ice_surf = pygame.Surface((LIGHT_ENEMY_WIDTH, LIGHT_ENEMY_HEIGHT), pygame.SRCALPHA)
-                    ice_surf.fill((100, 210, 255, 130))
-                    pygame.draw.rect(ice_surf, (220, 245, 255), (0, 0, LIGHT_ENEMY_WIDTH, LIGHT_ENEMY_HEIGHT), 2)
-                    canvas.blit(ice_surf, (enemy_screen_x, enemy_screen_y))
+                    canvas.blit(hud_renderer.get_frost_overlay((LIGHT_ENEMY_WIDTH, LIGHT_ENEMY_HEIGHT)), (enemy_screen_x, enemy_screen_y))
                 elif powerup_manager.is_enemy_frosted() and enemy == primary_enemy:
                     frost_rect = pygame.Rect(enemy_screen_x, enemy_screen_y, LIGHT_ENEMY_WIDTH, LIGHT_ENEMY_HEIGHT)
                     pygame.draw.rect(canvas, (120, 220, 255), frost_rect, 2)
@@ -2476,8 +2472,9 @@ def draw(mouse_pos=None):
                         pygame.draw.line(canvas, ret_color, (ret_x + ret_w, ret_y + ret_h), (ret_x + ret_w, ret_y + ret_h - ret_len), 2)
 
                         mode_tag = "CONE LOCK" if player.radar_mode == "CONE" else "OMNI LOCK"
-                        lock_text = hud_small_font.render(mode_tag, True, (255, 80, 80))
-                        canvas.blit(lock_text, (ret_x + ret_w // 2 - lock_text.get_width() // 2, ret_y - 14))
+                        lock_text = hud_renderer.get_lock_label(mode_tag)
+                        if lock_text is not None:
+                            canvas.blit(lock_text, (ret_x + ret_w // 2 - lock_text.get_width() // 2, ret_y - 14))
 
         # Draw explosions with camera offset
         explosion_group.update()
@@ -2526,98 +2523,21 @@ def draw(mouse_pos=None):
             canvas.blit(vignette_shield_surf, (0, 0))
             audio_manager.play_sfx("low_shield")
 
-        # Bullet Ammo UI (Rechte Seite)
-        bg_height = int(BULLET_UI_HEIGHT * (player.max_bullets / 10))
-        pygame.draw.rect(
-            canvas, "black", (GAME_WIDTH - 32, 32, BULLET_UI_WIDTH, bg_height)
-        )
-        remaining_icons = int((player.max_bullets - player.used_bullets) // 10)
-        for i in range(remaining_icons):
-            canvas.blit(bullet_ui_image, (GAME_WIDTH - 32, 32 + i * BULLET_UI_HEIGHT))
-
-        # Controls & Radar Mode Hint
-        mode_str = "CONE [FAR]" if player.radar_mode == "CONE" else "360° OMNI [CLOSE]"
-        controls_hint = hud_small_font.render(f"[SPACE] Gun  [E/RMB] Missile  [Q] Radar: {mode_str}  [1-5] Weapons  [R] Rearm  [X] Supply", True, (210, 230, 255))
-        hint_y = 58 if campaign_objective_surf is not None else 38
-        canvas.blit(controls_hint, (int(GAME_WIDTH / 2 - controls_hint.get_width() / 2), hint_y))
-
-        # --- ROCKET HUD UI ---
-        rocket_ui_x = GAME_WIDTH - 190
-        rocket_ui_y = 32
-        rocket_box_w = 145
-        rocket_box_h = 56
-
-        pygame.draw.rect(canvas, (18, 24, 36), (rocket_ui_x, rocket_ui_y, rocket_box_w, rocket_box_h), border_radius=6)
-        pygame.draw.rect(canvas, (60, 90, 130), (rocket_ui_x, rocket_ui_y, rocket_box_w, rocket_box_h), 1, border_radius=6)
-
-        rem_rockets = max(0, player.max_rockets - player.used_rockets)
+        # Weapons panel (cannon ammo, rockets, radar), speed gauge and controls hint
+        rocket_ratio = None
         if player.rocket_reloading:
-            now = pygame.time.get_ticks()
-            elapsed = now - player.rocket_reload_start_time
-            progress = min(1.0, elapsed / player.rocket_reloading_time)
-            reload_surf = hud_small_font.render("RELOADING...", True, (255, 160, 50))
-            canvas.blit(reload_surf, (rocket_ui_x + 8, rocket_ui_y + 5))
-            
-            bar_w = rocket_box_w - 16
-            pygame.draw.rect(canvas, (40, 45, 60), (rocket_ui_x + 8, rocket_ui_y + 22, bar_w, 10), border_radius=3)
-            pygame.draw.rect(canvas, (255, 140, 0), (rocket_ui_x + 8, rocket_ui_y + 22, int(bar_w * progress), 10), border_radius=3)
-        else:
-            label_surf = hud_small_font.render(f"ROCKETS: {rem_rockets}/{player.max_rockets}", True, (200, 225, 255))
-            canvas.blit(label_surf, (rocket_ui_x + 8, rocket_ui_y + 5))
-            
-            pip_w = 9
-            pip_h = 12
-            spacing = 13
-            for r_idx in range(player.max_rockets):
-                pip_x = rocket_ui_x + 8 + r_idx * spacing
-                pip_y = rocket_ui_y + 21
-                if r_idx < rem_rockets:
-                    pygame.draw.rect(canvas, (255, 90, 30), (pip_x, pip_y, pip_w, pip_h), border_radius=2)
-                    pygame.draw.polygon(canvas, (255, 210, 50), [(pip_x, pip_y + 3), (pip_x + pip_w // 2, pip_y), (pip_x + pip_w, pip_y + 3)])
-                else:
-                    pygame.draw.rect(canvas, (50, 60, 80), (pip_x, pip_y, pip_w, pip_h), 1, border_radius=2)
-
-        mode_col = (0, 220, 200) if player.radar_mode == "CONE" else (255, 170, 40)
-        mode_label = hud_small_font.render(f"RADAR: {player.radar_mode}", True, mode_col)
-        canvas.blit(mode_label, (rocket_ui_x + 8, rocket_ui_y + 38))
-
-        # --- SPEEDOMETER UI ---
-        mm_size = MINIMAP_SIZE
-        speed_x = 20
-        speed_y = GAME_HEIGHT - mm_size - 50
-        
-        bar_width = mm_size
-        bar_height = 10
-        fill_width = max(0, min(bar_width, int((player.velocity_x / player.max_speed) * bar_width)))
-        
+            rocket_ratio = min(1.0, (pygame.time.get_ticks() - player.rocket_reload_start_time) / player.rocket_reloading_time)
+        hud_renderer.draw_weapon_panel(
+            canvas, int(player.max_bullets - player.used_bullets), player.max_bullets, player.reloading,
+            max(0, player.max_rockets - player.used_rockets), player.max_rockets, rocket_ratio, player.radar_mode,
+        )
         if settings_menu.toggle_speedometer.state:
-            speed_box.set_text(f"Speed: {player.velocity_x:.1f} / {player.max_speed:.1f}")
-            speed_box.draw(canvas)
-
-            pygame.draw.rect(canvas, (0, 0, 0), (speed_x, speed_y + 22, bar_width, bar_height))
-            pygame.draw.rect(canvas, (255, 180, 0), (speed_x, speed_y + 22, fill_width, bar_height))
-            pygame.draw.rect(canvas, (100, 120, 160), (speed_x, speed_y + 22, bar_width, bar_height), 1)
+            hud_renderer.draw_speed(canvas, player.velocity_x, player.max_speed)
+        hud_renderer.draw_controls_hint(canvas)
 
         # --- MINIMAP UI ---
-        mm_x = 20
-        mm_y = GAME_HEIGHT - mm_size - 20
-        
-        minimap_surface = pygame.Surface((mm_size, mm_size), pygame.SRCALPHA)
-
-        start_col = 0
-        end_col = int(math.ceil(MAP_WIDTH / bg_w))
-        start_row = 0
-        end_row = int(math.ceil(MAP_HEIGHT / bg_h))
-        for col in range(start_col, end_col):
-            for row in range(start_row, end_row):
-                bx = col * MINIMAP_BG_WIDTH
-                by = row * MINIMAP_BG_HEIGHT
-                if bx < mm_size and by < mm_size:
-                    minimap_surface.blit(minimap_bg_image, (bx, by))
-
-        dim_overlay = pygame.Surface((mm_size, mm_size), pygame.SRCALPHA)
-        dim_overlay.fill((0, 0, 0, 90))
-        minimap_surface.blit(dim_overlay, (0, 0))
+        mm_x, mm_y = hud_layout.MINIMAP_RECT.topleft
+        minimap_surface = hud_renderer.get_minimap_surface(minimap_bg_image)
 
         # Viewport rectangle on minimap
         view_x = camera_x * MINIMAP_SCALE
@@ -2686,10 +2606,8 @@ def draw(mouse_pos=None):
             oby = (orbital_base.pos_y + 60) * MINIMAP_SCALE
             pygame.draw.circle(minimap_surface, (0, 220, 255), (int(obx), int(oby)), 5, 2)
 
-        # Minimap frame border
-        pygame.draw.rect(minimap_surface, (100, 120, 160), (0, 0, mm_size, mm_size), 2)
-        
         canvas.blit(minimap_surface, (mm_x, mm_y))
+        hud_renderer.draw_minimap_frame(canvas)
 
         # --- POWER-UP HUD OVERLAY ---
         powerup_manager.draw_hud(canvas, GAME_WIDTH, GAME_HEIGHT)
@@ -2740,10 +2658,7 @@ def draw(mouse_pos=None):
 
         # --- SLOW-MOTION VIGNETTE OVERLAY ---
         if ground_support_manager.is_slow_mo:
-            vignette_surf = pygame.Surface((GAME_WIDTH, GAME_HEIGHT), pygame.SRCALPHA)
-            pygame.draw.rect(vignette_surf, (0, 200, 255, 35), (0, 0, GAME_WIDTH, GAME_HEIGHT), 8)
-            pygame.draw.rect(vignette_surf, (0, 150, 220, 20), (8, 8, GAME_WIDTH - 16, GAME_HEIGHT - 16), 8)
-            canvas.blit(vignette_surf, (0, 0))
+            canvas.blit(hud_renderer.get_slowmo_overlay(), (0, 0))
 
         # In-Flight Radio Transceiver Overlay
         if comms_hud.is_active:

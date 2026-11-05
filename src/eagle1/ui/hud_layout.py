@@ -24,7 +24,8 @@ MINIMAP_RECT = pygame.Rect(16, 720 - 16 - 160, 160, 160)
 SPEED_RECT = pygame.Rect(16, MINIMAP_RECT.y - 34, 160, 26)
 WEAPON_DOCK_RECT = pygame.Rect(1280 - 460, 720 - 94, 444, 86)
 SCORE_ANCHOR = (640, 720 - 12)                        # midbottom of the score line
-CONTROLS_HINT_Y = 720 - 40                            # top of the controls hint row
+SCORE_RECT = pygame.Rect(560, 672, 160, 36)
+CONTROLS_HINT_RECT = pygame.Rect(200, 644, 600, 26)   # bottom row between minimap and weapon dock
 WAVE_BANNER_CENTER = (640, 300)
 
 # Zones that are on screen at the same time and therefore must never overlap.
@@ -39,4 +40,6 @@ ALL_ZONES = (
     MINIMAP_RECT,
     SPEED_RECT,
     WEAPON_DOCK_RECT,
+    SCORE_RECT,
+    CONTROLS_HINT_RECT,
 )

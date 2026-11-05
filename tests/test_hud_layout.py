@@ -27,3 +27,9 @@ def test_buff_bars_start_below_squad_panel():
 def test_milestone_banner_clear_of_hero_panel():
     assert not hud_layout.MILESTONE_BANNER_RECT.colliderect(hud_layout.HERO_PANEL_RECT)
     assert not hud_layout.MILESTONE_BANNER_RECT.colliderect(hud_layout.DANGER_BANNER_RECT)
+
+
+def test_controls_hint_row_is_clear_of_dock_minimap_and_score():
+    hint = hud_layout.CONTROLS_HINT_RECT
+    for other in (hud_layout.WEAPON_DOCK_RECT, hud_layout.MINIMAP_RECT, hud_layout.SPEED_RECT, hud_layout.SCORE_RECT):
+        assert not hint.colliderect(other)
