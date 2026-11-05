@@ -134,6 +134,21 @@ Suggested branch names:
 - Keep asset paths compatible with running the game from the repository root.
 - Avoid committing generated files, local virtual environments, caches, editor settings, or personal high-score changes.
 
+## UI and Theme Rules
+
+All screens share the "Military Terminal" design system in `src/eagle1/ui/`:
+
+- Take colors from `eagle1.ui.theme` (`theme.ACCENT`, `theme.PANEL`, ...) instead of hardcoding RGB tuples for UI.
+- Create fonts only through `theme.get_font(style)` (never `pygame.font.SysFont` / `Font(...)` in UI code) and only at init time, never inside `draw()`/`render()`/`update()`.
+- Render static text once or through `widgets.TextCache`; allocate translucent overlays once (`widgets.make_overlay`), not per frame.
+- UI uses sharp corners (no `border_radius`), `widgets.draw_panel` / `draw_brackets`, and a minimum font size of 12 px.
+- Fit text with `widgets.fit_text` / `widgets.wrap_text_px` instead of fixed character counts.
+- The bundled fonts lack `◄ ► ★ ✖ ✚ ⚠`; use `theme.ARROW_GLYPHS`, plain text or drawn shapes.
+- Key bindings shown to the player come from `eagle1.ui.controls_reference`.
+- Place HUD elements inside the zones of `eagle1.ui.hud_layout`.
+
+`tests/test_ui_consistency.py` enforces the font, corner and glyph rules.
+
 ## Testing
 
 Run the automated test suite before submitting a pull request:

@@ -324,16 +324,16 @@ The game incorporates a dedicated power-up subsystem (`powerup_system.py`) provi
 
 ## Help Menu (6 Tabs)
 
-Access the interactive in-game tactical manual at any time by pressing **`H`**. Navigate tabs using number keys **`1`** through **`6`** or by clicking the tab headers:
+Access the interactive in-game tactical manual at any time by pressing **`H`**. Navigate tabs using number keys **`1`** through **`6`**, **`Tab`** / arrow keys (**`Shift+Tab`** goes back), or by clicking the tab headers:
 
 | Tab | Title | Description |
 | :---: | :--- | :--- |
-| **1** | **Weapons & Combat** | Damage, velocities, ranges, cooldowns, and magazine stats for quad-cannons and homing rockets. |
-| **2** | **Abilities & Buffs** | Complete catalog of 8 tactical power-ups across Common, Rare, and Epic tiers. |
-| **3** | **Radar Modes (Q)** | Visual guide explaining long-range `CONE` vs close-range `OMNI` target tracking. |
-| **4** | **Controls Manual** | Complete flight, combat, weapon switching, and menu keybindings table. |
-| **5** | **Wave Combat & Survival** | Wave enemy types, escort drones, milestone airdrops, and scoring multipliers. |
-| **6** | **Helldivers & Strikes** | Ground squad roles, Automaton hostiles, fabricators, CAS call-in missions, and Pelican-1 extraction. |
+| **1** | **Weapons** | Damage, velocities, ranges, cooldowns, and magazine stats for quad-cannons and homing rockets. |
+| **2** | **Abilities** | Complete catalog of 8 tactical power-ups across Common, Rare, and Epic tiers. |
+| **3** | **Radar (Q)** | Visual guide explaining long-range `CONE` vs close-range `OMNI` target tracking. |
+| **4** | **Controls** | Keybindings generated from the same list as the Settings menu, plus system notes (rearm, slow-mo aiming, fullscreen). |
+| **5** | **Enemies** | Wave formations, agro awareness, alignment-gated enemy fire, and anti-retreat nanite drops. |
+| **6** | **Squad** | Ground squad roles, Automaton hostiles, fabricators, CAS call-in missions, and Pelican-1 extraction. |
 
 
 
@@ -409,6 +409,13 @@ Access the interactive in-game tactical manual at any time by pressing **`H`**. 
 | **Open Settings & Audio Menu** | `O` | Click `SETTINGS` | Main Menu / Pause Menu / Game Over / Gameplay |
 | **Settings Menu Tabs (1-3)** | `1` - `3` | Click Tabs | Settings Menu |
 | **Instant Mute / Unmute Audio** | `M` | — | All States |
+| **Navigate Menus** | `Up` / `Down` + `Enter` | Mouse hover + click | Main Menu / Pause Menu / Game Over / Mission Select |
+| **Quit to Desktop** | `Escape` twice (first press focuses `QUIT TO DESKTOP`) | `Q` twice / Click `QUIT TO DESKTOP` | Main Menu |
+| **Select Stratagem Loadout** | `1` - `8` or arrows + `Enter` | Click Card | Stratagem Loadout (pre-mission) |
+| **Deploy Selected Loadout** | `Spacebar` (4 stratagems selected) | Click `DEPLOY` | Stratagem Loadout (pre-mission) |
+| **Settings Navigation** | `Left` / `Right` / `Tab` (tabs), `Up` / `Down` (focus), `+` / `-` (slider), `Enter` (toggle) | Mouse | Settings Menu |
+| **Focus NPC / Talk** | `Tab` cycles NPC cards, `E` talks to the focused NPC | Click NPC Card | Super Destroyer Hub Deck |
+| **Choose Dialogue Option (keyboard)** | `Up` / `Down` then `Enter` | `1` / `2` / `3` | Super Destroyer NPC Dialogue |
 | **Pause Game** | `P` | — | Active Gameplay |
 | **Resume Game** | `P` | Click `CONTINUE` | Pause Menu |
 | **Return to Main Menu** | `Escape` (`ESC`) | Click `MAIN MENU` | Pause Menu |
@@ -710,7 +717,14 @@ src/eagle1/
 │   ├── academy_briefing.py   # Naval Academy tutorial scenario & 6 progressive flight drills
 │   └── hangar_cinematic.py   # In-engine pre-sortie hangar launch and rearm cinematics
 ├── ui/
-│   ├── help_menu.py          # 6-tab tactical manual overlay (Weapons, Abilities, Radar, Controls, Waves, Helldivers)
+│   ├── theme.py              # "Military Terminal" design tokens (palette, type scale) and bundled-font loader
+│   ├── widgets.py            # Allocation-free panels, brackets, bars, TextCache, pixel-based text wrapping
+│   ├── menu_nav.py           # MenuButton + MenuNavigator (keyboard and mouse focus)
+│   ├── controls_reference.py # Single source of truth for key bindings shown in Settings, Help and the HUD
+│   ├── hud.py                # HudRenderer: status cluster, weapons panel, minimap cache, banners, controls hint
+│   ├── hud_layout.py         # Fixed, non-overlapping HUD zones (1280x720)
+│   ├── mission_select_menu.py # Operation selection list
+│   ├── help_menu.py          # 6-tab tactical manual overlay (Weapons, Abilities, Radar, Controls, Enemies, Squad)
 │   ├── settings_menu.py      # Tabbed settings interface (Audio, Gameplay/HUD, Flight Controls)
 │   ├── enlistment_screen.py  # Pilot enlistment contract, callsign selection, and Oath of Democracy
 │   └── debriefing_screen.py  # Post-mission After-Action Report (AAR) and performance ranking (S/A/B/C)
@@ -814,6 +828,15 @@ Root-level launcher scripts (`run_game.py`, `main.py`) and legacy wrappers (`gro
 
 ## Asset Organization
 
+### Fonts (`assets/fonts/`)
+
+| File | Role | License |
+| :--- | :--- | :--- |
+| `ChakraPetch-Bold.ttf` / `-SemiBold.ttf` / `-Regular.ttf` | Display, heading and body text | SIL Open Font License 1.1 (`OFL-ChakraPetch.txt`) |
+| `ShareTechMono-Regular.ttf` | Monospace data and key labels | SIL Open Font License 1.1 (`OFL-ShareTechMono.txt`) |
+
+Fonts are loaded only through `eagle1.ui.theme` (with a system-font fallback if a file is missing) and are bundled into PyInstaller builds. Note: the bundled fonts do not contain `◄ ► ★ ✖ ✚ ⚠`; use `theme.ARROW_GLYPHS`, text, or drawn shapes instead.
+
 ### Images (`images/`)
 
 | Asset Filename | Dimensions | Runtime Role |
@@ -912,3 +935,4 @@ Root-level launcher scripts (`run_game.py`, `main.py`) and legacy wrappers (`gro
 
 - **License:** Licensed under the [MIT License](LICENSE).
 - **Author:** paulp143
+- **Fonts:** [Chakra Petch](https://fonts.google.com/specimen/Chakra+Petch) and [Share Tech Mono](https://fonts.google.com/specimen/Share+Tech+Mono), both under the SIL Open Font License 1.1 (license texts in `assets/fonts/`).
