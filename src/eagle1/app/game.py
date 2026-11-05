@@ -22,7 +22,9 @@ from eagle1.systems.powerups import (
     SHIELD_BUBBLE_BONUS,
     PowerUpManager,
 )
+from eagle1.ui import theme, widgets
 from eagle1.ui.help_menu import HelpMenu
+from eagle1.ui.menu_nav import MenuButton, MenuNavigator, VARIANT_DANGER, VARIANT_PRIMARY
 from eagle1.ui.settings_menu import SettingsMenu
 from eagle1.ui.debriefing_screen import DebriefingScreen
 from eagle1.ui.enlistment_screen import EnlistmentScreen
@@ -511,10 +513,11 @@ def safe_font(name, size, bold=False):
     except Exception:
         return pygame.font.Font(None, size)
 
-font = safe_font("arial", 24, bold=True)
-title_font = safe_font("arial", 48, bold=True)
-speed_font = safe_font("arial", 18, bold=True)
-hud_small_font = safe_font("arial", 13, bold=True)
+font = theme.get_font("title") or safe_font("arial", 24, bold=True)
+title_font = theme.get_font("display_xl") or safe_font("arial", 48, bold=True)
+speed_font = theme.get_font("heading") or safe_font("arial", 18, bold=True)
+hud_small_font = theme.get_font("label") or safe_font("arial", 13, bold=True)
+ui_text_cache = widgets.TextCache(1024)
 profile_manager = PlayerProfileManager()
 clock = pygame.time.Clock()
 window = _set_display_mode((GAME_WIDTH, GAME_HEIGHT), pygame.RESIZABLE)
@@ -906,116 +909,77 @@ def get_canvas_mouse_pos():
     return (canvas_x, canvas_y)
 
 
-# UI TextBoxes & Buttons vorbereiten
-title_box = TextBox(
-    "EAGLE 1: 64-BIT",
-    title_font,
-    text_color=(0, 230, 255),
-    bg_color=(10, 15, 25),
-    border_color=(0, 180, 240),
-    border_width=2,
-    padding=(50, 14),
-    border_radius=10,
-    centerx=GAME_WIDTH / 2,
-    centery=120,
+# --- Main menu (Military Terminal) ---
+_MAIN_MENU_BTN_X = 96
+_MAIN_MENU_BTN_W = 368
+_MAIN_MENU_BTN_Y0 = 228
+_MAIN_MENU_BTN_GAP = 12
+
+
+def _main_menu_button(index, text, hotkey, variant=None, **kwargs):
+    rect = pygame.Rect(
+        _MAIN_MENU_BTN_X,
+        _MAIN_MENU_BTN_Y0 + index * (48 + _MAIN_MENU_BTN_GAP),
+        _MAIN_MENU_BTN_W,
+        48,
+    )
+    return MenuButton(
+        text,
+        rect,
+        hotkey=hotkey,
+        variant=variant or "secondary",
+        on_sfx=audio_manager.play_sfx,
+        text_cache=ui_text_cache,
+        **kwargs,
+    )
+
+
+menu_new_game_box = _main_menu_button(0, "NEW GAME", "N", VARIANT_PRIMARY)
+menu_continue_box = _main_menu_button(1, "CONTINUE", "C")
+menu_settings_box = _main_menu_button(2, "SETTINGS", "O")
+menu_help_box = _main_menu_button(3, "TACTICAL MANUAL", "H")
+menu_quit_box = _main_menu_button(4, "QUIT TO DESKTOP", "ESC", VARIANT_DANGER)
+
+MAIN_MENU_ACTIONS = ("new_game", "continue", "settings", "help", "quit")
+MAIN_MENU_QUIT_INDEX = 4
+main_menu_nav = MenuNavigator(
+    [menu_new_game_box, menu_continue_box, menu_settings_box, menu_help_box, menu_quit_box],
+    wrap=True,
+    on_sfx=audio_manager.play_sfx,
 )
 
-subtitle_box = TextBox(
-    "SUPER EARTH NAVAL AIR DIVISION — STORY CAMPAIGN",
-    hud_small_font,
-    text_color=(255, 215, 0),
-    bg_color=(15, 20, 30),
-    border_color=(100, 85, 30),
-    padding=(24, 6),
-    border_radius=6,
-    centerx=GAME_WIDTH / 2,
-    centery=185,
+main_menu_side_overlay = widgets.make_overlay((560, GAME_HEIGHT), theme.OVERLAY_RGBA)
+_mono_small_font = theme.get_font("mono_small") or hud_small_font
+_mono_tiny_font = theme.get_font("mono_tiny") or hud_small_font
+main_menu_title_surf = title_font.render("EAGLE-1", True, theme.ACCENT)
+main_menu_subtitle_surf = _mono_small_font.render(
+    "SUPER EARTH NAVAL AIR DIVISION // STORY CAMPAIGN", True, theme.TEXT_MUTED
 )
+main_menu_footer_surf = _mono_tiny_font.render("UP/DOWN NAVIGATE   ENTER SELECT", True, theme.TEXT_MUTED)
+main_menu_hint_surf = _mono_small_font.render(
+    "NO ACTIVE SERVICE RECORD — SELECT NEW GAME TO ENLIST", True, theme.WARNING
+)
+menu_toast_text = ""
+menu_toast_until = 0
 
-menu_new_game_box = TextBox(
-    "NEW GAME",
-    font,
-    text_color=(255, 255, 255),
-    bg_color=(20, 30, 45),
-    hover_bg_color=(35, 75, 120),
-    border_color=(0, 180, 240),
-    hover_border_color=(0, 240, 255),
-    padding=(60, 14),
-    border_radius=8,
-    centerx=GAME_WIDTH / 2,
-    centery=280,
-)
+_menu_profile_state = {"key": None, "has_profile": False, "callsign": ""}
 
-menu_continue_box = TextBox(
-    "CONTINUE",
-    font,
-    text_color=(255, 255, 255),
-    bg_color=(20, 30, 45),
-    hover_bg_color=(30, 70, 100),
-    border_color=(80, 120, 160),
-    hover_border_color=(0, 220, 255),
-    disabled_text_color=(100, 110, 125),
-    disabled_bg_color=(18, 22, 28),
-    disabled_border_color=(45, 50, 60),
-    padding=(60, 14),
-    border_radius=8,
-    centerx=GAME_WIDTH / 2,
-    centery=350,
-)
 
-menu_settings_box = TextBox(
-    "SETTINGS",
-    font,
-    text_color=(255, 255, 255),
-    bg_color=(20, 25, 35),
-    hover_bg_color=(25, 55, 85),
-    border_color=(80, 100, 140),
-    hover_border_color=(0, 200, 255),
-    padding=(60, 14),
-    border_radius=8,
-    centerx=GAME_WIDTH / 2,
-    centery=420,
-)
+def _refresh_main_menu_profile_state():
+    """Re-read the player profile only when the profile file's existence/mtime/size changed."""
+    path = profile_manager.get_profile_path()
+    try:
+        st = path.stat()
+        key = (True, st.st_mtime_ns, st.st_size)
+    except OSError:
+        key = (False, 0, 0)
+    if key == _menu_profile_state["key"]:
+        return
+    has_profile = profile_manager.has_active_profile()
+    _menu_profile_state["key"] = key
+    _menu_profile_state["has_profile"] = has_profile
+    _menu_profile_state["callsign"] = profile_manager.load_profile().username.upper() if has_profile else ""
 
-menu_help_box = TextBox(
-    "TACTICAL MANUAL",
-    font,
-    text_color=(255, 255, 255),
-    bg_color=(20, 25, 35),
-    hover_bg_color=(25, 55, 85),
-    border_color=(80, 100, 140),
-    hover_border_color=(0, 200, 255),
-    padding=(60, 14),
-    border_radius=8,
-    centerx=GAME_WIDTH / 2,
-    centery=490,
-)
-
-menu_quit_box = TextBox(
-    "QUIT TO DESKTOP",
-    font,
-    text_color=(255, 255, 255),
-    bg_color=(25, 20, 25),
-    hover_bg_color=(80, 30, 35),
-    border_color=(120, 70, 80),
-    hover_border_color=(255, 70, 70),
-    padding=(60, 14),
-    border_radius=8,
-    centerx=GAME_WIDTH / 2,
-    centery=560,
-)
-
-menu_status_hint_box = TextBox(
-    "NO ACTIVE SERVICE RECORD — SELECT 'NEW GAME' TO ENLIST",
-    hud_small_font,
-    text_color=(220, 160, 50),
-    bg_color=(20, 20, 25),
-    border_color=(70, 50, 20),
-    padding=(18, 6),
-    border_radius=6,
-    centerx=GAME_WIDTH / 2,
-    centery=635,
-)
 
 pause_title_box = TextBox(
     "Pause",
@@ -2425,27 +2389,32 @@ def respawn(mission_config=None, selected_stratagems=None):
 def main_menu(mouse_pos=None):
     canvas.fill((0, 0, 0))
     canvas.blit(main_menu_image, (0, 0))
+    canvas.blit(main_menu_side_overlay, (0, 0))
+    pygame.draw.rect(canvas, theme.ACCENT_DIM, (560, 0, 2, GAME_HEIGHT))
 
-    has_active_save = profile_manager.has_active_profile()
+    _refresh_main_menu_profile_state()
+    has_active_save = bool(_menu_profile_state["has_profile"])
     if has_active_save:
-        active_prof = profile_manager.load_profile()
-        callsign = active_prof.username.upper()
-        menu_continue_box.set_text(f"CONTINUE : CADET {callsign}")
+        menu_continue_box.set_text(f"CONTINUE : CADET {_menu_profile_state['callsign']}")
         menu_continue_box.set_enabled(True)
     else:
         menu_continue_box.set_text("CONTINUE (NO SERVICE RECORD)")
         menu_continue_box.set_enabled(False)
+        if main_menu_nav.focus_index == 1:
+            main_menu_nav.move_focus(1)
 
-    title_box.draw(canvas, mouse_pos)
-    subtitle_box.draw(canvas, mouse_pos)
-    menu_new_game_box.draw(canvas, mouse_pos)
-    menu_continue_box.draw(canvas, mouse_pos)
-    menu_settings_box.draw(canvas, mouse_pos)
-    menu_help_box.draw(canvas, mouse_pos)
-    menu_quit_box.draw(canvas, mouse_pos)
+    canvas.blit(main_menu_title_surf, (96, 96))
+    canvas.blit(main_menu_subtitle_surf, (98, 160))
+    pygame.draw.rect(canvas, theme.ACCENT, (96, 186, 368, 1))
+    main_menu_nav.draw(canvas, mouse_pos)
 
     if not has_active_save:
-        menu_status_hint_box.draw(canvas, mouse_pos)
+        canvas.blit(main_menu_hint_surf, (96, GAME_HEIGHT - 56))
+    canvas.blit(main_menu_footer_surf, (96, GAME_HEIGHT - 24 - main_menu_footer_surf.get_height()))
+
+    if menu_toast_text and pygame.time.get_ticks() < menu_toast_until:
+        toast = ui_text_cache.render(_mono_small_font, menu_toast_text, theme.INFO)
+        canvas.blit(toast, (GAME_WIDTH - 24 - toast.get_width(), GAME_HEIGHT - 24 - toast.get_height()))
 
 
 def pause_menu(mouse_pos=None):
@@ -3102,8 +3071,42 @@ def handle_super_destroyer_action(action):
     return action
 
 
+def activate_main_menu_action(action):
+    """Run a main-menu action. Returns True if the game should quit."""
+    global game_state, previous_game_state
+    if action == "new_game":
+        enlistment_screen.reset()
+        game_state = "enlistment"
+    elif action == "continue":
+        if profile_manager.has_active_profile():
+            active_prof = profile_manager.load_profile()
+            if not active_prof.academy_completed:
+                config = MISSION_CONFIGS.get(MissionType.ACADEMY_TUTORIAL, MISSION_CONFIGS[MissionType.ACADEMY_TUTORIAL])
+                respawn(mission_config=config)
+                game_state = ""
+            else:
+                enter_super_destroyer()
+    elif action == "settings":
+        previous_game_state = "main_menu"
+        settings_menu.sync_from_manager()
+        game_state = "settings_menu"
+    elif action == "help":
+        previous_game_state = "main_menu"
+        game_state = "help_menu"
+    elif action == "quit":
+        return True
+    return False
+
+
+def show_menu_toast(text, duration_ms=1500):
+    """Show a short status message in the main menu (e.g. mute feedback)."""
+    global menu_toast_text, menu_toast_until
+    menu_toast_text = text
+    menu_toast_until = pygame.time.get_ticks() + duration_ms
+
+
 def run_game():
-    global window, game_state, light_enemy, wave_manager, health_drops, ground_support_manager, pending_mission_config
+    global window, game_state, previous_game_state, light_enemy, wave_manager, health_drops, ground_support_manager, pending_mission_config
     running = True
     last_wheel_time = 0
     while running:
@@ -3173,6 +3176,8 @@ def run_game():
                     settings_menu.handle_event(event, canvas_mouse_pos)
                 elif game_state == "enlistment":
                     enlistment_screen.handle_event(event, canvas_mouse_pos)
+                elif game_state == "main_menu":
+                    main_menu_nav.handle_event(event, canvas_mouse_pos)
                 elif game_state == "super_destroyer":
                     super_destroyer_view.handle_event(event, canvas_mouse_pos)
 
@@ -3201,27 +3206,8 @@ def run_game():
                         game_state = "main_menu"
 
                 elif game_state == "main_menu":
-                    if menu_new_game_box.is_clicked(event, canvas_mouse_pos):
-                        enlistment_screen.reset()
-                        game_state = "enlistment"
-                    elif menu_continue_box.is_clicked(event, canvas_mouse_pos):
-                        if profile_manager.has_active_profile():
-                            active_prof = profile_manager.load_profile()
-                            if not active_prof.academy_completed:
-                                target_mission = MissionType.ACADEMY_TUTORIAL
-                                config = MISSION_CONFIGS.get(target_mission, MISSION_CONFIGS[MissionType.ACADEMY_TUTORIAL])
-                                respawn(mission_config=config)
-                                game_state = ""
-                            else:
-                                enter_super_destroyer()
-                    elif menu_settings_box.is_clicked(event, canvas_mouse_pos):
-                        previous_game_state = "main_menu"
-                        settings_menu.sync_from_manager()
-                        game_state = "settings_menu"
-                    elif menu_help_box.is_clicked(event, canvas_mouse_pos):
-                        previous_game_state = "main_menu"
-                        game_state = "help_menu"
-                    elif menu_quit_box.is_clicked(event, canvas_mouse_pos):
+                    idx = main_menu_nav.handle_event(event, canvas_mouse_pos)
+                    if idx is not None and activate_main_menu_action(MAIN_MENU_ACTIONS[idx]):
                         running = False
 
                 elif game_state == "mission_select":
@@ -3338,33 +3324,29 @@ def run_game():
                         ground_support_manager.add_combat_popup(f"AUDIO {status_str}", player.pos_x, player.pos_y, (255, 80, 80) if is_muted else (80, 255, 120))
 
                 elif game_state == "main_menu":
-                    if event.key == pygame.K_n:
-                        enlistment_screen.reset()
-                        game_state = "enlistment"
+                    idx = main_menu_nav.handle_event(event, canvas_mouse_pos)
+                    if idx is not None:
+                        if activate_main_menu_action(MAIN_MENU_ACTIONS[idx]):
+                            running = False
+                    elif event.key == pygame.K_n:
+                        activate_main_menu_action("new_game")
                     elif event.key == pygame.K_c and profile_manager.has_active_profile():
-                        active_prof = profile_manager.load_profile()
-                        if not active_prof.academy_completed:
-                            target_mission = MissionType.ACADEMY_TUTORIAL
-                            config = MISSION_CONFIGS.get(target_mission, MISSION_CONFIGS[MissionType.ACADEMY_TUTORIAL])
-                            respawn(mission_config=config)
-                            game_state = ""
-                        else:
-                            enter_super_destroyer()
+                        activate_main_menu_action("continue")
                     elif event.key == pygame.K_s:
                         enter_super_destroyer()
                     elif event.key == pygame.K_h:
-                        previous_game_state = "main_menu"
-                        game_state = "help_menu"
+                        activate_main_menu_action("help")
                     elif event.key == pygame.K_o:
-                        previous_game_state = "main_menu"
-                        settings_menu.sync_from_manager()
-                        game_state = "settings_menu"
+                        activate_main_menu_action("settings")
                     elif event.key in (pygame.K_ESCAPE, pygame.K_q):
-                        running = False
+                        if main_menu_nav.focus_index != MAIN_MENU_QUIT_INDEX:
+                            main_menu_nav.focus(MAIN_MENU_QUIT_INDEX)
+                            audio_manager.play_sfx("ui_hover")
+                        else:
+                            running = False
                     elif event.key == pygame.K_m:
                         is_muted = audio_manager.toggle_mute()
-                        status_str = "MUTED" if is_muted else "UNMUTED"
-                        ground_support_manager.add_combat_popup(f"AUDIO {status_str}", player.pos_x, player.pos_y, (255, 80, 80) if is_muted else (80, 255, 120))
+                        show_menu_toast("AUDIO MUTED" if is_muted else "AUDIO UNMUTED")
 
                 elif game_state == "enlistment":
                     action = enlistment_screen.handle_event(event, canvas_mouse_pos)
