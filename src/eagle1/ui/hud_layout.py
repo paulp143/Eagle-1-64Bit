@@ -15,7 +15,7 @@ BUFF_BARS_ORIGIN = (16, 212)                          # power-up buff bars, 20 p
 OBJECTIVE_BANNER_Y = 12                               # mission objective, h=24
 CAMPAIGN_OBJECTIVE_Y = 40                             # campaign objective, h=22
 BOSS_BAR_RECT = pygame.Rect(430, 70, 420, 14)
-GS_OBJECTIVE_Y = 92                                   # ground-support objective line
+GS_OBJECTIVE_Y = 90                                   # ground-support objective line
 DANGER_BANNER_RECT = pygame.Rect(420, 112, 440, 28)
 HERO_PANEL_RECT = pygame.Rect(430, 146, 420, 80)
 MILESTONE_BANNER_RECT = pygame.Rect(360, 232, 560, 65)
