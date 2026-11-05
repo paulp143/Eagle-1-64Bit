@@ -6,6 +6,7 @@ Super Destroyer SES, animated robotic ordnance reloading (500kg bomb / rockets),
 atmospheric descent re-entry, and the integrated Stratagem Hero arcade terminal minigame.
 """
 
+import logging
 import math
 import os
 import random
@@ -14,6 +15,8 @@ import pygame
 from eagle1.paths import get_user_data_dir
 from eagle1.ui import theme, widgets
 
+
+logger = logging.getLogger(__name__)
 
 # Rearm Phases
 PHASE_NONE = 0
@@ -28,6 +31,30 @@ TOTAL_REARM_DURATION = 15.0
 
 MAP_WIDTH = 3000
 MAP_HEIGHT = 3000
+
+# Service pad geometry (screen space) and rearm choreography (seconds into the hangar phase)
+PAD_X, PAD_Y, PAD_W, PAD_H = 240, 430, 340, 210
+SHIP_CX = PAD_X + PAD_W // 2
+SHIP_CY = PAD_Y + 105
+RAIL_Y = 36
+TROLLEY_Y = 42
+TROLLEY_HOME_X = SHIP_CX + 150
+ARM_ROOT_Y = TROLLEY_Y + 26
+ARM_HOME_Y = 150.0
+ARM_DOWN_Y = float(SHIP_CY - 37)  # gripper plate top so the hoisted round hangs centered on the airframe
+BOMB_W, BOMB_H = 18, 46
+BOMB_LATCH_TIME = 3.5
+WING_SERVICE_TIME = 5.6
+WING_ARM_BASES = ((PAD_X + 12, PAD_Y + 145), (PAD_X + PAD_W - 12, PAD_Y + 145))
+WING_ARM_TIPS = ((SHIP_CX - 52, SHIP_CY + 6), (SHIP_CX + 52, SHIP_CY + 6))
+WING_ARM_LINKS = (84.0, 70.0)
+# (label, start, done) windows for the on-screen rearm sequence checklist
+REARM_STEPS = (
+    ("ORDNANCE", 0.6, 4.3),
+    ("WING PYLONS", 4.5, 7.5),
+    ("CHARGES", 7.5, 10.5),
+    ("FINAL CHECK", 10.5, 12.0),
+)
 
 # Stratagem Hero Sequences
 HERO_STRATAGEM_SEQUENCES = [
@@ -46,6 +73,43 @@ HERO_STRATAGEM_SEQUENCES = [
 
 # Direction glyphs supported by the bundled Chakra Petch fonts (see eagle1.ui.theme).
 ARROW_SYMBOLS = dict(theme.ARROW_GLYPHS)
+
+
+def _smooth(t):
+    """Clamp ``t`` to 0..1 and apply smoothstep easing."""
+    t = max(0.0, min(1.0, t))
+    return t * t * (3.0 - 2.0 * t)
+
+
+def _span(t, start, end):
+    """Eased 0..1 progress of ``t`` through the window [start, end]."""
+    return _smooth((t - start) / (end - start))
+
+
+def crane_pose(t):
+    """Return ``(trolley_x, gripper_y, grip_open)`` of the overhead hoist ``t`` seconds into the hangar phase."""
+    slide = _span(t, 0.0, 1.0) - _span(t, 6.5, 7.5)
+    trolley_x = TROLLEY_HOME_X + (SHIP_CX - TROLLEY_HOME_X) * slide
+    lift = _span(t, 1.0, BOMB_LATCH_TIME) - _span(t, 4.3, 6.5)
+    gripper_y = ARM_HOME_Y + (ARM_DOWN_Y - ARM_HOME_Y) * lift
+    grip_open = _span(t, BOMB_LATCH_TIME, BOMB_LATCH_TIME + 0.5) - _span(t, 6.0, 6.5)
+    return trolley_x, gripper_y, grip_open
+
+
+def wing_arm_extension(t):
+    """Return 0..1 extension of the two wing-pylon service arms ``t`` seconds into the hangar phase."""
+    return _span(t, 4.5, 5.5) - _span(t, 6.6, 7.5)
+
+
+def _two_link_elbow(bx, by, tx, ty, l1, l2, bend):
+    """Elbow position of a two-link arm reaching from (bx, by) to (tx, ty); ``bend`` is -1 or +1."""
+    dx, dy = tx - bx, ty - by
+    raw = max(1e-6, math.hypot(dx, dy))
+    dist = max(abs(l1 - l2) + 0.01, min(l1 + l2 - 0.01, raw))
+    ux, uy = dx / raw, dy / raw
+    a = (l1 * l1 - l2 * l2 + dist * dist) / (2.0 * dist)
+    h = math.sqrt(max(0.0, l1 * l1 - a * a))
+    return bx + ux * a - uy * h * bend, by + uy * a + ux * h * bend
 
 
 def _get_audio():
@@ -84,9 +148,7 @@ class SuperDestroyerManager:
         self.speed_lines = []
         self.afterburner_particles = []
 
-        # Robotic crane animation state
-        self.crane_gantry_x = 380.0
-        self.crane_arm_y = 120.0
+        # Robotic crane milestones (the hoist pose itself is derived from phase_timer via crane_pose)
         self.bomb_attached = False
         self.bomb_latched = False
         self.wings_serviced = False
@@ -127,24 +189,26 @@ class SuperDestroyerManager:
     def _load_hero_highscore(self):
         hs_file = os.path.join(str(get_user_data_dir()), "stratagem_hero_highscore.txt")
         try:
-            if os.path.exists(hs_file):
-                with open(hs_file, "r", encoding="utf-8") as f:
-                    content = f.read().strip()
-                    if content.isdigit():
-                        return int(content)
-        except Exception:
-            pass
-        return 0
+            with open(hs_file, "r", encoding="utf-8") as f:
+                content = f.read().strip()
+        except FileNotFoundError:
+            return 0
+        except (OSError, UnicodeDecodeError) as exc:
+            logger.warning("Could not read Stratagem Hero highscore: %s", exc)
+            return 0
+        return int(content) if content.isdigit() else 0
 
     def _save_hero_highscore(self):
         data_dir = get_user_data_dir()
         hs_file = os.path.join(str(data_dir), "stratagem_hero_highscore.txt")
+        tmp_file = hs_file + ".tmp"
         try:
             os.makedirs(str(data_dir), exist_ok=True)
-            with open(hs_file, "w", encoding="utf-8") as f:
+            with open(tmp_file, "w", encoding="utf-8") as f:
                 f.write(str(self.hero_highscore))
-        except Exception:
-            pass
+            os.replace(tmp_file, hs_file)  # atomic: a crash mid-write never truncates the highscore
+        except OSError as exc:
+            logger.warning("Could not save Stratagem Hero highscore: %s", exc)
 
     def _init_fonts(self):
         """Fetch the cached theme fonts and pre-render all static terminal text."""
@@ -255,10 +319,24 @@ class SuperDestroyerManager:
             ])
 
         # Hydraulic Service Platform (Octagonal Pad for Eagle-1)
-        pad_x, pad_y, pad_w, pad_h = 240, 430, 340, 210
-        pad_rect = pygame.Rect(pad_x, pad_y, pad_w, pad_h)
-        pygame.draw.rect(bg, (36, 44, 60), pad_rect, border_radius=16)
-        pygame.draw.rect(bg, (230, 175, 20), pad_rect, 3, border_radius=16)
+        pad_x, pad_y, pad_w, pad_h = PAD_X, PAD_Y, PAD_W, PAD_H
+        cut = 22
+        pad_pts = [
+            (pad_x + cut, pad_y), (pad_x + pad_w - cut, pad_y), (pad_x + pad_w, pad_y + cut),
+            (pad_x + pad_w, pad_y + pad_h - cut), (pad_x + pad_w - cut, pad_y + pad_h),
+            (pad_x + cut, pad_y + pad_h), (pad_x, pad_y + pad_h - cut), (pad_x, pad_y + cut),
+        ]
+        pygame.draw.polygon(bg, (36, 44, 60), pad_pts)
+        pygame.draw.polygon(bg, (230, 175, 20), pad_pts, 3)
+
+        # Overhead gantry rail carrying the ordnance hoist
+        pygame.draw.rect(bg, (30, 38, 52), (120, RAIL_Y - 4, 640, 16))
+        pygame.draw.rect(bg, (78, 102, 132), (120, RAIL_Y - 4, 640, 16), 1)
+        pygame.draw.line(bg, (110, 135, 165), (122, RAIL_Y), (758, RAIL_Y), 1)
+        for rx in range(140, 760, 40):
+            pygame.draw.line(bg, (46, 64, 88), (rx, RAIL_Y + 2), (rx, RAIL_Y + 9), 1)
+        for rx in (120, 744):
+            pygame.draw.rect(bg, (230, 175, 20), (rx, RAIL_Y - 6, 16, 20))
 
         # Platform grating texture
         for gx in range(pad_x + 15, pad_x + pad_w - 15, 24):
@@ -275,7 +353,8 @@ class SuperDestroyerManager:
 
         # Platform Hydraulic Pillars
         for hx in [pad_x + 30, pad_x + pad_w - 30]:
-            pygame.draw.rect(bg, (50, 60, 78), (hx - 12, pad_y + pad_h - 6, 24, 70), border_radius=4)
+            pygame.draw.rect(bg, (50, 60, 78), (hx - 12, pad_y + pad_h - 6, 24, 70))
+            pygame.draw.rect(bg, (78, 102, 132), (hx - 12, pad_y + pad_h - 6, 24, 70), 1)
             pygame.draw.line(bg, (180, 195, 215), (hx - 6, pad_y + pad_h), (hx - 6, self.screen_h - 10), 4)
 
         self.hangar_bg_surface = bg
@@ -299,6 +378,7 @@ class SuperDestroyerManager:
             pygame.draw.circle(disc, col, (radius, radius), radius)
             self._plasma_surfaces.append((radius, disc))
         self._eagle_scaled_cache = {}
+        self._bomb_surface = self._build_bomb_surface()
 
         # Volumetric Floodlights Surface
         flood = pygame.Surface((self.screen_w, self.screen_h), pygame.SRCALPHA)
@@ -314,6 +394,23 @@ class SuperDestroyerManager:
 
         # Fade Overlay Surface
         self.fade_surface = pygame.Surface((self.screen_w, self.screen_h), pygame.SRCALPHA)
+
+    @staticmethod
+    def _build_bomb_surface():
+        """Pre-render the hoisted 500 kg round (nose cone, banded body, tail fins) once."""
+        surf = pygame.Surface((BOMB_W, BOMB_H), pygame.SRCALPHA)
+        body, dark, light, band = (74, 88, 64), (44, 54, 40), (118, 134, 104), (230, 175, 20)
+        pygame.draw.polygon(surf, body, [(9, 0), (14, 12), (4, 12)])
+        pygame.draw.rect(surf, body, (4, 12, 10, 24))
+        pygame.draw.polygon(surf, body, [(4, 36), (14, 36), (12, 43), (6, 43)])
+        pygame.draw.polygon(surf, dark, [(4, 34), (0, 45), (4, 41)])
+        pygame.draw.polygon(surf, dark, [(14, 34), (17, 45), (14, 41)])
+        pygame.draw.line(surf, light, (6, 12), (6, 35), 1)
+        pygame.draw.line(surf, dark, (13, 12), (13, 35), 1)
+        pygame.draw.rect(surf, band, (4, 19, 10, 3))
+        pygame.draw.rect(surf, band, (4, 28, 10, 2))
+        pygame.draw.line(surf, dark, (4, 12), (14, 12), 1)
+        return surf
 
     # =========================================================================
     # REARM CONTROL & STATE MACHINE
@@ -353,7 +450,6 @@ class SuperDestroyerManager:
         self.bomb_attached = False
         self.bomb_latched = False
         self.wings_serviced = False
-        self.crane_arm_y = 120.0
         self.hero_score = 0
         self._generate_next_hero_code()
 
@@ -467,36 +563,24 @@ class SuperDestroyerManager:
         # ---------------------------------------------------------------------
         elif self.phase == PHASE_HANGAR:
             # Check rearm latching milestones
-            if self.phase_timer >= 3.5 and not self.bomb_latched:
+            if self.phase_timer >= BOMB_LATCH_TIME and not self.bomb_latched:
                 self.bomb_latched = True
                 self.bomb_attached = True
                 if am:
                     am.play_sfx("rearm_crane")
-                self._spawn_sparks(410, 490, 28)
-                self._spawn_steam(390, 480, 16)
+                self._spawn_sparks(SHIP_CX, SHIP_CY, 18)
+                self._spawn_steam(SHIP_CX - 20, SHIP_CY - 10, 8)
 
-            if self.phase_timer >= 7.5 and not self.wings_serviced:
+            if self.phase_timer >= WING_SERVICE_TIME and not self.wings_serviced:
                 self.wings_serviced = True
                 if am:
                     am.play_sfx("rearm_crane")
-                self._spawn_sparks(355, 475, 20)
-                self._spawn_sparks(465, 475, 20)
-                self._spawn_steam(410, 500, 12)
+                for tip_x, tip_y in WING_ARM_TIPS:
+                    self._spawn_sparks(tip_x, tip_y, 10)
+                self._spawn_steam(SHIP_CX, SHIP_CY + 24, 6)
 
-            # Crane arm positioning
-            if self.phase_timer < 3.5:
-                progress = self.phase_timer / 3.5
-                self.crane_arm_y = 120.0 + progress * 240.0
-            elif self.phase_timer < 4.5:
-                self.crane_arm_y = 360.0
-            elif self.phase_timer < 7.5:
-                progress = (self.phase_timer - 4.5) / 3.0
-                self.crane_arm_y = 360.0 - progress * 220.0
-            else:
-                self.crane_arm_y = 140.0
-
-            if random.random() < 0.06:
-                self._spawn_steam(random.choice([360, 460]), 505, 4)
+            if random.random() < 0.04:
+                self._spawn_steam(random.choice([WING_ARM_BASES[0][0] + 20, WING_ARM_BASES[1][0] - 20]), PAD_Y + 100, 3)
 
             self._update_particles(dt)
 
@@ -648,17 +732,15 @@ class SuperDestroyerManager:
         canvas.blit(self.hangar_bg_surface, (0, 0))
         canvas.blit(self.floodlight_surface, (0, 0))
 
-        pad_x, pad_y, pad_w = 240, 430, 340
         beacon_pulse = int(128 + 127 * math.sin(pygame.time.get_ticks() * 0.01))
-        for bx in [pad_x + 12, pad_x + pad_w - 12]:
-            pygame.draw.circle(canvas, (beacon_pulse, 40, 20), (bx, pad_y + 12), 6)
-            pygame.draw.circle(canvas, (255, 180, 100), (bx, pad_y + 12), 2)
+        for bx in [PAD_X + 34, PAD_X + PAD_W - 34]:
+            pygame.draw.rect(canvas, (beacon_pulse, 40, 20), (bx - 5, PAD_Y + 29, 10, 10))
+            pygame.draw.rect(canvas, (255, 180, 100), (bx - 2, PAD_Y + 32, 4, 4))
 
-        ship_cx = pad_x + pad_w // 2
-        ship_cy = pad_y + 105
-        self._draw_docked_eagle(canvas, ship_cx, ship_cy, player)
-
-        self._draw_rearm_robotics(canvas, ship_cx)
+        self._draw_docked_eagle(canvas, SHIP_CX, SHIP_CY, player)
+        self._draw_airframe_scan(canvas)
+        self._draw_wing_arms(canvas)
+        self._draw_rearm_robotics(canvas, SHIP_CX)
 
         for stm in self.steam_particles:
             radius = max(1, min(41, int(stm["current_radius"])))
@@ -669,6 +751,7 @@ class SuperDestroyerManager:
         for spk in self.spark_particles:
             pygame.draw.circle(canvas, spk["color"], (int(spk["x"]), int(spk["y"])), 2)
 
+        self._draw_rearm_checklist(canvas)
         self._draw_stratagem_hero_terminal(canvas)
         self._draw_status_bar(canvas)
 
@@ -698,34 +781,122 @@ class SuperDestroyerManager:
             pygame.draw.ellipse(canvas, (0, 220, 255), (cx - 5, cy - 18, 10, 22))
 
         if self.bomb_attached:
-            pygame.draw.ellipse(canvas, (70, 85, 60), (cx - 6, cy - 8, 12, 28))
-            pygame.draw.line(canvas, (255, 210, 20), (cx - 6, cy + 4), (cx + 6, cy + 4), 2)
+            canvas.blit(self._bomb_surface, (cx - BOMB_W // 2, cy - BOMB_H // 2))
 
     def _draw_rearm_robotics(self, canvas, ship_cx):
-        """Draws the overhead robotic gantry crane, hydraulic pistons, and bomb hoist."""
-        trolley_x = ship_cx
-        trolley_y = 60
-        pygame.draw.rect(canvas, (230, 175, 20), (trolley_x - 45, trolley_y, 90, 20), border_radius=4)
-        pygame.draw.rect(canvas, (40, 48, 65), (trolley_x - 35, trolley_y + 4, 70, 12), border_radius=2)
+        """Draw the overhead gantry hoist: trolley, telescoping arm, gripper jaws and the suspended round."""
+        trolley_x, grip_y, grip_open = crane_pose(self.phase_timer)
+        tx = int(trolley_x)
+        gy = int(grip_y)
+        steel, steel_hi, steel_dark = (96, 112, 136), (150, 168, 192), (40, 48, 65)
 
-        piston_bottom_y = int(self.crane_arm_y)
-        pygame.draw.line(canvas, (180, 195, 215), (trolley_x - 12, trolley_y + 20), (trolley_x - 12, piston_bottom_y), 8)
-        pygame.draw.line(canvas, (180, 195, 215), (trolley_x + 12, trolley_y + 20), (trolley_x + 12, piston_bottom_y), 8)
+        # Trolley carriage riding the rail
+        body = pygame.Rect(tx - 46, TROLLEY_Y, 92, 26)
+        pygame.draw.rect(canvas, steel_dark, body)
+        pygame.draw.rect(canvas, theme.BORDER_STRONG, body, 1)
+        pygame.draw.rect(canvas, (230, 175, 20), (body.x, body.y, body.w, 3))
+        for wx in (tx - 36, tx + 28):
+            pygame.draw.rect(canvas, steel, (wx, RAIL_Y + 8, 8, 8))
+        window_on = (pygame.time.get_ticks() // 300) % 2 == 0
+        pygame.draw.rect(canvas, (14, 20, 30), (tx - 20, TROLLEY_Y + 9, 40, 10))
+        pygame.draw.rect(canvas, theme.INFO if window_on else (0, 90, 105), (tx - 16, TROLLEY_Y + 12, 6, 4))
 
-        pygame.draw.rect(canvas, (65, 78, 100), (trolley_x - 28, piston_bottom_y, 56, 18), border_radius=4)
+        # Telescoping arm: three nested sections, widest at the carriage
+        length = max(1, gy - ARM_ROOT_Y)
+        sections = (
+            (22, ARM_ROOT_Y + max(30, int(length * 0.45))),
+            (16, ARM_ROOT_Y + max(40, int(length * 0.75))),
+            (10, gy),
+        )
+        for width, bottom in sections:
+            bottom = max(bottom, ARM_ROOT_Y + 8)
+            rect = pygame.Rect(tx - width // 2, ARM_ROOT_Y, width, bottom - ARM_ROOT_Y)
+            pygame.draw.rect(canvas, steel, rect)
+            pygame.draw.line(canvas, steel_hi, (rect.left + 1, rect.top), (rect.left + 1, rect.bottom), 1)
+            pygame.draw.line(canvas, steel_dark, (rect.right - 1, rect.top), (rect.right - 1, rect.bottom), 1)
+            pygame.draw.rect(canvas, steel_dark, (rect.left - 2, rect.bottom - 4, rect.w + 4, 4))
 
-        if not self.bomb_attached and piston_bottom_y < 360:
-            bomb_y = piston_bottom_y + 18
-            pygame.draw.ellipse(canvas, (75, 90, 65), (trolley_x - 8, bomb_y, 16, 36))
-            pygame.draw.polygon(canvas, (55, 68, 48), [
-                (trolley_x - 12, bomb_y + 26),
-                (trolley_x + 12, bomb_y + 26),
-                (trolley_x, bomb_y + 36),
+        # Gripper plate with two clamp jaws that open to release the round
+        plate = pygame.Rect(tx - 30, gy, 60, 10)
+        pygame.draw.rect(canvas, (65, 78, 100), plate)
+        pygame.draw.rect(canvas, theme.BORDER_STRONG, plate, 1)
+        gap = 8 + int(12 * grip_open)
+        for sign in (-1, 1):
+            inner, outer = tx + sign * gap, tx + sign * (gap + 6)
+            pygame.draw.polygon(canvas, steel_hi, [
+                (inner, gy + 10), (outer, gy + 10), (outer, gy + 32), (inner + sign * -1, gy + 36),
             ])
-            pygame.draw.line(canvas, (255, 210, 20), (trolley_x - 8, bomb_y + 10), (trolley_x + 8, bomb_y + 10), 3)
+        lamp = theme.SUCCESS if grip_open < 0.05 else theme.WARNING
+        pygame.draw.rect(canvas, lamp, (tx - 3, gy + 3, 6, 4))
 
-        pygame.draw.line(canvas, (230, 175, 20), (trolley_x - 22, piston_bottom_y + 10), (trolley_x - 12, piston_bottom_y + 30), 4)
-        pygame.draw.line(canvas, (230, 175, 20), (trolley_x + 22, piston_bottom_y + 10), (trolley_x + 12, piston_bottom_y + 30), 4)
+        if not self.bomb_attached:
+            canvas.blit(self._bomb_surface, (tx - BOMB_W // 2, gy + 14))
+
+    def _draw_wing_arms(self, canvas):
+        """Draw the two articulated pylon service arms that reach the wing roots during servicing."""
+        ext = wing_arm_extension(self.phase_timer)
+        if ext <= 0.01:
+            return
+        steel, steel_hi, steel_dark = (96, 112, 136), (150, 168, 192), (40, 48, 65)
+        l1, l2 = WING_ARM_LINKS
+        flicker = (pygame.time.get_ticks() // 70) % 2 == 0
+        for idx, ((bx, by), (gx, gy)) in enumerate(zip(WING_ARM_BASES, WING_ARM_TIPS)):
+            side = 1 if idx == 0 else -1
+            rest_x, rest_y = bx + side * 40, by - 20
+            tip_x = rest_x + (gx - rest_x) * ext
+            tip_y = rest_y + (gy - rest_y) * ext
+            elbow_x, elbow_y = _two_link_elbow(bx, by, tip_x, tip_y, l1, l2, -1 if idx == 0 else 1)
+            base, elbow, tip = (int(bx), int(by)), (int(elbow_x), int(elbow_y)), (int(tip_x), int(tip_y))
+            pygame.draw.rect(canvas, steel_dark, (bx - 12, by - 9, 24, 18))
+            pygame.draw.rect(canvas, theme.BORDER_STRONG, (bx - 12, by - 9, 24, 18), 1)
+            pygame.draw.line(canvas, steel_dark, base, elbow, 11)
+            pygame.draw.line(canvas, steel, base, elbow, 7)
+            pygame.draw.line(canvas, steel_dark, elbow, tip, 9)
+            pygame.draw.line(canvas, steel_hi, elbow, tip, 5)
+            pygame.draw.rect(canvas, (230, 175, 20), (elbow[0] - 5, elbow[1] - 5, 10, 10))
+            pygame.draw.rect(canvas, steel_dark, (elbow[0] - 5, elbow[1] - 5, 10, 10), 1)
+            pygame.draw.rect(canvas, steel_dark, (tip[0] - 6, tip[1] - 6, 12, 12))
+            pygame.draw.rect(canvas, theme.INFO, (tip[0] - 3, tip[1] - 3, 6, 6))
+            if ext > 0.95 and flicker:
+                pygame.draw.circle(canvas, (255, 240, 180), tip, 4)
+
+    def _draw_airframe_scan(self, canvas):
+        """Draw the cyan scan brackets and sweep line around the docked Eagle-1 (green once serviced)."""
+        t = self.phase_timer
+        done = t >= REARM_STEPS[-1][2]
+        color = theme.SUCCESS if done else theme.INFO
+        box = pygame.Rect(SHIP_CX - 46, SHIP_CY - 46, 92, 92)
+        widgets.draw_brackets(canvas, box, color, length=12, thickness=1)
+        if not done:
+            sweep_y = box.top + int(((t * 0.7) % 1.0) * box.h)
+            pygame.draw.line(canvas, color, (box.left + 4, sweep_y), (box.right - 4, sweep_y), 1)
+        if self.font_small:
+            label = "AIRFRAME SYSTEMS NOMINAL" if done else "AIRFRAME SCAN // RUNNING"
+            surf = self._text_cache.render(self.font_small, label, color)
+            canvas.blit(surf, (SHIP_CX - surf.get_width() // 2, box.bottom + 8))
+
+    def _draw_rearm_checklist(self, canvas):
+        """Draw the rearm sequence checklist between the service pad and the arcade terminal."""
+        if not (self.font_small and self.font_med):
+            return
+        panel = pygame.Rect(PAD_X + PAD_W + 18, PAD_Y + 10, 168, 30 + 26 * len(REARM_STEPS))
+        widgets.draw_panel(canvas, panel, theme.PANEL, theme.BORDER, theme.ACCENT)
+        cache = self._text_cache
+        head = cache.render(self.font_small, "REARM SEQUENCE", theme.ACCENT)
+        canvas.blit(head, (panel.x + 12, panel.y + 8))
+        for row, (label, start, done) in enumerate(REARM_STEPS):
+            if self.phase_timer >= done:
+                status, color = "OK", theme.SUCCESS
+            elif self.phase_timer >= start:
+                status, color = "RUN", theme.INFO
+            else:
+                status, color = "WAIT", theme.TEXT_DISABLED
+            y = panel.y + 34 + row * 26
+            name = cache.render(self.font_small, label, theme.TEXT if status != "WAIT" else theme.TEXT_DISABLED)
+            state = cache.render(self.font_small, status, color)
+            canvas.blit(name, (panel.x + 12, y))
+            canvas.blit(state, (panel.right - 12 - state.get_width(), y))
+            pygame.draw.line(canvas, theme.BORDER, (panel.x + 12, y + 20), (panel.right - 12, y + 20), 1)
 
     def _draw_stratagem_hero_terminal(self, canvas):
         """Draws the arcade cabinet running Stratagem Hero."""
