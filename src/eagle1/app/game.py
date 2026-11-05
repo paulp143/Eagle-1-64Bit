@@ -566,7 +566,7 @@ powerup_manager = PowerUpManager()
 ground_support_manager = GroundSupportManager()
 help_menu = HelpMenu(GAME_WIDTH, GAME_HEIGHT)
 settings_menu = SettingsMenu(GAME_WIDTH, GAME_HEIGHT)
-debriefing_screen = DebriefingScreen(GAME_WIDTH, GAME_HEIGHT)
+debriefing_screen = DebriefingScreen(GAME_WIDTH, GAME_HEIGHT, audio_manager=audio_manager)
 enlistment_screen = EnlistmentScreen(GAME_WIDTH, GAME_HEIGHT)
 academy_manager = AcademyTutorialManager()
 previous_game_state = "main_menu"

@@ -6,6 +6,9 @@ Style guide:
 - Accent = Super-Earth yellow (focus, titles, brackets). Info = cyan.
 - Labels are UPPERCASE; numbers and data use the mono role.
 - Minimum font size is 12 px.
+- Glyph support: Chakra Petch (display/heading/body) contains ▲ ▼ ▶ ◀ — • · … ° ±. It does NOT contain
+  ◄ ► ★ ✖ ✚ ⚠. Share Tech Mono (mono) contains no arrows or symbols at all. Never render the missing
+  glyphs (they show up as tofu boxes); use ARROW_GLYPHS with a heading/body font, or draw shapes.
 - Fonts are created only through ``get_font`` / ``load_font`` and only at init time,
   never inside draw/render/update paths. Static text is rendered once (see widgets.TextCache).
 """
@@ -76,6 +79,9 @@ TYPE_SCALE: Dict[str, Tuple[str, int]] = {
     "mono_tiny": (ROLE_MONO, 12),
 }
 MIN_FONT_SIZE = 12
+
+# Direction glyphs available in the Chakra Petch fonts (not in the mono font).
+ARROW_GLYPHS: Dict[str, str] = {"UP": "▲", "DOWN": "▼", "LEFT": "◀", "RIGHT": "▶"}
 
 # --- Shape metrics ---------------------------------------------------------
 BRACKET_LENGTH = 14

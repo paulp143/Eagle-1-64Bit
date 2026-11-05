@@ -1785,7 +1785,7 @@ class StratagemSelectMenu:
                 surf = cache.render(font_body, line, theme.TEXT_MUTED)
                 surface.blit(surf, (rect.x + 10, rect.y + 98 + line_idx * step))
 
-            hint = "ENTER: UNEQUIP ✖" if is_selected else "ENTER: EQUIP ✚"
+            hint = "ENTER: UNEQUIP" if is_selected else "ENTER: EQUIP"
             act_txt = cache.render(font_small, hint, theme.DANGER if is_selected else theme.INFO)
             surface.blit(act_txt, (rect.centerx - act_txt.get_width() // 2, rect.bottom - 22))
 

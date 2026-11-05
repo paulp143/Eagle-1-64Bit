@@ -13,7 +13,11 @@ BUNDLED_FONTS = [
     "ShareTechMono-Regular.ttf",
 ]
 LICENSE_FILES = ["OFL-ChakraPetch.txt", "OFL-ShareTechMono.txt"]
-UI_GLYPHS = "▲▼◄►★✖✚▶◀⚠—•·…"
+# Glyphs the UI relies on per font. Missing glyphs render as the identical "notdef" box, so coverage
+# is verified by comparing renderings (pygame's metrics() also answers for missing glyphs).
+CHAKRA_GLYPHS = "▲▼▶◀—•·…°±"
+MONO_GLYPHS = "—•·…°±"
+UNSUPPORTED_GLYPHS = "◄►★✖✚⚠"
 
 
 @pytest.mark.parametrize("name", BUNDLED_FONTS + LICENSE_FILES)
@@ -23,10 +27,24 @@ def test_bundled_font_files_exist(name):
     assert path.stat().st_size > 1000
 
 
+def _render_signature(font, char):
+    surf = font.render(char, False, (255, 255, 255))
+    return surf.get_size(), pygame.image.tobytes(surf, "RGBA")
+
+
 @pytest.mark.parametrize("name", BUNDLED_FONTS)
 def test_bundled_fonts_cover_ui_glyphs(name):
-    font = pygame.font.Font(str(FONTS_DIR / name), 16)
-    assert None not in font.metrics(UI_GLYPHS)
+    font = pygame.font.Font(str(FONTS_DIR / name), 24)
+    notdefs = {_render_signature(font, "\U0010FFFF"), _render_signature(font, "\uE000")}
+    wanted = MONO_GLYPHS if name.startswith("ShareTech") else CHAKRA_GLYPHS
+    missing = [c for c in wanted if _render_signature(font, c) in notdefs]
+    assert missing == []
+
+
+def test_unsupported_glyphs_are_really_missing_so_the_guard_stays_meaningful():
+    font = pygame.font.Font(str(FONTS_DIR / "ChakraPetch-Regular.ttf"), 24)
+    notdefs = {_render_signature(font, "\U0010FFFF"), _render_signature(font, "\uE000")}
+    assert all(_render_signature(font, c) in notdefs for c in UNSUPPORTED_GLYPHS)
 
 
 @pytest.fixture(autouse=True)
