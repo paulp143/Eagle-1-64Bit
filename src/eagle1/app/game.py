@@ -981,106 +981,50 @@ def _refresh_main_menu_profile_state():
     _menu_profile_state["callsign"] = profile_manager.load_profile().username.upper() if has_profile else ""
 
 
-pause_title_box = TextBox(
-    "Pause",
-    font,
-    bg_color=(30, 35, 50),
-    padding=(30, 14),
-    border_radius=8,
-    centerx=GAME_WIDTH/2,
-    bottom=GAME_HEIGHT*0.2
+# --- Pause menu & game-over screen (Military Terminal) ---
+pause_panel_rect = pygame.Rect(GAME_WIDTH // 2 - 220, 170, 440, 380)
+gameover_panel_rect = pygame.Rect(GAME_WIDTH // 2 - 220, 170, 440, 360)
+
+
+def _panel_button(panel, y, text, hotkey, variant="secondary"):
+    return MenuButton(
+        text,
+        pygame.Rect(panel.x + 36, y, panel.w - 72, 48),
+        hotkey=hotkey,
+        variant=variant,
+        on_sfx=audio_manager.play_sfx,
+        text_cache=ui_text_cache,
+    )
+
+
+pause_continue_box = _panel_button(pause_panel_rect, 260, "RESUME", "P", VARIANT_PRIMARY)
+pause_help_box = _panel_button(pause_panel_rect, 320, "TACTICAL MANUAL", "H")
+pause_settings_box = _panel_button(pause_panel_rect, 380, "SETTINGS", "O")
+pause_menu_box = _panel_button(pause_panel_rect, 440, "ABORT TO MAIN MENU", "ESC", VARIANT_DANGER)
+PAUSE_ACTIONS = ("resume", "help", "settings", "main_menu")
+pause_nav = MenuNavigator(
+    [pause_continue_box, pause_help_box, pause_settings_box, pause_menu_box],
+    wrap=True,
+    on_sfx=audio_manager.play_sfx,
 )
 
-pause_continue_box = TextBox(
-    "To continue press P",
-    font,
-    bg_color=(20, 25, 35),
-    hover_bg_color=(40, 60, 100),
-    border_color=(80, 100, 140),
-    hover_border_color=(0, 200, 255),
-    padding=(30, 16),
-    border_radius=8,
-    centerx=GAME_WIDTH/2,
-    bottom=GAME_HEIGHT*0.48
+gameover_respawn_box = _panel_button(gameover_panel_rect, 280, "RESPAWN", "R", VARIANT_PRIMARY)
+gameover_help_box = _panel_button(gameover_panel_rect, 340, "TACTICAL MANUAL", "H")
+gameover_lobby_box = _panel_button(gameover_panel_rect, 400, "MAIN MENU", "SPACE", VARIANT_DANGER)
+GAMEOVER_ACTIONS = ("respawn", "help", "main_menu")
+gameover_nav = MenuNavigator(
+    [gameover_respawn_box, gameover_help_box, gameover_lobby_box],
+    wrap=True,
+    on_sfx=audio_manager.play_sfx,
 )
 
-pause_help_box = TextBox(
-    "Help & Weapons Guide: Press H",
-    font,
-    bg_color=(20, 25, 35),
-    hover_bg_color=(20, 70, 110),
-    border_color=(80, 100, 140),
-    hover_border_color=(0, 220, 255),
-    padding=(28, 14),
-    border_radius=8,
-    centerx=GAME_WIDTH/2,
-    bottom=GAME_HEIGHT*0.48+60
-)
-
-pause_settings_box = TextBox(
-    "Settings & Audio: Press O",
-    font,
-    bg_color=(20, 25, 35),
-    hover_bg_color=(20, 70, 110),
-    border_color=(80, 100, 140),
-    hover_border_color=(0, 220, 255),
-    padding=(28, 14),
-    border_radius=8,
-    centerx=GAME_WIDTH/2,
-    bottom=GAME_HEIGHT*0.48+120
-)
-
-pause_menu_box = TextBox(
-    "To return to main menu press ESC",
-    font,
-    bg_color=(20, 25, 35),
-    hover_bg_color=(40, 60, 100),
-    border_color=(80, 100, 140),
-    hover_border_color=(0, 200, 255),
-    padding=(30, 16),
-    border_radius=8,
-    centerx=GAME_WIDTH/2,
-    bottom=GAME_HEIGHT*0.48+180
-)
-
-gameover_respawn_box = TextBox(
-    "Press R to Respawn",
-    font,
-    bg_color=(20, 25, 35),
-    hover_bg_color=(30, 80, 45),
-    border_color=(80, 100, 140),
-    hover_border_color=(0, 255, 120),
-    padding=(30, 16),
-    border_radius=8,
-    centerx=GAME_WIDTH/2,
-    bottom=GAME_HEIGHT/2 - 25
-)
-
-gameover_help_box = TextBox(
-    "Press H for Help & Weapons Guide",
-    font,
-    bg_color=(20, 25, 35),
-    hover_bg_color=(20, 70, 110),
-    border_color=(80, 100, 140),
-    hover_border_color=(0, 220, 255),
-    padding=(26, 14),
-    border_radius=8,
-    centerx=GAME_WIDTH/2,
-    bottom=GAME_HEIGHT/2 + 35
-)
-
-gameover_lobby_box = TextBox(
-    "Press SPACE to go back to the Main Menu",
-    font,
-    bg_color=(20, 25, 35),
-    hover_bg_color=(40, 60, 100),
-    border_color=(80, 100, 140),
-    hover_border_color=(0, 200, 255),
-    padding=(30, 16),
-    border_radius=8,
-    centerx=GAME_WIDTH/2,
-    bottom=GAME_HEIGHT/2 + 95
-)
+pause_dim_overlay = widgets.make_overlay((GAME_WIDTH, GAME_HEIGHT), theme.OVERLAY_LIGHT_RGBA)
+# Frozen gameplay frame shown behind the pause menu (same RGBX format as the canvas).
+pause_snapshot_surf = pygame.Surface((GAME_WIDTH, GAME_HEIGHT), 0, 32, (0x00FF0000, 0x0000FF00, 0x000000FF, 0))
+_pause_snapshot_valid = False
+pause_title_surf = (theme.get_font("title") or font).render("OPERATION PAUSED", True, theme.ACCENT)
+gameover_title_surf = (theme.get_font("display") or title_font).render("SIGNAL LOST", True, theme.DANGER)
+gameover_sub_surf = _mono_small_font.render("EAGLE-1 HAS GONE DOWN", True, theme.TEXT_MUTED)
 
 score_box = TextBox("Score: 0", font, centerx=GAME_WIDTH//2, bottom=GAME_HEIGHT-10)
 highscore_box = TextBox("highscore: 0", font, centerx=GAME_WIDTH//2, bottom=GAME_HEIGHT-30)
@@ -2418,17 +2362,20 @@ def main_menu(mouse_pos=None):
 
 
 def pause_menu(mouse_pos=None):
-    canvas.fill((0, 0, 0))
-    canvas.blit(backround_image, (0, 0))
-
-    pause_title_box.draw(canvas, mouse_pos)
-    pause_continue_box.draw(canvas, mouse_pos)
-    pause_help_box.draw(canvas, mouse_pos)
-    pause_settings_box.draw(canvas, mouse_pos)
-    pause_menu_box.draw(canvas, mouse_pos)
+    global _pause_snapshot_valid
+    if not _pause_snapshot_valid:
+        pause_snapshot_surf.blit(canvas, (0, 0))
+        _pause_snapshot_valid = True
+    canvas.blit(pause_snapshot_surf, (0, 0))
+    canvas.blit(pause_dim_overlay, (0, 0))
+    widgets.draw_panel(canvas, pause_panel_rect)
+    canvas.blit(pause_title_surf, (pause_panel_rect.centerx - pause_title_surf.get_width() // 2, 196))
+    pause_nav.draw(canvas, mouse_pos)
 
 
 def draw(mouse_pos=None):
+    global _pause_snapshot_valid
+    _pause_snapshot_valid = False
     canvas.fill((0, 0, 0))
 
     # Calculate camera offset bounded to map dimensions
@@ -2469,10 +2416,12 @@ def draw(mouse_pos=None):
     pygame.draw.rect(canvas, (255, 60, 60), border_rect, 4)
 
     if player.health <= 0:
-        gameover_respawn_box.draw(canvas, mouse_pos)
-        gameover_help_box.draw(canvas, mouse_pos)
-        gameover_lobby_box.draw(canvas, mouse_pos)
-        
+        canvas.blit(pause_dim_overlay, (0, 0))
+        widgets.draw_panel(canvas, gameover_panel_rect, accent=theme.DANGER)
+        canvas.blit(gameover_title_surf, (gameover_panel_rect.centerx - gameover_title_surf.get_width() // 2, 196))
+        canvas.blit(gameover_sub_surf, (gameover_panel_rect.centerx - gameover_sub_surf.get_width() // 2, 244))
+        gameover_nav.draw(canvas, mouse_pos)
+
     else:
         # Draw ground support world entities (Helldivers, obstacles, beacon, airstrikes, supply pods)
         ground_support_manager.draw_world_entities(canvas, camera_x, camera_y, hud_small_font)
@@ -3098,6 +3047,34 @@ def activate_main_menu_action(action):
     return False
 
 
+def activate_pause_action(action):
+    """Run a pause-menu action."""
+    global game_state, previous_game_state
+    if action == "resume":
+        game_state = ""
+    elif action == "help":
+        previous_game_state = "pause_menu"
+        game_state = "help_menu"
+    elif action == "settings":
+        previous_game_state = "pause_menu"
+        settings_menu.sync_from_manager()
+        game_state = "settings_menu"
+    elif action == "main_menu":
+        return_to_main_menu()
+
+
+def activate_gameover_action(action):
+    """Run a game-over screen action."""
+    global game_state, previous_game_state
+    if action == "respawn":
+        respawn()
+    elif action == "help":
+        previous_game_state = ""
+        game_state = "help_menu"
+    elif action == "main_menu":
+        return_to_main_menu()
+
+
 def show_menu_toast(text, duration_ms=1500):
     """Show a short status message in the main menu (e.g. mute feedback)."""
     global menu_toast_text, menu_toast_until
@@ -3178,6 +3155,10 @@ def run_game():
                     enlistment_screen.handle_event(event, canvas_mouse_pos)
                 elif game_state == "main_menu":
                     main_menu_nav.handle_event(event, canvas_mouse_pos)
+                elif game_state == "pause_menu":
+                    pause_nav.handle_event(event, canvas_mouse_pos)
+                elif game_state == "" and player.health <= 0:
+                    gameover_nav.handle_event(event, canvas_mouse_pos)
                 elif game_state == "super_destroyer":
                     super_destroyer_view.handle_event(event, canvas_mouse_pos)
 
@@ -3227,17 +3208,9 @@ def run_game():
                         game_state = ""
 
                 elif game_state == "pause_menu":
-                    if pause_continue_box.is_clicked(event, canvas_mouse_pos):
-                        game_state = ""
-                    elif pause_help_box.is_clicked(event, canvas_mouse_pos):
-                        previous_game_state = "pause_menu"
-                        game_state = "help_menu"
-                    elif pause_settings_box.is_clicked(event, canvas_mouse_pos):
-                        previous_game_state = "pause_menu"
-                        settings_menu.sync_from_manager()
-                        game_state = "settings_menu"
-                    elif pause_menu_box.is_clicked(event, canvas_mouse_pos):
-                        return_to_main_menu()
+                    idx = pause_nav.handle_event(event, canvas_mouse_pos)
+                    if idx is not None:
+                        activate_pause_action(PAUSE_ACTIONS[idx])
 
                 elif game_state == "mission_debriefing":
                     action = debriefing_screen.handle_event(event, canvas_mouse_pos)
@@ -3264,13 +3237,9 @@ def run_game():
 
                 elif game_state == "":
                     if player.health <= 0:
-                        if gameover_respawn_box.is_clicked(event, canvas_mouse_pos):
-                            respawn()
-                        elif gameover_help_box.is_clicked(event, canvas_mouse_pos):
-                            previous_game_state = ""
-                            game_state = "help_menu"
-                        elif gameover_lobby_box.is_clicked(event, canvas_mouse_pos):
-                            return_to_main_menu()
+                        idx = gameover_nav.handle_event(event, canvas_mouse_pos)
+                        if idx is not None:
+                            activate_gameover_action(GAMEOVER_ACTIONS[idx])
                     else:
                         if ground_support_manager.weapon_menu.is_open:
                             ground_support_manager.weapon_menu.handle_event(event, canvas_mouse_pos)
@@ -3382,7 +3351,10 @@ def run_game():
                 
                 
                 elif game_state == "pause_menu":
-                    if event.key == pygame.K_p:
+                    pause_idx = pause_nav.handle_event(event, canvas_mouse_pos)
+                    if pause_idx is not None:
+                        activate_pause_action(PAUSE_ACTIONS[pause_idx])
+                    elif event.key == pygame.K_p:
                         game_state = ""
                     elif event.key == pygame.K_h:
                         previous_game_state = "pause_menu"
@@ -3427,7 +3399,12 @@ def run_game():
 
                 elif game_state == "":
                     if player.health <= 0:
-                        if event.key == pygame.K_r:
+                        go_idx = gameover_nav.handle_event(event, canvas_mouse_pos)
+                        if go_idx is not None:
+                            activate_gameover_action(GAMEOVER_ACTIONS[go_idx])
+                        elif event.key == pygame.K_m:
+                            audio_manager.toggle_mute()
+                        elif event.key == pygame.K_r:
                             respawn()
                         elif event.key == pygame.K_h:
                             previous_game_state = ""
@@ -3643,10 +3620,6 @@ def run_game():
                         draw(canvas_mouse_pos)
             else:
                 draw(canvas_mouse_pos)
-                if (keys[pygame.K_m]):
-                    is_muted = audio_manager.toggle_mute()
-                    status_str = "MUTED" if is_muted else "UNMUTED"
-                    ground_support_manager.add_combat_popup(f"AUDIO {status_str}", player.pos_x, player.pos_y, (255, 80, 80) if is_muted else (80, 255, 120))
 
         # Background Music & Engine Audio Loop Updates
         if game_state in ("main_menu", "mission_select", "stratagem_select", "mission_debriefing", "super_destroyer"):
