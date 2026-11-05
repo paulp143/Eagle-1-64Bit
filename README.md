@@ -387,8 +387,8 @@ Access the interactive in-game tactical manual at any time by pressing **`H`**. 
 
 | Action | Primary Key | Secondary Key | Applicable State |
 | :--- | :--- | :--- | :--- |
-| **Start Game** | `Left Shift` | `Right Shift` or Click `PLAY` | Main Menu |
-| **Reset Highscore** | `L-Shift + R-Shift + R` (Hold) | — | Main Menu |
+| **Start New Game** | `N` | Click `NEW GAME` | Main Menu |
+| **Continue Campaign** | `C` | Click `CONTINUE` | Main Menu (active service record) |
 | **Steer Left (Counter-Clockwise)** | `A` | `Left Arrow` | Active Gameplay |
 | **Steer Right (Clockwise)** | `D` | `Right Arrow` | Active Gameplay |
 | **Accelerate / Increase Speed** | `W` | `Up Arrow` | Active Gameplay |
@@ -417,15 +417,15 @@ Access the interactive in-game tactical manual at any time by pressing **`H`**. 
 | **Focus NPC / Talk** | `Tab` cycles NPC cards, `E` talks to the focused NPC | Click NPC Card | Super Destroyer Hub Deck |
 | **Choose Dialogue Option (keyboard)** | `Up` / `Down` then `Enter` | `1` / `2` / `3` | Super Destroyer NPC Dialogue |
 | **Pause Game** | `P` | — | Active Gameplay |
-| **Resume Game** | `P` | Click `CONTINUE` | Pause Menu |
-| **Return to Main Menu** | `Escape` (`ESC`) | Click `MAIN MENU` | Pause Menu |
+| **Resume Game** | `P` | Click `RESUME` | Pause Menu |
+| **Return to Main Menu** | `Escape` (`ESC`) | Click `ABORT TO MAIN MENU` | Pause Menu |
 | **Close Help / Settings / Weapon Menu** | `Escape` (`ESC`) | Click `X` / close button | In Menus |
 | **Respawn** | `R` | Click `RESPAWN` | Game Over (`Health <= 0`) |
 | **Return to Main Menu** | `Spacebar` | Click `MAIN MENU` | Game Over (`Health <= 0`) |
 | **Cycle Hub Deck Zones** | `A` / `D` | `Left` / `Right Arrow` | Super Destroyer Hub Deck |
 | **Select Dialogue Stance Option** | `1` / `2` / `3` | Click Stance Card | Super Destroyer NPC Dialogue |
 | **Close Dialogue / Exit to Menu** | `Escape` (`ESC`) | Click `CLOSE` | Super Destroyer Hub Deck |
-| **Catapult Launch Sortie** | `Spacebar` / `F` | Click `LAUNCH SORTIE` | Super Destroyer Hangar Deck |
+| **Catapult Launch Sortie** | `L` / `F` | Click the catapult launch button | Super Destroyer Hangar Deck |
 | **Return to Super Destroyer Hub** | `H` / `Enter` | Click `RETURN TO HUB` | Mission Debriefing Screen |
 ## Game Audio & Extensible Settings Architecture
 
