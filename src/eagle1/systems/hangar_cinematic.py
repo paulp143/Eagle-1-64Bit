@@ -12,6 +12,7 @@ import random
 import pygame
 
 from eagle1.paths import get_user_data_dir
+from eagle1.ui import theme, widgets
 
 
 # Rearm Phases
@@ -43,12 +44,8 @@ HERO_STRATAGEM_SEQUENCES = [
     ("SMOKE SCREEN", ["DOWN", "UP", "DOWN", "UP"]),
 ]
 
-ARROW_SYMBOLS = {
-    "UP": "▲",
-    "DOWN": "▼",
-    "LEFT": "◄",
-    "RIGHT": "►",
-}
+# Direction glyphs supported by the bundled Chakra Petch fonts (see eagle1.ui.theme).
+ARROW_SYMBOLS = dict(theme.ARROW_GLYPHS)
 
 
 def _get_audio():
@@ -150,25 +147,28 @@ class SuperDestroyerManager:
             pass
 
     def _init_fonts(self):
-        """Initializes and caches UI fonts."""
-        if not pygame.font.get_init():
-            try:
-                pygame.font.init()
-            except Exception:
-                return
-
-        try:
-            self.font_title = pygame.font.SysFont("impact,arial", 28) or pygame.font.Font(None, 34)
-            self.font_large = pygame.font.SysFont("consolas,menlo,monaco,courier,arial", 22, bold=True) or pygame.font.Font(None, 28)
-            self.font_med = pygame.font.SysFont("consolas,menlo,monaco,courier,arial", 16, bold=True) or pygame.font.Font(None, 20)
-            self.font_small = pygame.font.SysFont("consolas,menlo,monaco,courier,arial", 13) or pygame.font.Font(None, 16)
-            self.font_arrow = pygame.font.SysFont("segoeuisymbol,applesymbols,arial,symbol", 24, bold=True) or pygame.font.Font(None, 30)
-        except Exception:
-            self.font_title = pygame.font.Font(None, 32)
-            self.font_large = pygame.font.Font(None, 26)
-            self.font_med = pygame.font.Font(None, 20)
-            self.font_small = pygame.font.Font(None, 16)
-            self.font_arrow = pygame.font.Font(None, 28)
+        """Fetch the cached theme fonts and pre-render all static terminal text."""
+        self.font_title = theme.get_font("title")
+        self.font_large = theme.get_font("heading")
+        self.font_med = theme.get_font("mono")
+        self.font_small = theme.get_font("mono_small")
+        self.font_arrow = theme.get_font("title")
+        self._text_cache = widgets.TextCache(256)
+        self._marquee_variants = []
+        self._static_texts = {}
+        if self.font_title:
+            for i in range(8):
+                color = theme.lerp_color(theme.WARNING, theme.ACCENT, i / 7.0)
+                self._marquee_variants.append(self.font_title.render("// STRATAGEM HERO //", True, color))
+        if self.font_small:
+            self._static_texts["hint"] = self.font_small.render("USE ARROW KEYS TO DECODE", True, theme.TEXT_MUTED)
+        if self.font_med:
+            self._static_texts["status_left"] = self.font_med.render(
+                "SES SUPER DESTROYER // REARM DECK 04", True, theme.ACCENT
+            )
+            self._static_texts["status_right"] = self.font_med.render(
+                "BATTLEFIELD SIMULATION FROZEN // SQUAD IN STANDBY", True, theme.SUCCESS
+            )
 
     def _init_starfield(self):
         """Generates static background starfield for orbital view."""
@@ -281,10 +281,24 @@ class SuperDestroyerManager:
         self.hangar_bg_surface = bg
 
         # CRT Scanline Surface for Arcade Cabinet
-        scan_surf = pygame.Surface((440, 530), pygame.SRCALPHA)
-        for sy in range(0, 530, 4):
-            pygame.draw.line(scan_surf, (0, 0, 0, 45), (0, sy), (440, sy), 1)
+        scan_w, scan_h = 440 - 32, 530 - 92  # exactly the CRT rect of the terminal
+        scan_surf = pygame.Surface((scan_w, scan_h), pygame.SRCALPHA)
+        for sy in range(0, scan_h, 4):
+            pygame.draw.line(scan_surf, (0, 0, 0, 45), (0, sy), (scan_w, sy), 1)
         self.crt_scanline_surface = scan_surf
+
+        # Pre-rendered steam puffs per integer radius (alpha applied per blit) and descent plasma discs
+        self._puff_surfaces = {}
+        for radius in range(1, 42):
+            puff = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
+            pygame.draw.circle(puff, (220, 230, 240, 255), (radius, radius), radius)
+            self._puff_surfaces[radius] = puff
+        self._plasma_surfaces = []
+        for radius, col in zip([36, 26, 16], [(255, 60, 20, 120), (255, 160, 30, 160), (255, 240, 120, 200)]):
+            disc = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
+            pygame.draw.circle(disc, col, (radius, radius), radius)
+            self._plasma_surfaces.append((radius, disc))
+        self._eagle_scaled_cache = {}
 
         # Volumetric Floodlights Surface
         flood = pygame.Surface((self.screen_w, self.screen_h), pygame.SRCALPHA)
@@ -647,10 +661,10 @@ class SuperDestroyerManager:
         self._draw_rearm_robotics(canvas, ship_cx)
 
         for stm in self.steam_particles:
-            steam_surf = pygame.Surface((int(stm["current_radius"] * 2), int(stm["current_radius"] * 2)), pygame.SRCALPHA)
-            pygame.draw.circle(steam_surf, (220, 230, 240, max(0, min(255, stm["current_alpha"]))),
-                               (int(stm["current_radius"]), int(stm["current_radius"])), int(stm["current_radius"]))
-            canvas.blit(steam_surf, (int(stm["x"] - stm["current_radius"]), int(stm["y"] - stm["current_radius"])))
+            radius = max(1, min(41, int(stm["current_radius"])))
+            puff = self._puff_surfaces[radius]
+            puff.set_alpha(max(0, min(255, stm["current_alpha"])))
+            canvas.blit(puff, (int(stm["x"] - radius), int(stm["y"] - radius)))
 
         for spk in self.spark_particles:
             pygame.draw.circle(canvas, spk["color"], (int(spk["x"]), int(spk["y"])), 2)
@@ -666,7 +680,10 @@ class SuperDestroyerManager:
     def _draw_docked_eagle(self, canvas, cx, cy, player):
         """Draws the docked Eagle-1 aircraft on the hydraulic lift."""
         if player and getattr(player, "original_image", None):
-            scaled_img = pygame.transform.scale(player.original_image, (72, 72))
+            scaled_img = self._eagle_scaled_cache.get(id(player.original_image))
+            if scaled_img is None:
+                scaled_img = pygame.transform.scale(player.original_image, (72, 72))
+                self._eagle_scaled_cache[id(player.original_image)] = scaled_img
             img_rect = scaled_img.get_rect(center=(cx, cy))
             canvas.blit(scaled_img, img_rect.topleft)
         else:
@@ -713,48 +730,42 @@ class SuperDestroyerManager:
     def _draw_stratagem_hero_terminal(self, canvas):
         """Draws the arcade cabinet running Stratagem Hero."""
         tx, ty, tw, th = 780, 100, 440, 530
+        cache = self._text_cache
 
-        pygame.draw.rect(canvas, (16, 20, 30), (tx, ty, tw, th), border_radius=12)
-        pygame.draw.rect(canvas, (230, 175, 20), (tx, ty, tw, th), 3, border_radius=12)
+        cabinet = pygame.Rect(tx, ty, tw, th)
+        widgets.draw_panel(canvas, cabinet, theme.PANEL, theme.ACCENT, theme.ACCENT)
 
         mq_rect = pygame.Rect(tx + 12, ty + 12, tw - 24, 52)
-        pygame.draw.rect(canvas, (22, 28, 44), mq_rect, border_radius=8)
-        pygame.draw.rect(canvas, (255, 210, 40), mq_rect, 2, border_radius=8)
+        widgets.draw_panel(canvas, mq_rect, theme.PANEL_RAISED, theme.ACCENT_DIM, brackets=False)
 
-        pulse_col = int(210 + 45 * math.sin(pygame.time.get_ticks() * 0.008))
-        if self.font_title:
-            mq_txt = self.font_title.render("★ STRATAGEM HERO ★", True, (255, pulse_col, 50))
-            canvas.blit(mq_txt, (mq_rect.centerx - mq_txt.get_width() // 2, mq_rect.centery - mq_txt.get_height() // 2))
+        if self._marquee_variants:
+            variant = self._marquee_variants[(pygame.time.get_ticks() // 90) % len(self._marquee_variants)]
+            canvas.blit(variant, (mq_rect.centerx - variant.get_width() // 2, mq_rect.centery - variant.get_height() // 2))
 
         crt_rect = pygame.Rect(tx + 16, ty + 76, tw - 32, th - 92)
-        screen_bg = (8, 30, 24) if self.hero_error_flash <= 0.0 else (60, 12, 16)
-        pygame.draw.rect(canvas, screen_bg, crt_rect, border_radius=8)
-        pygame.draw.rect(canvas, (0, 180, 140) if self.hero_error_flash <= 0.0 else (220, 60, 60), crt_rect, 2, border_radius=8)
+        error = self.hero_error_flash > 0.0
+        widgets.draw_panel(
+            canvas, crt_rect, (60, 12, 16) if error else (8, 30, 24),
+            theme.DANGER if error else (0, 180, 140), brackets=False,
+        )
 
         # Rearm Progress & Timer Bar
         rearm_rem = max(0.0, self.total_timer)
-        time_txt_str = f"SUPER DESTROYER REARM: {rearm_rem:04.1f}s"
         if self.font_large:
-            time_txt = self.font_large.render(time_txt_str, True, (255, 220, 70))
-            canvas.blit(time_txt, (crt_rect.centerx - time_txt.get_width() // 2, crt_rect.top + 16))
+            time_txt = cache.render(self.font_large, f"SUPER DESTROYER REARM: {rearm_rem:04.1f}s", theme.ACCENT)
+            canvas.blit(time_txt, (crt_rect.centerx - time_txt.get_width() // 2, crt_rect.top + 12))
 
-        bar_w = crt_rect.width - 40
-        bar_h = 16
-        bx = crt_rect.left + 20
-        by = crt_rect.top + 48
-        pygame.draw.rect(canvas, (18, 40, 36), (bx, by, bar_w, bar_h), border_radius=4)
+        bar_rect = pygame.Rect(crt_rect.left + 20, crt_rect.top + 48, crt_rect.width - 40, 16)
         progress = max(0.0, min(1.0, 1.0 - (self.total_timer / TOTAL_REARM_DURATION)))
-        fill_w = int(bar_w * progress)
-        if fill_w > 0:
-            fill_col = (0, 230, 160) if progress < 0.9 else (255, 200, 50)
-            pygame.draw.rect(canvas, fill_col, (bx, by, fill_w, bar_h), border_radius=4)
-        pygame.draw.rect(canvas, (0, 255, 200), (bx, by, bar_w, bar_h), 1, border_radius=4)
+        widgets.draw_bar(
+            canvas, bar_rect, progress, (0, 230, 160) if progress < 0.9 else theme.ACCENT,
+            bg=(18, 40, 36), border=(0, 255, 200),
+        )
 
         # Stratagem Name Banner
-        strat_y = crt_rect.top + 84
         if self.font_large:
-            sname_txt = self.font_large.render(self.hero_sequence_name, True, (255, 255, 255))
-            canvas.blit(sname_txt, (crt_rect.centerx - sname_txt.get_width() // 2, strat_y))
+            sname_txt = cache.render(self.font_large, self.hero_sequence_name, theme.TEXT)
+            canvas.blit(sname_txt, (crt_rect.centerx - sname_txt.get_width() // 2, crt_rect.top + 80))
 
         # Directional Key Sequence Boxes
         seq_len = len(self.hero_sequence)
@@ -767,40 +778,37 @@ class SuperDestroyerManager:
             k_rect = pygame.Rect(start_ax + s_idx * (box_sz + gap), seq_y, box_sz, box_sz)
 
             if s_idx < self.hero_index:
-                pygame.draw.rect(canvas, (0, 160, 90), k_rect, border_radius=6)
-                pygame.draw.rect(canvas, (0, 255, 160), k_rect, 2, border_radius=6)
-                arrow_col = (255, 255, 255)
+                widgets.draw_panel(canvas, k_rect, (0, 160, 90), (0, 255, 160), brackets=False)
+                arrow_col = theme.TEXT
             elif s_idx == self.hero_index:
                 pulse = int(180 + 75 * math.sin(pygame.time.get_ticks() * 0.016))
-                pygame.draw.rect(canvas, (210, 140, 20), k_rect, border_radius=6)
-                pygame.draw.rect(canvas, (255, pulse, 60), k_rect, 3, border_radius=6)
+                widgets.draw_panel(canvas, k_rect, (210, 140, 20), (255, pulse, 60), brackets=False)
+                pygame.draw.rect(canvas, (255, pulse, 60), k_rect, 3)
                 arrow_col = (255, 255, 200)
             else:
-                pygame.draw.rect(canvas, (20, 36, 42), k_rect, border_radius=6)
-                pygame.draw.rect(canvas, (40, 70, 80), k_rect, 1, border_radius=6)
+                widgets.draw_panel(canvas, k_rect, (20, 36, 42), (40, 70, 80), brackets=False)
                 arrow_col = (100, 140, 150)
 
-            sym = ARROW_SYMBOLS.get(direction, "?")
             if self.font_arrow:
-                sym_txt = self.font_arrow.render(sym, True, arrow_col)
-                canvas.blit(sym_txt, (k_rect.centerx - sym_txt.get_width() // 2, k_rect.centery - sym_txt.get_height() // 2))
+                sym_txt = cache.render(self.font_arrow, ARROW_SYMBOLS.get(direction, "?"), arrow_col)
+                canvas.blit(sym_txt, sym_txt.get_rect(center=k_rect.center))
 
         # Combo Score & All-Time High Score
         stats_y = crt_rect.top + 210
         if self.font_large:
-            score_txt = self.font_large.render(f"COMBO SCORE: {self.hero_score:04d} PTS", True, (0, 240, 220))
+            score_txt = cache.render(self.font_large, f"COMBO SCORE: {self.hero_score:04d} PTS", (0, 240, 220))
             canvas.blit(score_txt, (crt_rect.centerx - score_txt.get_width() // 2, stats_y))
 
         if self.font_med:
-            best_txt = self.font_med.render(f"PERSONAL BEST: {self.hero_highscore:04d} PTS", True, (255, 210, 80))
+            best_txt = cache.render(self.font_med, f"PERSONAL BEST: {self.hero_highscore:04d} PTS", theme.ACCENT)
             canvas.blit(best_txt, (crt_rect.centerx - best_txt.get_width() // 2, stats_y + 34))
 
         if self.hero_feedback_timer > 0.0 and self.font_large:
-            fb_txt = self.font_large.render(self.hero_feedback_text, True, self.hero_feedback_color)
+            fb_txt = cache.render(self.font_large, self.hero_feedback_text, self.hero_feedback_color)
             canvas.blit(fb_txt, (crt_rect.centerx - fb_txt.get_width() // 2, stats_y + 78))
 
-        if self.font_small:
-            hint_txt = self.font_small.render("USE ARROW KEYS [ ▲  ▼  ◄  ► ] TO DECODE", True, (120, 180, 170))
+        hint_txt = self._static_texts.get("hint")
+        if hint_txt is not None:
             canvas.blit(hint_txt, (crt_rect.centerx - hint_txt.get_width() // 2, crt_rect.bottom - 28))
 
         if self.crt_scanline_surface:
@@ -809,15 +817,15 @@ class SuperDestroyerManager:
     def _draw_status_bar(self, canvas):
         """Draws the bottom tactical operational status banner."""
         bar_y = self.screen_h - 40
-        pygame.draw.rect(canvas, (14, 18, 26), (0, bar_y, self.screen_w, 40))
-        pygame.draw.line(canvas, (230, 175, 20), (0, bar_y), (self.screen_w, bar_y), 2)
+        pygame.draw.rect(canvas, theme.PANEL, (0, bar_y, self.screen_w, 40))
+        pygame.draw.line(canvas, theme.ACCENT, (0, bar_y), (self.screen_w, bar_y), 2)
 
-        if self.font_med:
-            status_left = self.font_med.render("SES SUPER DESTROYER // REARM DECK 04", True, (255, 210, 60))
-            canvas.blit(status_left, (30, bar_y + 10))
-
-            status_right = self.font_med.render("BATTLEFIELD SIMULATION FROZEN // SQUAD IN STANDBY", True, (0, 220, 180))
-            canvas.blit(status_right, (self.screen_w - status_right.get_width() - 30, bar_y + 10))
+        left = self._static_texts.get("status_left")
+        right = self._static_texts.get("status_right")
+        if left is not None:
+            canvas.blit(left, (30, bar_y + 20 - left.get_height() // 2))
+        if right is not None:
+            canvas.blit(right, (self.screen_w - right.get_width() - 30, bar_y + 20 - right.get_height() // 2))
 
     def _draw_descent(self, canvas, player):
         """Draws atmospheric re-entry fiery plasma trails and sonic boom shockwaves."""
@@ -831,10 +839,7 @@ class SuperDestroyerManager:
             cam_y = max(0, min(MAP_HEIGHT - self.screen_h, self.departure_y + 30 - self.screen_h / 2))
             px = player.x - cam_x
             py = player.y - cam_y
-            plasma_colors = [(255, 60, 20, 120), (255, 160, 30, 160), (255, 240, 120, 200)]
-            for radius, col in zip([36, 26, 16], plasma_colors):
-                p_surf = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
-                pygame.draw.circle(p_surf, col, (radius, radius), radius)
+            for radius, p_surf in self._plasma_surfaces:
                 canvas.blit(p_surf, (px - radius + 16, py - radius + 16))
 
         if self.phase_timer < 0.3:
