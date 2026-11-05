@@ -24,6 +24,7 @@ from eagle1.systems.powerups import (
 )
 from eagle1.ui import theme, widgets
 from eagle1.ui.help_menu import HelpMenu
+from eagle1.ui.mission_select_menu import MissionSelectMenu
 from eagle1.ui.menu_nav import MenuButton, MenuNavigator, VARIANT_DANGER, VARIANT_PRIMARY
 from eagle1.ui.settings_menu import SettingsMenu
 from eagle1.ui.debriefing_screen import DebriefingScreen
@@ -784,100 +785,19 @@ class OrbitalBase(pygame.Rect):
                 pygame.draw.rect(surface, (0, 220, 255), (bx, by - 4, sh_w, 3))
 
 
-class MissionSelectMenu:
-    """Tactical Operational Mission Selection Interface."""
-    def __init__(self):
-        self.card_rects = {}
-
-    def handle_event(self, event, mouse_pos=None):
-        if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_1:
-                return MISSION_CONFIGS[MissionType.AIR_SUPERIORITY]
-            elif event.key == pygame.K_2:
-                return MISSION_CONFIGS[MissionType.BASE_DEFENSE]
-            elif event.key == pygame.K_3:
-                return MISSION_CONFIGS[MissionType.STRIDER_RAID]
-            elif event.key == pygame.K_4:
-                return MISSION_CONFIGS[MissionType.OUTPOST_DEMOLITION]
-            elif event.key == pygame.K_5:
-                return MISSION_CONFIGS[MissionType.ENDLESS_WAR]
-            elif event.key == pygame.K_ESCAPE:
-                return "back_to_menu"
-
-        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and mouse_pos:
-            for m_id, rect in self.card_rects.items():
-                if rect.collidepoint(mouse_pos):
-                    return MISSION_CONFIGS[m_id]
-
-        return None
-
-    def draw(self, surface, mouse_pos=None):
-        bg_surf = pygame.Surface((GAME_WIDTH, GAME_HEIGHT), pygame.SRCALPHA)
-        bg_surf.fill((10, 14, 22, 245))
-        surface.blit(bg_surf, (0, 0))
-
-        title_font_lg = pygame.font.SysFont("arial", 28, bold=True)
-        sub_font = pygame.font.SysFont("arial", 13)
-        title_txt = title_font_lg.render("TACTICAL OPERATION SELECTOR", True, (0, 220, 255))
-        surface.blit(title_txt, (GAME_WIDTH // 2 - title_txt.get_width() // 2, 25))
-
-        sub_txt = sub_font.render("SELECT A FOCUSED OPERATION TO DEPLOY (HOTKEYS 1-5 OR CLICK CARD)", True, (160, 185, 210))
-        surface.blit(sub_txt, (GAME_WIDTH // 2 - sub_txt.get_width() // 2, 58))
-
-        card_w = 360
-        card_h = 160
-        card_positions = [
-            (240, 95, MissionType.AIR_SUPERIORITY),
-            (680, 95, MissionType.BASE_DEFENSE),
-            (240, 275, MissionType.STRIDER_RAID),
-            (680, 275, MissionType.OUTPOST_DEMOLITION),
-            (460, 455, MissionType.ENDLESS_WAR),
-        ]
-
-        self.card_rects.clear()
-
-        for idx, (cx, cy, m_id) in enumerate(card_positions):
-            config = MISSION_CONFIGS[m_id]
-            rect = pygame.Rect(cx, cy, card_w, card_h)
-            self.card_rects[m_id] = rect
-
-            is_hover = mouse_pos and rect.collidepoint(mouse_pos)
-            bg_col = (25, 34, 48) if not is_hover else (38, 52, 75)
-            border_col = config["icon_color"] if is_hover else (70, 95, 130)
-
-            pygame.draw.rect(surface, bg_col, rect, border_radius=8)
-            pygame.draw.rect(surface, border_col, rect, 2 if not is_hover else 3, border_radius=8)
-
-            key_txt = hud_small_font.render(f"[{idx+1}]", True, (255, 215, 0))
-            surface.blit(key_txt, (cx + 12, cy + 10))
-
-            cat_txt = hud_small_font.render(config["category"], True, config["icon_color"])
-            surface.blit(cat_txt, (cx + 42, cy + 10))
-
-            name_txt = font.render(config["name"], True, (255, 255, 255))
-            surface.blit(name_txt, (cx + 12, cy + 28))
-
-            diff_col = (46, 204, 113) if config["difficulty"] == "MEDIUM" else (241, 196, 15) if config["difficulty"] == "HARD" else (231, 76, 60)
-            diff_txt = hud_small_font.render(f"DIFFICULTY: {config['difficulty']}", True, diff_col)
-            surface.blit(diff_txt, (cx + card_w - diff_txt.get_width() - 12, cy + 10))
-
-            words = config["desc"].split(" ")
-            line1 = " ".join(words[:len(words)//2 + 1])
-            line2 = " ".join(words[len(words)//2 + 1:])
-            l1_surf = hud_small_font.render(line1, True, (190, 210, 230))
-            l2_surf = hud_small_font.render(line2, True, (190, 210, 230))
-            surface.blit(l1_surf, (cx + 12, cy + 65))
-            surface.blit(l2_surf, (cx + 12, cy + 82))
-
-            btn_col = (0, 220, 255) if is_hover else (120, 150, 180)
-            btn_txt = hud_small_font.render("CLICK TO DEPLOY MISSION ▶", True, btn_col)
-            surface.blit(btn_txt, (cx + card_w // 2 - btn_txt.get_width() // 2, cy + card_h - 22))
-
-        esc_txt = sub_font.render("PRESS ESC TO RETURN TO MAIN MENU", True, (140, 160, 180))
-        surface.blit(esc_txt, (GAME_WIDTH // 2 - esc_txt.get_width() // 2, GAME_HEIGHT - 30))
-
-
-mission_select_menu = MissionSelectMenu()
+mission_select_menu = MissionSelectMenu(
+    MISSION_CONFIGS,
+    [
+        MissionType.AIR_SUPERIORITY,
+        MissionType.BASE_DEFENSE,
+        MissionType.STRIDER_RAID,
+        MissionType.OUTPOST_DEMOLITION,
+        MissionType.ENDLESS_WAR,
+    ],
+    GAME_WIDTH,
+    GAME_HEIGHT,
+    on_sfx=audio_manager.play_sfx,
+)
 stratagem_select_menu = StratagemSelectMenu()
 pending_mission_config = None
 bomber_enemies = []
@@ -3157,6 +3077,8 @@ def run_game():
                     main_menu_nav.handle_event(event, canvas_mouse_pos)
                 elif game_state == "pause_menu":
                     pause_nav.handle_event(event, canvas_mouse_pos)
+                elif game_state == "mission_select":
+                    mission_select_menu.handle_event(event, canvas_mouse_pos)
                 elif game_state == "" and player.health <= 0:
                     gameover_nav.handle_event(event, canvas_mouse_pos)
                 elif game_state == "super_destroyer":
