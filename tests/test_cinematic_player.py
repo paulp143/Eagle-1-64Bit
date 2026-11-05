@@ -592,3 +592,16 @@ def test_long_subtitle_truncated_to_two_lines():
     seq = _single_keyframe_sequence(subtitles=(CinematicSubtitle(0.0, 2.0, "VIPER-1", long_text),))
     player = _started_player(sequence=seq)
     assert len(player._subtitle_cache[0][1]) == 2
+
+
+def test_story_package_exports_cinematic_api():
+    import eagle1.story as story
+
+    for name in ("CinematicKeyframe", "CinematicPlayer", "CinematicSequence", "CinematicSubtitle",
+                 "EpilogueSummaryStats", "validate_cinematic_sequence", "wrap_cinematic_text",
+                 "build_epilogue_stat_lines", "CINEMATIC_LETTERBOX_HEIGHT", "VALID_CINEMATIC_SCENE_TYPES",
+                 "CINEMATIC_ACTION_RETURN_MAIN_MENU"):
+        assert name in story.__all__
+        assert hasattr(story, name)
+    assert story.__all__ == sorted(story.__all__)
+    assert story.CinematicPlayer is CinematicPlayer
