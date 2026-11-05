@@ -37,6 +37,7 @@ jobs:
             --add-data "images;images" `
             --add-data "audio;audio" `
             --add-data "data;data" `
+            --add-data "assets/fonts;assets/fonts" `
             run_game.py
 
       - name: Archive Distribution Directory
@@ -91,6 +92,7 @@ jobs:
             --add-data "images:images" \
             --add-data "audio:audio" \
             --add-data "data:data" \
+            --add-data "assets/fonts:assets/fonts" \
             run_game.py
 
       - name: Archive Distribution Directory

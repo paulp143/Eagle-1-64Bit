@@ -32,6 +32,7 @@ ASSET_IMAGES_DIR = PROJECT_ROOT / "assets" / "images"
 AUDIO_DIR = PROJECT_ROOT / "audio"
 ASSET_AUDIO_DIR = PROJECT_ROOT / "assets" / "audio"
 DATA_DIR = PROJECT_ROOT / "data"
+FONTS_DIR = PROJECT_ROOT / "assets" / "fonts"
 
 
 def get_user_data_dir() -> Path:
