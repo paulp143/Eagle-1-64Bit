@@ -2280,6 +2280,16 @@ def main_menu(mouse_pos=None):
         canvas.blit(toast, (GAME_WIDTH - 24 - toast.get_width(), GAME_HEIGHT - 24 - toast.get_height()))
 
 
+def resume_from_pause():
+    """Leave the pause menu and drop the frozen backdrop so the next pause captures a fresh frame.
+
+    ``draw()`` also invalidates the snapshot, but the hangar cinematic renders without it.
+    """
+    global game_state, _pause_snapshot_valid
+    _pause_snapshot_valid = False
+    game_state = ""
+
+
 def pause_menu(mouse_pos=None):
     global _pause_snapshot_valid
     if not _pause_snapshot_valid:
@@ -2817,7 +2827,7 @@ def activate_pause_action(action):
     """Run a pause-menu action."""
     global game_state, previous_game_state
     if action == "resume":
-        game_state = ""
+        resume_from_pause()
     elif action == "help":
         previous_game_state = "pause_menu"
         game_state = "help_menu"
@@ -3125,7 +3135,7 @@ def run_game():
                     if pause_idx is not None:
                         activate_pause_action(PAUSE_ACTIONS[pause_idx])
                     elif event.key == pygame.K_p:
-                        game_state = ""
+                        resume_from_pause()
                     elif event.key == pygame.K_h:
                         previous_game_state = "pause_menu"
                         game_state = "help_menu"

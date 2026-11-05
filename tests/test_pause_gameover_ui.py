@@ -39,6 +39,23 @@ def test_pause_resume_action_sets_gameplay_state():
         game.previous_game_state = "main_menu"
 
 
+def test_resume_drops_snapshot_so_next_pause_captures_fresh_frame():
+    """Pausing again during the hangar cinematic (which never calls draw()) must not show the old frame."""
+    old_state = game.game_state
+    try:
+        game.game_state = "pause_menu"
+        game.canvas.fill((255, 0, 0))
+        game.pause_menu()
+        game.activate_pause_action("resume")
+        assert game._pause_snapshot_valid is False
+        game.canvas.fill((0, 255, 0))
+        game.pause_menu()
+        assert tuple(game.pause_snapshot_surf.get_at((5, 5)))[:3] == (0, 255, 0)
+    finally:
+        game._pause_snapshot_valid = False
+        game.game_state = old_state
+
+
 def _inside(panel, rects):
     return all(panel.contains(r) for r in rects) and validate_rects_no_overlap(rects) == []
 
