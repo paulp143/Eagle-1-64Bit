@@ -450,6 +450,8 @@ class AcademyTutorialManager:
         self.border_warned = False
         self.border_cleared = False
         self.celebration_particles = []
+        self._graduate_callsign = "PILOT"
+        self._grad_assets = None  # ceremony text bakes in the callsign; rebuild for the next graduate
 
         # Create slalom gates Alpha, Bravo, Charlie with safe bounds
         g1_x, g1_y = compute_safe_drill_spawn(player, forward_dist=320.0, right_offset=0.0, margin=200.0)
@@ -558,6 +560,7 @@ class AcademyTutorialManager:
                 if prof_mgr.has_active_profile():
                     prof = prof_mgr.load_profile()
                     self._graduate_callsign = prof.username.upper()
+                    self._grad_assets = None
                     prof.academy_completed = True
                     prof.missions_cleared = max(1, prof.missions_cleared)
                     if prof.active_mission in ("academy_tutorial", ""):

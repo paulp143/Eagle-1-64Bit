@@ -89,3 +89,25 @@ def test_graduate_callsign_is_captured_when_graduating(tmp_path, monkeypatch):
     mgr.state = ab.DRILL_STRATAGEM
     mgr.advance_drill()
     assert mgr._graduate_callsign == "SKULL-LEADER"
+
+
+def test_second_graduation_rebuilds_ceremony_with_new_callsign(dummy_surface, tmp_path, monkeypatch):
+    monkeypatch.setenv("EAGLE1_USER_DATA_DIR", str(tmp_path))
+    profiles = PlayerProfileManager()
+    profiles.create_profile("FIRST-PILOT", citizenship_grade="E")
+    mgr = _mgr()
+    mgr.state = ab.DRILL_STRATAGEM
+    mgr.advance_drill()
+    mgr.draw_hud(dummy_surface)
+    first_assets = mgr._grad_assets
+    assert first_assets is not None and mgr._graduate_callsign == "FIRST-PILOT"
+
+    mgr.reset()
+    assert mgr._grad_assets is None and mgr._graduate_callsign == "PILOT"
+
+    profiles.create_profile("SECOND-PILOT", citizenship_grade="E")
+    mgr.state = ab.DRILL_STRATAGEM
+    mgr.advance_drill()
+    assert mgr._graduate_callsign == "SECOND-PILOT"
+    mgr.draw_hud(dummy_surface)
+    assert mgr._grad_assets is not None and mgr._grad_assets is not first_assets
