@@ -9,7 +9,10 @@ statistics screen. All fonts and reusable surfaces are cached outside draw().
 from dataclasses import dataclass
 import logging
 import math
-from typing import Any, Callable, Dict, List, Optional, Tuple
+import random
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+
+import pygame
 
 from eagle1.story.story_manager import (
     BRANCH_COLD_PROTOCOL,
@@ -299,3 +302,369 @@ def validate_cinematic_sequence(sequence: Any) -> bool:
                     and all(isinstance(c, int) and not isinstance(c, bool) and 0 <= c <= 255 for c in color)):
                 return _fail(f"keyframe {kf_id!r}: subtitle color must be an RGB int tuple")
     return True
+
+
+_COLOR_LETTERBOX: Tuple[int, int, int] = (0, 0, 0)
+_COLOR_CAPTION: Tuple[int, int, int] = (255, 215, 0)
+_COLOR_SPEAKER: Tuple[int, int, int] = (255, 220, 100)
+_COLOR_PROMPT: Tuple[int, int, int] = (150, 165, 185)
+_COLOR_EPILOGUE_TITLE: Tuple[int, int, int] = (255, 215, 0)
+_COLOR_EPILOGUE_STAT: Tuple[int, int, int] = (200, 220, 240)
+_COLOR_EPILOGUE_TEXT: Tuple[int, int, int] = (225, 230, 240)
+_SUBTITLE_MAX_WIDTH: int = 1040
+_EPILOGUE_TEXT_MAX_WIDTH: int = 900
+_SKIP_PROMPT_TEXT: str = "[ESC / SPACE] SKIP"
+_EPILOGUE_PROMPT_TEXT: str = "[ENTER / SPACE / ESC] RETURN TO MAIN MENU"
+_EPILOGUE_HEADER_TEXT: str = "CAMPAIGN COMPLETE"
+_STAR_COUNT: int = 140
+_STAR_SEED: int = 73
+
+
+class CinematicPlayer:
+    """Plays a CinematicSequence at 60 FPS and finishes on the epilogue statistics screen."""
+
+    def __init__(self, screen_w: int = 1280, screen_h: int = 720, audio_manager: Optional[Any] = None) -> None:
+        self.screen_w = int(screen_w) if _is_finite_number(screen_w) and screen_w > 0 else 1280
+        self.screen_h = int(screen_h) if _is_finite_number(screen_h) and screen_h > 0 else 720
+        self.audio = audio_manager
+        self.on_audio_cue: Optional[Callable[[str], None]] = None
+
+        self.phase: str = CINEMATIC_PHASE_IDLE
+        self.sequence: Optional[CinematicSequence] = None
+        self.stats: Optional[EpilogueSummaryStats] = None
+        self.allow_skip: bool = True
+        self.keyframe_index: int = 0
+        self.keyframe_elapsed: float = 0.0
+        self.total_elapsed: float = 0.0
+        self.epilogue_elapsed: float = 0.0
+        self.camera: Tuple[float, float, float] = DEFAULT_CAMERA
+        self.fade_alpha: int = 0
+        self.fired_audio_cues: List[str] = []
+        self._fired_cue_indices: Set[int] = set()
+        self.skipped: bool = False
+
+        # Text caches (rebuilt only on state transitions, never inside draw()).
+        self._caption_surf: Optional[pygame.Surface] = None
+        self._subtitle_cache: Dict[int, Tuple[Optional[pygame.Surface], List[pygame.Surface]]] = {}
+        self._epilogue_header_surf: Optional[pygame.Surface] = None
+        self._epilogue_title_surf: Optional[pygame.Surface] = None
+        self._epilogue_stat_surfs: List[pygame.Surface] = []
+        self._epilogue_line_surfs: List[pygame.Surface] = []
+        self._skip_prompt_surf: Optional[pygame.Surface] = None
+        self._epilogue_prompt_surf: Optional[pygame.Surface] = None
+
+        self._init_fonts()
+        self._init_surfaces()
+        self._init_starfield()
+
+    # ------------------------------------------------------------------
+    # State queries
+    # ------------------------------------------------------------------
+    @property
+    def is_active(self) -> bool:
+        return self.phase in (CINEMATIC_PHASE_PLAYING, CINEMATIC_PHASE_EPILOGUE)
+
+    @property
+    def is_playing(self) -> bool:
+        return self.phase == CINEMATIC_PHASE_PLAYING
+
+    @property
+    def is_epilogue(self) -> bool:
+        return self.phase == CINEMATIC_PHASE_EPILOGUE
+
+    @property
+    def current_keyframe(self) -> Optional[CinematicKeyframe]:
+        if self.phase != CINEMATIC_PHASE_PLAYING or self.sequence is None:
+            return None
+        return self.sequence.keyframes[self.keyframe_index]
+
+    def get_camera_state(self) -> Tuple[float, float, float]:
+        return self.camera
+
+    def get_fade_alpha(self) -> int:
+        return self.fade_alpha
+
+    def get_active_subtitles(self) -> Tuple[CinematicSubtitle, ...]:
+        kf = self.current_keyframe
+        if kf is None:
+            return ()
+        return tuple(sub for sub in kf.subtitles if sub.is_active_at(self.keyframe_elapsed))
+
+    def _active_subtitle_index(self) -> Optional[int]:
+        """Index of the active subtitle that started latest (ties go to the higher index)."""
+        kf = self.current_keyframe
+        if kf is None:
+            return None
+        best: Optional[Tuple[float, int]] = None
+        for idx, sub in enumerate(kf.subtitles):
+            if sub.is_active_at(self.keyframe_elapsed):
+                key = (sub.start_time, idx)
+                if best is None or key > best:
+                    best = key
+        return None if best is None else best[1]
+
+    def get_active_subtitle(self) -> Optional[CinematicSubtitle]:
+        idx = self._active_subtitle_index()
+        if idx is None:
+            return None
+        return self.current_keyframe.subtitles[idx]
+
+    def get_epilogue_lines(self) -> Tuple[str, ...]:
+        if self.stats is not None and self.stats.epilogue_lines:
+            return self.stats.epilogue_lines
+        if self.sequence is not None:
+            return self.sequence.epilogue_lines
+        return ()
+
+    # ------------------------------------------------------------------
+    # Control
+    # ------------------------------------------------------------------
+    def start_sequence(self, sequence: CinematicSequence, stats: EpilogueSummaryStats, allow_skip: bool = True) -> None:
+        self.reset()
+        self.allow_skip = allow_skip is True
+        valid = validate_cinematic_sequence(sequence)
+        self.sequence = sequence if valid else None
+
+        if isinstance(stats, EpilogueSummaryStats):
+            self.stats = stats
+        else:
+            src = sequence if isinstance(sequence, CinematicSequence) else None
+            self.stats = EpilogueSummaryStats(
+                ending_branch=getattr(src, "ending_branch", ""),
+                ending_title=getattr(src, "title", ""),
+                final_loyalty=DEFAULT_LOYALTY,
+                total_casualties=0,
+                sorties_completed=0,
+                pilot_status=UNKNOWN_PILOT_STATUS,
+                epilogue_lines=getattr(src, "epilogue_lines", ()),
+            )
+
+        if not valid:
+            logger.warning("CinematicPlayer: invalid sequence, jumping straight to epilogue")
+            self._enter_epilogue()
+            return
+
+        self.phase = CINEMATIC_PHASE_PLAYING
+        self._enter_keyframe(0)
+
+    def update(self, dt: float) -> None:
+        remaining = _sanitize_dt(dt)
+        if self.phase == CINEMATIC_PHASE_PLAYING and self.sequence is not None:
+            keyframes = self.sequence.keyframes
+            while self.phase == CINEMATIC_PHASE_PLAYING:
+                kf = keyframes[self.keyframe_index]
+                time_left = float(kf.duration) - self.keyframe_elapsed
+                if remaining < time_left:
+                    self.keyframe_elapsed += remaining
+                    self.total_elapsed += remaining
+                    remaining = 0.0
+                    break
+                remaining -= time_left
+                self.total_elapsed += time_left
+                self.keyframe_elapsed = float(kf.duration)
+                if self.keyframe_index + 1 < len(keyframes):
+                    self._enter_keyframe(self.keyframe_index + 1)
+                else:
+                    self._enter_epilogue()
+        if self.phase == CINEMATIC_PHASE_EPILOGUE:
+            self.epilogue_elapsed += remaining
+        if self.phase == CINEMATIC_PHASE_PLAYING:
+            self._refresh_interpolation()
+
+    def skip_to_epilogue(self) -> None:
+        if self.phase == CINEMATIC_PHASE_PLAYING:
+            self.skipped = True
+            self._enter_epilogue()
+
+    def reset(self) -> None:
+        """Return to IDLE and clear timeline and per-sequence caches (fonts and surfaces are kept)."""
+        self.phase = CINEMATIC_PHASE_IDLE
+        self.sequence = None
+        self.stats = None
+        self.allow_skip = True
+        self.keyframe_index = 0
+        self.keyframe_elapsed = 0.0
+        self.total_elapsed = 0.0
+        self.epilogue_elapsed = 0.0
+        self.camera = DEFAULT_CAMERA
+        self.fade_alpha = 0
+        self.fired_audio_cues = []
+        self._fired_cue_indices = set()
+        self.skipped = False
+        self._caption_surf = None
+        self._subtitle_cache = {}
+        self._epilogue_title_surf = None
+        self._epilogue_stat_surfs = []
+        self._epilogue_line_surfs = []
+
+    # ------------------------------------------------------------------
+    # Initialisation helpers
+    # ------------------------------------------------------------------
+    def _init_fonts(self) -> None:
+        self.font_title = None
+        self.font_speaker = None
+        self.font_subtitle = None
+        self.font_epilogue = None
+        self.font_prompt = None
+        self._fonts_ready = False
+        try:
+            if not pygame.font.get_init():
+                pygame.font.init()
+            self.font_title = pygame.font.SysFont("courier", 34, bold=True)
+            self.font_speaker = pygame.font.SysFont("courier", 15, bold=True)
+            self.font_subtitle = pygame.font.SysFont("arial", 18)
+            self.font_epilogue = pygame.font.SysFont("arial", 20)
+            self.font_prompt = pygame.font.SysFont("courier", 13, bold=True)
+        except (pygame.error, OSError) as exc:
+            logger.warning("CinematicPlayer fonts unavailable, rendering without text: %s", exc)
+            self.font_title = None
+            self.font_speaker = None
+            self.font_subtitle = None
+            self.font_epilogue = None
+            self.font_prompt = None
+            return
+        self._fonts_ready = True
+        self._skip_prompt_surf = self._render_text(self.font_prompt, _SKIP_PROMPT_TEXT, _COLOR_PROMPT)
+        self._epilogue_prompt_surf = self._render_text(self.font_prompt, _EPILOGUE_PROMPT_TEXT, _COLOR_PROMPT)
+        self._epilogue_header_surf = self._render_text(self.font_prompt, _EPILOGUE_HEADER_TEXT, _COLOR_PROMPT)
+
+    def _init_surfaces(self) -> None:
+        self._letterbox_surf = pygame.Surface((self.screen_w, CINEMATIC_LETTERBOX_HEIGHT))
+        self._letterbox_surf.fill(_COLOR_LETTERBOX)
+        self._fade_surf = pygame.Surface((self.screen_w, self.screen_h))
+        self._fade_surf.fill((0, 0, 0))
+        panel_w = min(1000, self.screen_w - 80)
+        panel_h = min(560, self.screen_h - 80)
+        self._epilogue_panel = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
+        self._epilogue_panel.fill((14, 20, 32, 220))
+        pygame.draw.rect(self._epilogue_panel, _COLOR_EPILOGUE_TITLE, self._epilogue_panel.get_rect(), width=2)
+
+    def _init_starfield(self) -> None:
+        rng = random.Random(_STAR_SEED)
+        self._stars: List[Tuple[float, float, int]] = [
+            (rng.uniform(0, self.screen_w), rng.uniform(0, self.screen_h), rng.choice((1, 1, 2)))
+            for _ in range(_STAR_COUNT)
+        ]
+
+    def _render_text(self, font: Optional[Any], text: str, color: Tuple[int, int, int]) -> Optional[pygame.Surface]:
+        if font is None or not text:
+            return None
+        try:
+            return font.render(text, True, color)
+        except pygame.error as exc:
+            logger.warning("CinematicPlayer text render failed: %s", exc)
+            return None
+
+    def _measure(self, font: Optional[Any], text: str) -> int:
+        if font is None:
+            return len(text) * 10
+        try:
+            return int(font.size(text)[0])
+        except pygame.error:
+            return len(text) * 10
+
+    # ------------------------------------------------------------------
+    # Timeline internals
+    # ------------------------------------------------------------------
+    def _enter_keyframe(self, index: int) -> None:
+        self.keyframe_index = index
+        self.keyframe_elapsed = 0.0
+        kf = self.sequence.keyframes[index]
+        if kf.audio_cue and index not in self._fired_cue_indices:
+            self._fired_cue_indices.add(index)
+            self._dispatch_audio_cue(kf.audio_cue.strip())
+        self._rebuild_keyframe_text_cache()
+        self._refresh_interpolation()
+
+    def _enter_epilogue(self) -> None:
+        self.phase = CINEMATIC_PHASE_EPILOGUE
+        self.epilogue_elapsed = 0.0
+        self.camera = DEFAULT_CAMERA
+        self.fade_alpha = 0
+        self._caption_surf = None
+        self._subtitle_cache.clear()
+        self._build_epilogue_cache()
+
+    def _refresh_interpolation(self) -> None:
+        if self.phase != CINEMATIC_PHASE_PLAYING:
+            return
+        kf = self.sequence.keyframes[self.keyframe_index]
+        duration = float(kf.duration)
+        t = max(0.0, min(1.0, self.keyframe_elapsed / duration))
+        eased = t * t * (3.0 - 2.0 * t)
+        self.camera = tuple(
+            float(a) + (float(b) - float(a)) * eased for a, b in zip(kf.camera_start, kf.camera_end)
+        )
+        el = self.keyframe_elapsed
+        if kf.fade_in > 0 and el < kf.fade_in:
+            alpha = 255.0 * (1.0 - el / kf.fade_in)
+        elif kf.fade_out > 0 and el > duration - kf.fade_out:
+            alpha = 255.0 * ((el - (duration - kf.fade_out)) / kf.fade_out)
+        else:
+            alpha = 0.0
+        self.fade_alpha = max(0, min(255, int(round(alpha))))
+
+    def _dispatch_audio_cue(self, cue: str) -> None:
+        self.fired_audio_cues.append(cue)
+        if callable(self.on_audio_cue):
+            try:
+                self.on_audio_cue(cue)
+            except (pygame.error, TypeError, ValueError, AttributeError) as exc:
+                logger.warning("Cinematic audio cue callback failed for %r: %s", cue, exc)
+            return
+        if self.audio is None:
+            return
+        try:
+            if cue.startswith("music:"):
+                track = cue[len("music:"):].strip()
+                play_music = getattr(self.audio, "play_music", None)
+                if track and callable(play_music):
+                    play_music(track, loop=True, fade_ms=600)
+            elif cue == "stop_music":
+                stop_music = getattr(self.audio, "stop_music", None)
+                if callable(stop_music):
+                    stop_music(fade_ms=600)
+            else:
+                play_sfx = getattr(self.audio, "play_sfx", None)
+                if callable(play_sfx):
+                    play_sfx(cue)
+        except (pygame.error, TypeError, ValueError, AttributeError, OSError) as exc:
+            logger.warning("Cinematic audio cue %r failed: %s", cue, exc)
+
+    def _rebuild_keyframe_text_cache(self) -> None:
+        self._subtitle_cache.clear()
+        kf = self.sequence.keyframes[self.keyframe_index]
+        caption = kf.title_caption.strip()
+        self._caption_surf = self._render_text(self.font_title, caption, _COLOR_CAPTION) if caption else None
+        for idx, sub in enumerate(kf.subtitles):
+            speaker = sub.speaker.strip().upper()
+            speaker_surf = self._render_text(self.font_speaker, speaker, _COLOR_SPEAKER) if speaker else None
+            lines = wrap_cinematic_text(sub.text, _SUBTITLE_MAX_WIDTH,
+                                        lambda s: self._measure(self.font_subtitle, s))
+            if len(lines) > SUBTITLE_MAX_LINES:
+                lines = lines[:SUBTITLE_MAX_LINES]
+                lines[-1] = lines[-1].rstrip(".") + "..."
+            line_surfs = [
+                surf for surf in (self._render_text(self.font_subtitle, ln, sub.color) for ln in lines)
+                if surf is not None
+            ]
+            self._subtitle_cache[idx] = (speaker_surf, line_surfs)
+
+    def _build_epilogue_cache(self) -> None:
+        title = self.stats.ending_title or format_ending_branch_label(self.stats.ending_branch)
+        self._epilogue_title_surf = self._render_text(self.font_title, title.upper(), _COLOR_EPILOGUE_TITLE)
+        self._epilogue_stat_surfs = [
+            surf for surf in (
+                self._render_text(self.font_epilogue, ln, _COLOR_EPILOGUE_STAT)
+                for ln in build_epilogue_stat_lines(self.stats)
+            ) if surf is not None
+        ]
+        wrapped: List[str] = []
+        for line in self.get_epilogue_lines():
+            wrapped.extend(wrap_cinematic_text(line, _EPILOGUE_TEXT_MAX_WIDTH,
+                                               lambda s: self._measure(self.font_epilogue, s)))
+        wrapped = wrapped[:EPILOGUE_MAX_LINES]
+        self._epilogue_line_surfs = [
+            surf for surf in (self._render_text(self.font_epilogue, ln, _COLOR_EPILOGUE_TEXT) for ln in wrapped)
+            if surf is not None
+        ]
