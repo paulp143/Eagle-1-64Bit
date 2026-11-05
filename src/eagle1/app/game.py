@@ -3079,6 +3079,8 @@ def run_game():
                     pause_nav.handle_event(event, canvas_mouse_pos)
                 elif game_state == "mission_select":
                     mission_select_menu.handle_event(event, canvas_mouse_pos)
+                elif game_state == "stratagem_select":
+                    stratagem_select_menu.handle_event(event, canvas_mouse_pos)
                 elif game_state == "" and player.health <= 0:
                     gameover_nav.handle_event(event, canvas_mouse_pos)
                 elif game_state == "super_destroyer":
