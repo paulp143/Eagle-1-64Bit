@@ -2570,13 +2570,13 @@ def draw(mouse_pos=None):
             canvas.blit(banner_surf, banner_bg.topleft)
 
         # Warning Feedback: Vignettes (Zero per-frame allocations) & Heartbeat Audio
-        if player.health <= 2 and player.health > 0:
+        if settings_menu.toggle_warnings.state and player.health <= 2 and player.health > 0:
             pulse = int(140 + 80 * math.sin(pygame.time.get_ticks() * 0.008))
             vignette_health_surf.fill((0, 0, 0, 0))
             pygame.draw.rect(vignette_health_surf, (220, 20, 20, max(25, min(90, pulse // 3))), (0, 0, GAME_WIDTH, GAME_HEIGHT), width=20)
             canvas.blit(vignette_health_surf, (0, 0))
             audio_manager.play_sfx("low_health")
-        elif player.shield <= 5 and player.shield > 0:
+        elif settings_menu.toggle_warnings.state and player.shield <= 5 and player.shield > 0:
             vignette_shield_surf.fill((0, 0, 0, 0))
             pygame.draw.rect(vignette_shield_surf, (0, 200, 255, 30), (0, 0, GAME_WIDTH, GAME_HEIGHT), width=12)
             canvas.blit(vignette_shield_surf, (0, 0))
@@ -2647,12 +2647,13 @@ def draw(mouse_pos=None):
         bar_height = 10
         fill_width = max(0, min(bar_width, int((player.velocity_x / player.max_speed) * bar_width)))
         
-        speed_box.set_text(f"Speed: {player.velocity_x:.1f} / {player.max_speed:.1f}")
-        speed_box.draw(canvas)
+        if settings_menu.toggle_speedometer.state:
+            speed_box.set_text(f"Speed: {player.velocity_x:.1f} / {player.max_speed:.1f}")
+            speed_box.draw(canvas)
 
-        pygame.draw.rect(canvas, (0, 0, 0), (speed_x, speed_y + 22, bar_width, bar_height))
-        pygame.draw.rect(canvas, (255, 180, 0), (speed_x, speed_y + 22, fill_width, bar_height))
-        pygame.draw.rect(canvas, (100, 120, 160), (speed_x, speed_y + 22, bar_width, bar_height), 1)
+            pygame.draw.rect(canvas, (0, 0, 0), (speed_x, speed_y + 22, bar_width, bar_height))
+            pygame.draw.rect(canvas, (255, 180, 0), (speed_x, speed_y + 22, fill_width, bar_height))
+            pygame.draw.rect(canvas, (100, 120, 160), (speed_x, speed_y + 22, bar_width, bar_height), 1)
 
         # --- MINIMAP UI ---
         mm_x = 20

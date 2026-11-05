@@ -3,39 +3,50 @@ settings_menu.py - Extensible Settings & Configuration Menu for Eagle-1-64Bit
 
 Provides a modular, tabbed Settings menu featuring:
 - Audio tab: Master, Music, SFX volume sliders, Mute toggle, and SFX test.
-- Gameplay tab: Screen shake, speedometer, alert notifications.
-- Controls tab: Keybindings summary and input sensitivity.
-Designed to be easily extended with future categories and settings options.
+- Gameplay tab: Screen shake, speedometer, low-health warnings.
+- Controls tab: Keybindings summary generated from the shared controls reference.
+Keyboard: LEFT/RIGHT/TAB cycle tabs, UP/DOWN move focus, +/- adjust a focused slider,
+ENTER activates the focused toggle/button.
 """
 
 import pygame
+
 from eagle1.systems.audio_manager import get_audio_manager
+from eagle1.ui import theme, widgets
+from eagle1.ui.controls_reference import CATEGORY_ORDER, bindings_by_category
 
-# Color Palette matching sci-fi UI theme
-COLOR_BG_OVERLAY = (10, 14, 22, 245)
-COLOR_PANEL_BG = (18, 24, 38)
-COLOR_PANEL_BORDER = (45, 65, 95)
-COLOR_TEXT_WHITE = (245, 245, 250)
-COLOR_TEXT_MUTED = (160, 175, 200)
-COLOR_TEXT_ACCENT = (0, 210, 255)       # Cyber Cyan
-COLOR_TEXT_GOLD = (255, 195, 50)        # Accent Gold
-COLOR_TEXT_GREEN = (46, 204, 113)       # Enabled Green
-COLOR_TEXT_RED = (255, 75, 75)          # Muted/Disabled Red
+# Color palette (aliases of the central theme tokens; names kept for compatibility)
+COLOR_BG_OVERLAY = theme.OVERLAY_RGBA
+COLOR_PANEL_BG = theme.PANEL
+COLOR_PANEL_BORDER = theme.BORDER
+COLOR_TEXT_WHITE = theme.TEXT
+COLOR_TEXT_MUTED = theme.TEXT_MUTED
+COLOR_TEXT_ACCENT = theme.INFO
+COLOR_TEXT_GOLD = theme.ACCENT
+COLOR_TEXT_GREEN = theme.SUCCESS
+COLOR_TEXT_RED = theme.DANGER
 
-COLOR_TAB_INACTIVE_BG = (22, 30, 48)
-COLOR_TAB_INACTIVE_BORDER = (50, 70, 105)
-COLOR_TAB_HOVER_BG = (35, 50, 80)
-COLOR_TAB_ACTIVE_BG = (0, 120, 180)
-COLOR_TAB_ACTIVE_BORDER = (0, 220, 255)
+COLOR_TAB_INACTIVE_BG = theme.PANEL_RAISED
+COLOR_TAB_INACTIVE_BORDER = theme.BORDER
+COLOR_TAB_HOVER_BG = theme.PANEL_HOVER
+COLOR_TAB_ACTIVE_BG = theme.PANEL_HOVER
+COLOR_TAB_ACTIVE_BORDER = theme.ACCENT
 
-COLOR_SLIDER_BG = (30, 40, 60)
-COLOR_SLIDER_FILL = (0, 180, 230)
-COLOR_SLIDER_KNOB = (220, 245, 255)
-COLOR_SLIDER_KNOB_HOVER = (0, 240, 255)
+COLOR_SLIDER_BG = theme.PANEL_RAISED
+COLOR_SLIDER_FILL = theme.INFO
+COLOR_SLIDER_KNOB = theme.TEXT
+COLOR_SLIDER_KNOB_HOVER = theme.ACCENT
+
+COLOR_TOGGLE_ON = theme.lerp_color(theme.PANEL, theme.SUCCESS, 0.35)
+COLOR_TOGGLE_OFF = theme.lerp_color(theme.PANEL, theme.DANGER, 0.35)
+
+SLIDER_KEY_STEP = 0.05
+
+_TEXT_CACHE = widgets.TextCache(768)
 
 
 class SliderWidget:
-    """Interactive horizontal slider widget supporting mouse drag and step adjustments."""
+    """Interactive horizontal slider widget supporting mouse drag, keyboard steps and focus."""
 
     def __init__(self, x, y, width, height, label, min_val=0.0, max_val=1.0, initial_val=0.8, format_fn=None, on_change=None):
         self.rect = pygame.Rect(x, y, width, height)
@@ -54,6 +65,10 @@ class SliderWidget:
             self.value = val
             if self.on_change:
                 self.on_change(self.value)
+
+    def adjust(self, steps):
+        """Change the value by ``steps`` keyboard increments (5 % of the range each)."""
+        self.set_value(self.value + steps * SLIDER_KEY_STEP * (self.max_val - self.min_val))
 
     def get_knob_center(self):
         ratio = (self.value - self.min_val) / max(1e-5, (self.max_val - self.min_val))
@@ -90,38 +105,34 @@ class SliderWidget:
         new_val = self.min_val + ratio * (self.max_val - self.min_val)
         self.set_value(new_val)
 
-    def draw(self, surface, mouse_pos, font_label, font_val):
+    def draw(self, surface, mouse_pos, font_label, font_val, focused=False):
         knob_pos = self.get_knob_center()
         is_hovered = self.rect.inflate(20, 20).collidepoint(mouse_pos) if mouse_pos else False
+        active = is_hovered or self.dragging or focused
 
-        # 1. Label and Value text
-        label_surf = font_label.render(self.label, True, COLOR_TEXT_WHITE)
-        val_text = self.format_fn(self.value)
-        val_surf = font_val.render(val_text, True, COLOR_TEXT_ACCENT if (is_hovered or self.dragging) else COLOR_TEXT_MUTED)
+        label_surf = _TEXT_CACHE.render(font_label, self.label.upper(), COLOR_TEXT_WHITE)
+        val_surf = _TEXT_CACHE.render(font_val, self.format_fn(self.value), theme.ACCENT if active else COLOR_TEXT_MUTED)
+        surface.blit(label_surf, (self.rect.x, self.rect.y - 26))
+        surface.blit(val_surf, (self.rect.right - val_surf.get_width(), self.rect.y - 26))
 
-        surface.blit(label_surf, (self.rect.x, self.rect.y - 24))
-        surface.blit(val_surf, (self.rect.right - val_surf.get_width(), self.rect.y - 24))
-
-        # 2. Slider Track
         track_h = 8
         track_rect = pygame.Rect(self.rect.x, self.rect.centery - track_h // 2, self.rect.width, track_h)
-        pygame.draw.rect(surface, COLOR_SLIDER_BG, track_rect, border_radius=4)
-        pygame.draw.rect(surface, COLOR_PANEL_BORDER, track_rect, width=1, border_radius=4)
+        widgets.draw_bar(
+            surface, track_rect, (knob_pos[0] - self.rect.x) / float(self.rect.width), COLOR_SLIDER_FILL,
+            bg=COLOR_SLIDER_BG, border=COLOR_PANEL_BORDER,
+        )
 
-        # 3. Fill bar
-        fill_w = max(0, knob_pos[0] - self.rect.x)
-        if fill_w > 0:
-            fill_rect = pygame.Rect(self.rect.x, self.rect.centery - track_h // 2, fill_w, track_h)
-            pygame.draw.rect(surface, COLOR_SLIDER_FILL, fill_rect, border_radius=4)
+        knob_rect = pygame.Rect(0, 0, 10, 22)
+        knob_rect.center = knob_pos
+        pygame.draw.rect(surface, COLOR_SLIDER_KNOB_HOVER if active else COLOR_SLIDER_KNOB, knob_rect)
+        pygame.draw.rect(surface, theme.BG_DEEP, knob_rect, 1)
 
-        # 4. Draggable Knob
-        knob_color = COLOR_SLIDER_KNOB_HOVER if (is_hovered or self.dragging) else COLOR_SLIDER_KNOB
-        pygame.draw.circle(surface, knob_color, knob_pos, self.knob_radius)
-        pygame.draw.circle(surface, (20, 35, 60), knob_pos, self.knob_radius, width=2)
+        if focused:
+            widgets.draw_focus_bar(surface, self.rect.inflate(0, 16).move(-14, -4))
 
 
 class ToggleWidget:
-    """Interactive toggle switch / checkbox widget."""
+    """Interactive toggle switch widget."""
 
     def __init__(self, x, y, width, height, label, initial_state=False, on_toggle=None):
         self.rect = pygame.Rect(x, y, width, height)
@@ -147,41 +158,36 @@ class ToggleWidget:
                 return True
         return False
 
-    def draw(self, surface, mouse_pos, font_label, font_status):
+    def draw(self, surface, mouse_pos, font_label, font_status, focused=False):
         is_hovered = self.rect.collidepoint(mouse_pos) if mouse_pos else False
+        active = is_hovered or focused
 
-        # Outer card/button
-        bg_color = COLOR_TAB_HOVER_BG if is_hovered else COLOR_PANEL_BG
-        border_color = COLOR_TEXT_ACCENT if is_hovered else COLOR_PANEL_BORDER
-        pygame.draw.rect(surface, bg_color, self.rect, border_radius=8)
-        pygame.draw.rect(surface, border_color, self.rect, width=1, border_radius=8)
+        widgets.draw_panel(
+            surface, self.rect,
+            COLOR_TAB_HOVER_BG if active else COLOR_PANEL_BG,
+            theme.ACCENT if active else COLOR_PANEL_BORDER,
+            brackets=False,
+        )
+        if focused:
+            widgets.draw_focus_bar(surface, self.rect)
 
-        # Label text
-        label_surf = font_label.render(self.label, True, COLOR_TEXT_WHITE)
+        label_surf = _TEXT_CACHE.render(font_label, self.label.upper(), COLOR_TEXT_WHITE)
         surface.blit(label_surf, (self.rect.x + 18, self.rect.centery - label_surf.get_height() // 2))
 
-        # Switch pill on right
-        switch_w = 56
-        switch_h = 26
+        switch_w, switch_h = 64, 26
         switch_x = self.rect.right - switch_w - 18
         switch_y = self.rect.centery - switch_h // 2
         switch_rect = pygame.Rect(switch_x, switch_y, switch_w, switch_h)
-
-        pill_color = (30, 80, 50) if self.state else (50, 30, 35)
         pill_border = COLOR_TEXT_GREEN if self.state else COLOR_TEXT_RED
-        pygame.draw.rect(surface, pill_color, switch_rect, border_radius=13)
-        pygame.draw.rect(surface, pill_border, switch_rect, width=1, border_radius=13)
+        widgets.draw_panel(
+            surface, switch_rect, COLOR_TOGGLE_ON if self.state else COLOR_TOGGLE_OFF, pill_border, brackets=False
+        )
 
-        # Knob inside pill
-        knob_r = 10
-        knob_cx = switch_x + switch_w - knob_r - 3 if self.state else switch_x + knob_r + 3
-        knob_cy = switch_y + switch_h // 2
-        pygame.draw.circle(surface, COLOR_TEXT_WHITE, (knob_cx, knob_cy), knob_r)
+        knob_w = 20
+        knob_x = switch_x + switch_w - knob_w - 3 if self.state else switch_x + 3
+        pygame.draw.rect(surface, COLOR_TEXT_WHITE, (knob_x, switch_y + 3, knob_w, switch_h - 6))
 
-        # Text inside pill
-        status_txt = "ON" if self.state else "OFF"
-        status_color = COLOR_TEXT_GREEN if self.state else COLOR_TEXT_RED
-        txt_surf = font_status.render(status_txt, True, status_color)
+        txt_surf = _TEXT_CACHE.render(font_status, "ON" if self.state else "OFF", pill_border)
         txt_x = switch_x + 8 if self.state else switch_x + switch_w - txt_surf.get_width() - 8
         surface.blit(txt_surf, (txt_x, switch_y + switch_h // 2 - txt_surf.get_height() // 2))
 
@@ -201,21 +207,39 @@ class SettingsMenu:
         "3. Flight Controls",
     ]
 
+    AUDIO_BULLETS = [
+        ("Centralized 16-Channel Mixer", "Dedicated low-latency voices for weapons, alarms, engine & UI."),
+        ("Voice Limiting & Anti-Clipping", "Prevents volume stacking and distortion during intense bullet swarms."),
+        ("Dynamic Combat Music Intensity", "Smoothly transitions between ambient and high-threat themes."),
+        ("Velocity-Modulated Engine Hum", "Thruster pitch and volume follow your flight speed."),
+        ("Persistent Configuration", "Volume levels and mute preferences are saved automatically."),
+        ("Instant Mute Shortcut", "Press 'M' during gameplay or menus to toggle mute."),
+    ]
+
+    GAMEPLAY_INFO = [
+        ("SCREEN SHAKE", "Camera shake on impacts and explosions."),
+        ("SPEEDOMETER", "Shows the throttle gauge above the minimap."),
+        ("LOW HULL / SHIELD WARNINGS", "Red and cyan screen-edge vignettes plus the heartbeat alarm at critical levels."),
+    ]
+
     def __init__(self, width=1280, height=720):
         self.width = width
         self.height = height
         self.active_tab = self.TAB_AUDIO
         self.audio_manager = get_audio_manager()
+        self.focus_index = 0
 
-        if not pygame.font.get_init():
-            pygame.font.init()
+        self.font_title = theme.get_font("title")
+        self.font_subtitle = theme.get_font("heading")
+        self.font_label = theme.get_font("label")
+        self.font_body = theme.get_font("body_small")
+        self.font_val = theme.get_font("mono")
+        self.font_tag = theme.get_font("mono_tiny")
+        self._fonts_ready = None not in (
+            self.font_title, self.font_subtitle, self.font_label, self.font_body, self.font_val, self.font_tag
+        )
 
-        self.font_title = pygame.font.SysFont("arial", 28, bold=True)
-        self.font_subtitle = pygame.font.SysFont("arial", 18, bold=True)
-        self.font_label = pygame.font.SysFont("arial", 15, bold=True)
-        self.font_body = pygame.font.SysFont("arial", 13, bold=False)
-        self.font_val = pygame.font.SysFont("arial", 14, bold=True)
-        self.font_tag = pygame.font.SysFont("arial", 11, bold=True)
+        self._overlay = widgets.make_overlay((self.width, self.height), COLOR_BG_OVERLAY)
 
         # Tab button rectangles
         self.tab_rects = []
@@ -227,11 +251,9 @@ class SettingsMenu:
         # Main content panel
         self.panel_rect = pygame.Rect(40, 72, self.width - 80, self.height - 96)
 
-        # Initialize Audio Tab Widgets
         self._init_audio_widgets()
-
-        # Initialize Gameplay Tab Widgets
         self._init_gameplay_widgets()
+        self._build_static_content()
 
         # Feedback notification
         self.feedback_message = ""
@@ -254,42 +276,31 @@ class SettingsMenu:
         start_y = 175
         spacing_y = 70
 
-        # Master Volume Slider
         self.slider_master = SliderWidget(
             slider_x, start_y, slider_w, slider_h,
             label="Master Volume",
             initial_val=self.audio_manager.get_master_volume(),
             on_change=lambda val: self.audio_manager.set_master_volume(val)
         )
-
-        # Music Volume Slider
         self.slider_music = SliderWidget(
             slider_x, start_y + spacing_y, slider_w, slider_h,
             label="Music Volume",
             initial_val=self.audio_manager.get_music_volume(),
             on_change=lambda val: self.audio_manager.set_music_volume(val)
         )
-
-        # SFX Volume Slider
         self.slider_sfx = SliderWidget(
             slider_x, start_y + spacing_y * 2, slider_w, slider_h,
             label="SFX Volume",
             initial_val=self.audio_manager.get_sfx_volume(),
             on_change=lambda val: self.audio_manager.set_sfx_volume(val)
         )
-
-        # Mute Audio Toggle
         self.toggle_mute = ToggleWidget(
             slider_x, start_y + spacing_y * 3 + 10, slider_w, 48,
             label="Mute Audio Output (M)",
             initial_state=self.audio_manager.is_muted(),
             on_toggle=lambda state: self.audio_manager.set_mute(state)
         )
-
-        # Test SFX Button
         self.test_sfx_rect = pygame.Rect(slider_x, start_y + spacing_y * 4 + 16, 210, 40)
-
-        # Reset Defaults Button
         self.reset_audio_rect = pygame.Rect(slider_x + 230, start_y + spacing_y * 4 + 16, 230, 40)
 
     def _init_gameplay_widgets(self):
@@ -299,23 +310,41 @@ class SettingsMenu:
         gh = 48
         spacing = 60
 
-        self.toggle_screen_shake = ToggleWidget(
-            gx, gy, gw, gh,
-            label="Tactical Screen Shake",
-            initial_state=True
-        )
-
-        self.toggle_speedometer = ToggleWidget(
-            gx, gy + spacing, gw, gh,
-            label="Display Speedometer HUD",
-            initial_state=True
-        )
-
+        self.toggle_screen_shake = ToggleWidget(gx, gy, gw, gh, label="Tactical Screen Shake", initial_state=True)
+        self.toggle_speedometer = ToggleWidget(gx, gy + spacing, gw, gh, label="Display Speedometer HUD", initial_state=True)
         self.toggle_warnings = ToggleWidget(
-            gx, gy + spacing * 2, gw, gh,
-            label="Boundary & Missile Warning Alerts",
-            initial_state=True
+            gx, gy + spacing * 2, gw, gh, label="Low Hull / Shield Warnings", initial_state=True
         )
+
+    def _build_static_content(self):
+        """Pre-compute wrapped info text and the controls grid (no per-frame layout work)."""
+        self._audio_bullets = []
+        self._gameplay_info = []
+        self._controls_rows = []
+        if not self._fonts_ready:
+            return
+        text_w = 560 - 44 - 24
+        for title, desc in self.AUDIO_BULLETS:
+            self._audio_bullets.append((title, widgets.wrap_text_px(self.font_body, desc, text_w)))
+        info_w = 540 - 48
+        for title, desc in self.GAMEPLAY_INFO:
+            self._gameplay_info.append((title, widgets.wrap_text_px(self.font_body, desc, info_w)))
+
+        # Controls grid: two columns of (kind, text...) rows, categories keep declaration order.
+        col_w = 560
+        key_w = 190
+        columns = [[], []]
+        col_for = {"FLIGHT": 0, "WEAPONS": 0, "STRATAGEMS": 1, "SYSTEM": 1}
+        for category in CATEGORY_ORDER:
+            col = col_for.get(category, 1)
+            columns[col].append(("header", category))
+            for binding in bindings_by_category(category):
+                columns[col].append(
+                    ("row", binding.keys, widgets.fit_text(self.font_body, binding.action, col_w - key_w - 24))
+                )
+        self._controls_rows = columns
+        self._controls_col_w = col_w
+        self._controls_key_w = key_w
 
     def sync_from_manager(self):
         """Synchronizes widget values with current AudioManager settings."""
@@ -328,6 +357,59 @@ class SettingsMenu:
         self.feedback_message = msg
         self.feedback_time = pygame.time.get_ticks()
 
+    # ------------------------------------------------------------------ focus
+    def _focus_items(self):
+        if self.active_tab == self.TAB_AUDIO:
+            return [self.slider_master, self.slider_music, self.slider_sfx, self.toggle_mute, "test", "reset"]
+        if self.active_tab == self.TAB_GAMEPLAY:
+            return [self.toggle_screen_shake, self.toggle_speedometer, self.toggle_warnings]
+        return []
+
+    def _set_tab(self, index):
+        self.active_tab = index % len(self.TAB_NAMES)
+        self.focus_index = 0
+        self.audio_manager.play_sfx("ui_click")
+        return "tab_changed"
+
+    def _do_test_sfx(self):
+        self.audio_manager.play_sfx("laser_player")
+        self.show_feedback("Playing Test Laser Sound")
+
+    def _do_reset_audio(self):
+        self.audio_manager.set_master_volume(0.8)
+        self.audio_manager.set_music_volume(0.6)
+        self.audio_manager.set_sfx_volume(0.8)
+        self.audio_manager.set_mute(False)
+        self.sync_from_manager()
+        self.audio_manager.play_sfx("ui_click")
+        self.show_feedback("Audio settings reset to default")
+
+    def _handle_focus_key(self, key):
+        items = self._focus_items()
+        if not items:
+            return
+        self.focus_index %= len(items)
+        item = items[self.focus_index]
+        if key == pygame.K_UP:
+            self.focus_index = (self.focus_index - 1) % len(items)
+            self.audio_manager.play_sfx("ui_hover")
+        elif key == pygame.K_DOWN:
+            self.focus_index = (self.focus_index + 1) % len(items)
+            self.audio_manager.play_sfx("ui_hover")
+        elif key in (pygame.K_MINUS, pygame.K_KP_MINUS) and isinstance(item, SliderWidget):
+            item.adjust(-1)
+        elif key in (pygame.K_PLUS, pygame.K_EQUALS, pygame.K_KP_PLUS) and isinstance(item, SliderWidget):
+            item.adjust(1)
+        elif key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            if isinstance(item, ToggleWidget):
+                item.toggle()
+                self.audio_manager.play_sfx("ui_click")
+            elif item == "test":
+                self._do_test_sfx()
+            elif item == "reset":
+                self._do_reset_audio()
+
+    # ----------------------------------------------------------------- events
     def handle_event(self, event, mouse_pos=None):
         """
         Processes events for the settings menu.
@@ -336,23 +418,17 @@ class SettingsMenu:
             "tab_changed": Switched active tab.
             None: Otherwise.
         """
-        # Mouse Click handling
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             if mouse_pos:
-                # Check Close button
                 if self.close_btn_rect.collidepoint(mouse_pos):
                     self.audio_manager.play_sfx("ui_click")
                     return "close"
 
-                # Check Tab buttons
                 for i, rect in enumerate(self.tab_rects):
                     if rect.collidepoint(mouse_pos):
                         if self.active_tab != i:
-                            self.active_tab = i
-                            self.audio_manager.play_sfx("ui_click")
-                            return "tab_changed"
+                            return self._set_tab(i)
 
-        # Tab Specific Event Processing
         if self.active_tab == self.TAB_AUDIO:
             self.slider_master.handle_event(event, mouse_pos)
             self.slider_music.handle_event(event, mouse_pos)
@@ -362,16 +438,9 @@ class SettingsMenu:
 
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and mouse_pos:
                 if self.test_sfx_rect.collidepoint(mouse_pos):
-                    self.audio_manager.play_sfx("laser_player")
-                    self.show_feedback("Playing Test Laser Sound")
+                    self._do_test_sfx()
                 elif self.reset_audio_rect.collidepoint(mouse_pos):
-                    self.audio_manager.set_master_volume(0.8)
-                    self.audio_manager.set_music_volume(0.6)
-                    self.audio_manager.set_sfx_volume(0.8)
-                    self.audio_manager.set_mute(False)
-                    self.sync_from_manager()
-                    self.audio_manager.play_sfx("ui_click")
-                    self.show_feedback("Audio settings reset to default")
+                    self._do_reset_audio()
 
         elif self.active_tab == self.TAB_GAMEPLAY:
             if self.toggle_screen_shake.handle_event(event, mouse_pos):
@@ -381,66 +450,63 @@ class SettingsMenu:
             if self.toggle_warnings.handle_event(event, mouse_pos):
                 self.audio_manager.play_sfx("ui_click")
 
-        # Global Hotkeys within Settings Menu
         if event.type == pygame.KEYDOWN:
             if event.key in (pygame.K_ESCAPE, pygame.K_o, pygame.K_p):
                 self.audio_manager.play_sfx("ui_click")
                 return "close"
             elif event.key == pygame.K_1:
-                self.active_tab = self.TAB_AUDIO
-                self.audio_manager.play_sfx("ui_click")
-                return "tab_changed"
+                return self._set_tab(self.TAB_AUDIO)
             elif event.key == pygame.K_2:
-                self.active_tab = self.TAB_GAMEPLAY
-                self.audio_manager.play_sfx("ui_click")
-                return "tab_changed"
+                return self._set_tab(self.TAB_GAMEPLAY)
             elif event.key == pygame.K_3:
-                self.active_tab = self.TAB_CONTROLS
-                self.audio_manager.play_sfx("ui_click")
-                return "tab_changed"
+                return self._set_tab(self.TAB_CONTROLS)
+            elif event.key == pygame.K_RIGHT:
+                return self._set_tab(self.active_tab + 1)
+            elif event.key == pygame.K_LEFT:
+                return self._set_tab(self.active_tab - 1)
+            elif event.key == pygame.K_TAB:
+                step = -1 if (event.mod & pygame.KMOD_SHIFT) else 1
+                return self._set_tab(self.active_tab + step)
             elif event.key == pygame.K_m:
                 is_muted = self.audio_manager.toggle_mute()
                 self.toggle_mute.set_state(is_muted)
                 self.audio_manager.play_sfx("ui_click")
                 self.show_feedback(f"Audio {'MUTED' if is_muted else 'UNMUTED'}")
+            else:
+                self._handle_focus_key(event.key)
 
         return None
 
+    # ------------------------------------------------------------------- draw
     def draw(self, surface, mouse_pos=None):
-        # 1. Dark semi-transparent backdrop overlay
-        overlay = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
-        overlay.fill(COLOR_BG_OVERLAY)
-        surface.blit(overlay, (0, 0))
+        surface.blit(self._overlay, (0, 0))
+        if not self._fonts_ready:
+            return
 
-        # 2. Main content container panel
-        pygame.draw.rect(surface, COLOR_PANEL_BG, self.panel_rect, border_radius=10)
-        pygame.draw.rect(surface, COLOR_PANEL_BORDER, self.panel_rect, width=2, border_radius=10)
+        widgets.draw_panel(surface, self.panel_rect)
 
-        # 3. Draw Tab Buttons across the header
         for i, (name, rect) in enumerate(zip(self.TAB_NAMES, self.tab_rects)):
             is_active = (i == self.active_tab)
             is_hover = rect.collidepoint(mouse_pos) if mouse_pos else False
-
             bg_color = COLOR_TAB_ACTIVE_BG if is_active else (COLOR_TAB_HOVER_BG if is_hover else COLOR_TAB_INACTIVE_BG)
-            border_color = COLOR_TAB_ACTIVE_BORDER if is_active else (COLOR_TEXT_ACCENT if is_hover else COLOR_TAB_INACTIVE_BORDER)
+            widgets.draw_panel(surface, rect, bg_color, COLOR_PANEL_BORDER, brackets=False)
+            if is_active:
+                pygame.draw.rect(surface, theme.ACCENT, (rect.x, rect.bottom - 3, rect.w, 3))
+            txt_color = COLOR_TEXT_WHITE if is_active else (theme.ACCENT if is_hover else COLOR_TEXT_MUTED)
+            label = widgets.fit_text(self.font_label, name.upper(), rect.w - 16)
+            txt_surf = _TEXT_CACHE.render(self.font_label, label, txt_color)
+            surface.blit(txt_surf, txt_surf.get_rect(center=rect.center))
 
-            pygame.draw.rect(surface, bg_color, rect, border_radius=6)
-            pygame.draw.rect(surface, border_color, rect, width=2 if is_active else 1, border_radius=6)
-
-            txt_color = COLOR_TEXT_WHITE if is_active else (COLOR_TEXT_ACCENT if is_hover else COLOR_TEXT_MUTED)
-            txt_surf = self.font_label.render(name, True, txt_color)
-            surface.blit(txt_surf, (rect.centerx - txt_surf.get_width() // 2, rect.centery - txt_surf.get_height() // 2))
-
-        # 4. Close Button [ESC]
         close_hover = self.close_btn_rect.collidepoint(mouse_pos) if mouse_pos else False
-        close_bg = (160, 40, 40) if close_hover else (60, 25, 30)
-        close_border = COLOR_TEXT_RED if close_hover else (120, 50, 60)
-        pygame.draw.rect(surface, close_bg, self.close_btn_rect, border_radius=6)
-        pygame.draw.rect(surface, close_border, self.close_btn_rect, width=1, border_radius=6)
-        close_surf = self.font_label.render("Back [ESC]", True, COLOR_TEXT_WHITE)
-        surface.blit(close_surf, (self.close_btn_rect.centerx - close_surf.get_width() // 2, self.close_btn_rect.centery - close_surf.get_height() // 2))
+        widgets.draw_panel(
+            surface, self.close_btn_rect,
+            COLOR_TAB_HOVER_BG if close_hover else COLOR_TAB_INACTIVE_BG,
+            theme.DANGER if close_hover else COLOR_PANEL_BORDER,
+            brackets=False,
+        )
+        close_surf = _TEXT_CACHE.render(self.font_label, "BACK [ESC]", COLOR_TEXT_WHITE)
+        surface.blit(close_surf, close_surf.get_rect(center=self.close_btn_rect.center))
 
-        # 5. Draw Content based on Active Tab
         if self.active_tab == self.TAB_AUDIO:
             self._draw_audio_tab(surface, mouse_pos)
         elif self.active_tab == self.TAB_GAMEPLAY:
@@ -448,146 +514,100 @@ class SettingsMenu:
         elif self.active_tab == self.TAB_CONTROLS:
             self._draw_controls_tab(surface, mouse_pos)
 
-        # 6. Feedback Toast Message
         if self.feedback_message and (pygame.time.get_ticks() - self.feedback_time < 2200):
-            toast_surf = self.font_label.render(self.feedback_message, True, COLOR_TEXT_ACCENT)
+            toast_surf = _TEXT_CACHE.render(self.font_label, self.feedback_message.upper(), COLOR_TEXT_ACCENT)
             toast_rect = toast_surf.get_rect(center=(self.width // 2, self.height - 45))
-            pad_rect = toast_rect.inflate(24, 12)
-            pygame.draw.rect(surface, (12, 20, 32), pad_rect, border_radius=6)
-            pygame.draw.rect(surface, COLOR_TEXT_ACCENT, pad_rect, width=1, border_radius=6)
+            widgets.draw_panel(surface, toast_rect.inflate(24, 12), theme.PANEL, COLOR_TEXT_ACCENT, brackets=False)
             surface.blit(toast_surf, toast_rect)
 
+    def _draw_header(self, surface, title, desc):
+        surface.blit(_TEXT_CACHE.render(self.font_title, title, COLOR_TEXT_ACCENT), (90, 96))
+        surface.blit(_TEXT_CACHE.render(self.font_body, desc, COLOR_TEXT_MUTED), (90, 134))
+
+    def _is_focused(self, item):
+        items = self._focus_items()
+        return bool(items) and items[self.focus_index % len(items)] is item
+
+    def _draw_button(self, surface, rect, text, mouse_pos, color, focused):
+        hover = rect.collidepoint(mouse_pos) if mouse_pos else False
+        widgets.draw_panel(
+            surface, rect,
+            COLOR_TAB_HOVER_BG if (hover or focused) else COLOR_TAB_INACTIVE_BG,
+            color if (hover or focused) else COLOR_PANEL_BORDER,
+            brackets=False,
+        )
+        if focused:
+            widgets.draw_focus_bar(surface, rect)
+        txt = _TEXT_CACHE.render(self.font_label, text, color if color != COLOR_PANEL_BORDER else COLOR_TEXT_WHITE)
+        surface.blit(txt, txt.get_rect(center=rect.center))
+
+    def _draw_info_card(self, surface, rect, title, blocks, with_bullets):
+        widgets.draw_panel(surface, rect, theme.PANEL, COLOR_PANEL_BORDER, theme.ACCENT_DIM)
+        surface.blit(_TEXT_CACHE.render(self.font_subtitle, title, COLOR_TEXT_GOLD), (rect.x + 24, rect.y + 20))
+        step = self.font_body.get_linesize()
+        by = rect.y + 60
+        for b_title, lines in blocks:
+            if with_bullets:
+                pygame.draw.rect(surface, COLOR_TEXT_ACCENT, (rect.x + 26, by + 6, 8, 8))
+            t_surf = _TEXT_CACHE.render(self.font_label, b_title.upper(), COLOR_TEXT_WHITE)
+            surface.blit(t_surf, (rect.x + 44, by))
+            ly = by + t_surf.get_height() + 2
+            for line in lines:
+                surface.blit(_TEXT_CACHE.render(self.font_body, line, COLOR_TEXT_MUTED), (rect.x + 44, ly))
+                ly += step
+            by = ly + 12
+
     def _draw_audio_tab(self, surface, mouse_pos):
-        # Section Title & Description
-        title_surf = self.font_title.render("AUDIO CONFIGURATION", True, COLOR_TEXT_ACCENT)
-        desc_surf = self.font_body.render("Adjust master output, dynamic background music, and tactical sound effects.", True, COLOR_TEXT_MUTED)
-        surface.blit(title_surf, (90, 100))
-        surface.blit(desc_surf, (90, 136))
-
-        # Draw Sliders & Mute Toggle
-        self.slider_master.draw(surface, mouse_pos, self.font_label, self.font_val)
-        self.slider_music.draw(surface, mouse_pos, self.font_label, self.font_val)
-        self.slider_sfx.draw(surface, mouse_pos, self.font_label, self.font_val)
-        self.toggle_mute.draw(surface, mouse_pos, self.font_label, self.font_val)
-
-        # Test SFX Button
-        t_hover = self.test_sfx_rect.collidepoint(mouse_pos) if mouse_pos else False
-        t_bg = (0, 100, 150) if t_hover else (15, 45, 75)
-        t_border = COLOR_TEXT_ACCENT if t_hover else COLOR_PANEL_BORDER
-        pygame.draw.rect(surface, t_bg, self.test_sfx_rect, border_radius=6)
-        pygame.draw.rect(surface, t_border, self.test_sfx_rect, width=1, border_radius=6)
-        t_txt = self.font_label.render("TEST SOUND (SFX)", True, COLOR_TEXT_WHITE)
-        surface.blit(t_txt, (self.test_sfx_rect.centerx - t_txt.get_width() // 2, self.test_sfx_rect.centery - t_txt.get_height() // 2))
-
-        # Reset Audio Defaults Button
-        r_hover = self.reset_audio_rect.collidepoint(mouse_pos) if mouse_pos else False
-        r_bg = (70, 50, 20) if r_hover else (40, 30, 15)
-        r_border = COLOR_TEXT_GOLD if r_hover else COLOR_PANEL_BORDER
-        pygame.draw.rect(surface, r_bg, self.reset_audio_rect, border_radius=6)
-        pygame.draw.rect(surface, r_border, self.reset_audio_rect, width=1, border_radius=6)
-        r_txt = self.font_label.render("RESET DEFAULTS", True, COLOR_TEXT_GOLD)
-        surface.blit(r_txt, (self.reset_audio_rect.centerx - r_txt.get_width() // 2, self.reset_audio_rect.centery - r_txt.get_height() // 2))
-
-        # Right Side Information / Info Card
-        card_rect = pygame.Rect(630, 160, 560, 390)
-        pygame.draw.rect(surface, (14, 20, 32), card_rect, border_radius=8)
-        pygame.draw.rect(surface, COLOR_PANEL_BORDER, card_rect, width=1, border_radius=8)
-
-        card_title = self.font_subtitle.render("AUDIO ENGINE FEATURES", True, COLOR_TEXT_GOLD)
-        surface.blit(card_title, (card_rect.x + 24, card_rect.y + 20))
-
-        bullet_points = [
-            ("Centralized 16-Channel Mixer", "Allocates dedicated low-latency voices for weapons, alarms, engine & UI."),
-            ("Voice Limiting & Anti-Clipping", "Prevents volume stacking and audio distortion during intense bullet swarms."),
-            ("Dynamic Combat Music Intensity", "Smoothly transitions between ambient and high-threat themes during combat."),
-            ("Velocity-Modulated Engine Hum", "Jet thruster pitch and volume adjust continuously with your flight speed."),
-            ("Persistent Configuration", "Volume levels and mute preferences are saved automatically to data storage."),
-            ("Instant Mute Shortcut", "Press 'M' during gameplay or menus to toggle mute immediately.")
-        ]
-
-        by = card_rect.y + 60
-        for b_title, b_desc in bullet_points:
-            pygame.draw.circle(surface, COLOR_TEXT_ACCENT, (card_rect.x + 30, by + 8), 4)
-            t_surf = self.font_label.render(b_title, True, COLOR_TEXT_WHITE)
-            surface.blit(t_surf, (card_rect.x + 44, by))
-            d_surf = self.font_body.render(b_desc, True, COLOR_TEXT_MUTED)
-            surface.blit(d_surf, (card_rect.x + 44, by + 20))
-            by += 48
+        self._draw_header(
+            surface, "AUDIO CONFIGURATION",
+            "Adjust master output, dynamic background music, and tactical sound effects.",
+        )
+        for item in (self.slider_master, self.slider_music, self.slider_sfx):
+            item.draw(surface, mouse_pos, self.font_label, self.font_val, focused=self._is_focused(item))
+        self.toggle_mute.draw(
+            surface, mouse_pos, self.font_label, self.font_val, focused=self._is_focused(self.toggle_mute)
+        )
+        items = self._focus_items()
+        focused = items[self.focus_index % len(items)]
+        self._draw_button(surface, self.test_sfx_rect, "TEST SOUND (SFX)", mouse_pos, COLOR_TEXT_ACCENT, focused == "test")
+        self._draw_button(surface, self.reset_audio_rect, "RESET DEFAULTS", mouse_pos, COLOR_TEXT_GOLD, focused == "reset")
+        self._draw_info_card(
+            surface, pygame.Rect(630, 160, 560, 390), "AUDIO ENGINE FEATURES", self._audio_bullets, True
+        )
 
     def _draw_gameplay_tab(self, surface, mouse_pos):
-        title_surf = self.font_title.render("GAMEPLAY & HUD PREFERENCES", True, COLOR_TEXT_ACCENT)
-        desc_surf = self.font_body.render("Configure display feedback, HUD telemetry, and accessibility options.", True, COLOR_TEXT_MUTED)
-        surface.blit(title_surf, (90, 100))
-        surface.blit(desc_surf, (90, 136))
-
-        self.toggle_screen_shake.draw(surface, mouse_pos, self.font_label, self.font_val)
-        self.toggle_speedometer.draw(surface, mouse_pos, self.font_label, self.font_val)
-        self.toggle_warnings.draw(surface, mouse_pos, self.font_label, self.font_val)
-
-        # Right Side Info Box
-        card_rect = pygame.Rect(650, 165, 540, 380)
-        pygame.draw.rect(surface, (14, 20, 32), card_rect, border_radius=8)
-        pygame.draw.rect(surface, COLOR_PANEL_BORDER, card_rect, width=1, border_radius=8)
-
-        card_title = self.font_subtitle.render("FUTURE SETTINGS MODULES", True, COLOR_TEXT_GOLD)
-        surface.blit(card_title, (card_rect.x + 24, card_rect.y + 20))
-
-        info_lines = [
-            "This settings architecture is designed for effortless future extension.",
-            "Developers can register new setting options, sliders, and toggles by simply",
-            "adding widgets to this menu.",
-            "",
-            "Planned future additions:",
-            "- Graphics Quality & Particle Density",
-            "- Minimap Scale & Transparency",
-            "- Custom Crosshair Colors",
-            "- Full Key Rebinding System",
-        ]
-        iy = card_rect.y + 60
-        for line in info_lines:
-            color = COLOR_TEXT_ACCENT if line.startswith("-") else COLOR_TEXT_MUTED
-            surf = self.font_body.render(line, True, color)
-            surface.blit(surf, (card_rect.x + 24, iy))
-            iy += 24
+        self._draw_header(
+            surface, "GAMEPLAY & HUD PREFERENCES",
+            "Configure display feedback, HUD telemetry, and accessibility options.",
+        )
+        for item in (self.toggle_screen_shake, self.toggle_speedometer, self.toggle_warnings):
+            item.draw(surface, mouse_pos, self.font_label, self.font_val, focused=self._is_focused(item))
+        self._draw_info_card(
+            surface, pygame.Rect(650, 165, 540, 380), "WHAT THESE OPTIONS DO", self._gameplay_info, True
+        )
 
     def _draw_controls_tab(self, surface, mouse_pos):
-        title_surf = self.font_title.render("FLIGHT CONTROLS & KEYBINDINGS", True, COLOR_TEXT_ACCENT)
-        desc_surf = self.font_body.render("Primary flight, targeting, and tactical support keybindings.", True, COLOR_TEXT_MUTED)
-        surface.blit(title_surf, (90, 100))
-        surface.blit(desc_surf, (90, 136))
-
-        controls_list = [
-            ("W / S (or Up / Down)", "Thrust Acceleration / Deceleration"),
-            ("A / D (or Left / Right)", "Turn Heading Left / Right"),
-            ("SPACE / Left Click", "Fire Primary Cannons"),
-            ("E / F / Right Click", "Launch Homing Rocket"),
-            ("Q", "Toggle Radar Mode (CONE / OMNI)"),
-            ("1 - 5 / Mouse Wheel", "Cycle Equipped Weapon / Stratagem"),
-            ("V / TAB", "Open Stratagem Tactical Wheel"),
-            ("C / X", "Quick Deploy Air Strike / Supply Pod"),
-            ("P", "Pause Game"),
-            ("H", "Open In-Game Help Manual"),
-            ("O", "Open Settings & Audio Menu"),
-            ("M", "Instant Mute / Unmute Audio"),
-        ]
-
+        self._draw_header(
+            surface, "FLIGHT CONTROLS & KEYBINDINGS",
+            "Primary flight, targeting, and tactical support keybindings.",
+        )
         start_x = 90
         start_y = 175
-        col_w = 540
-        row_h = 36
-
-        for i, (key, action) in enumerate(controls_list):
-            col = i // 6
-            row = i % 6
+        row_h = 28
+        step = 32
+        col_w = self._controls_col_w
+        key_w = self._controls_key_w
+        for col, rows in enumerate(self._controls_rows):
             rx = start_x + col * (col_w + 30)
-            ry = start_y + row * (row_h + 12)
-
-            box_rect = pygame.Rect(rx, ry, col_w, row_h)
-            pygame.draw.rect(surface, COLOR_PANEL_BG, box_rect, border_radius=6)
-            pygame.draw.rect(surface, COLOR_PANEL_BORDER, box_rect, width=1, border_radius=6)
-
-            key_surf = self.font_label.render(key, True, COLOR_TEXT_ACCENT)
-            action_surf = self.font_body.render(action, True, COLOR_TEXT_WHITE)
-
-            surface.blit(key_surf, (rx + 16, ry + (row_h - key_surf.get_height()) // 2))
-            surface.blit(action_surf, (rx + 220, ry + (row_h - action_surf.get_height()) // 2))
+            ry = start_y
+            for entry in rows:
+                if entry[0] == "header":
+                    surface.blit(_TEXT_CACHE.render(self.font_label, entry[1], theme.ACCENT), (rx, ry + 4))
+                else:
+                    box_rect = pygame.Rect(rx, ry, col_w, row_h)
+                    widgets.draw_panel(surface, box_rect, COLOR_PANEL_BG, COLOR_PANEL_BORDER, brackets=False)
+                    key_surf = _TEXT_CACHE.render(self.font_val, entry[1], COLOR_TEXT_ACCENT)
+                    action_surf = _TEXT_CACHE.render(self.font_body, entry[2], COLOR_TEXT_WHITE)
+                    surface.blit(key_surf, (rx + 12, ry + (row_h - key_surf.get_height()) // 2))
+                    surface.blit(action_surf, (rx + key_w, ry + (row_h - action_surf.get_height()) // 2))
+                ry += step
