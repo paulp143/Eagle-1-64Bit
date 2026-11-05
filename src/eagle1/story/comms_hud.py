@@ -18,6 +18,7 @@ import pygame
 from eagle1.paths import get_base_dir, verify_path_exact_casing
 from eagle1.story.dialogue_db import DialogueNode, DialogueOption, get_dialogue_node
 from eagle1.story.story_manager import StoryManager
+from eagle1.ui import theme, widgets
 
 
 class CommsHUD:
@@ -59,26 +60,26 @@ class CommsHUD:
 
         # UI Dimensions & Geometry
         self.box_width: int = 860
-        self.box_height: int = 150
+        self.box_height: int = 160
         self.box_x: int = (self.screen_width - self.box_width) // 2
         self.box_y: int = 16
         self.max_chars_line: int = 100
         self.max_body_lines: int = 4
 
-        # Color Palette (Super Earth Military Aviator Theme)
-        self.color_bg = (12, 18, 28, 230)
-        self.color_border = (255, 215, 0)  # Gold
-        self.color_border_subtle = (40, 80, 110)
-        self.color_speaker = (255, 220, 100)
-        self.color_location = (140, 170, 190)
-        self.color_text = (240, 245, 250)
-        self.color_waveform = (80, 230, 140)
+        # Color Palette (Military Terminal theme tokens)
+        self.color_bg = theme.with_alpha(theme.PANEL, 235)
+        self.color_border = theme.ACCENT
+        self.color_border_subtle = theme.BORDER
+        self.color_speaker = theme.ACCENT
+        self.color_location = theme.TEXT_MUTED
+        self.color_text = theme.TEXT
+        self.color_waveform = theme.SUCCESS
 
         # Stance card colors
         self.stance_colors = {
-            "loyal": (255, 215, 80),      # Gold
-            "neutral": (140, 200, 240),   # Cyan/Steel
-            "dissident": (255, 100, 90),  # Red/Coral
+            "loyal": theme.ACCENT,        # Gold
+            "neutral": theme.INFO,        # Cyan/Steel
+            "dissident": theme.DANGER,    # Red
         }
 
         # Zero-allocation surface caching
@@ -101,21 +102,21 @@ class CommsHUD:
         # Inner technical grid accents
         pygame.draw.rect(self.bg_surface, self.color_border, (0, 0, self.box_width, self.box_height), width=2)
         pygame.draw.rect(self.bg_surface, self.color_border_subtle, (4, 4, self.box_width - 8, self.box_height - 8), width=1)
-        # Corner brackets
-        corner_len = 16
-        w, h = self.box_width, self.box_height
-        for x, y, dx, dy in [(0, 0, 1, 1), (w - 1, 0, -1, 1), (0, h - 1, 1, -1), (w - 1, h - 1, -1, -1)]:
-            pygame.draw.line(self.bg_surface, self.color_border, (x, y), (x + dx * corner_len, y), 3)
-            pygame.draw.line(self.bg_surface, self.color_border, (x, y), (x, y + dy * corner_len), 3)
+        widgets.draw_brackets(self.bg_surface, self.bg_surface.get_rect(), self.color_border, 16, 3)
 
     def _init_fonts(self) -> None:
-        """Initialize and cache font sizes."""
-        pygame.font.init()
-        self.font_header = pygame.font.SysFont("courier", 14, bold=True)
-        self.font_body = pygame.font.SysFont("arial", 13)
-        self.font_option = pygame.font.SysFont("arial", 12, bold=True)
-        self.font_badge = pygame.font.SysFont("courier", 10, bold=True)
-        self.badge_rf_surface = self.font_badge.render("RF COMM 9", True, (160, 210, 240))
+        """Fetch the cached theme fonts (None when the font module is unavailable)."""
+        self.font_header = theme.get_font("mono")
+        self.font_body = theme.get_font("mono_small")
+        self.font_option = theme.get_font("label")
+        self.font_badge = theme.get_font("mono_tiny")
+        self._fonts_ready = None not in (self.font_header, self.font_body, self.font_option, self.font_badge)
+        self._text_cache = widgets.TextCache(256)
+        # Width available for an option label inside its card (see render()).
+        self._option_label_width = (self.box_width - 64 - 40) // 3 - 10 - 12
+        self.badge_rf_surface = (
+            self.font_badge.render("RF COMM 9", True, theme.TEXT_MUTED) if self._fonts_ready else None
+        )
 
     def _rebuild_node_surface_cache(self) -> None:
         """Pre-render static text surfaces for the active DialogueNode to avoid per-frame allocations."""
@@ -128,8 +129,10 @@ class CommsHUD:
             self._cached_option_cards.clear()
             return
 
+        if not self._fonts_ready:
+            return
         self._cached_speaker_surf = self.font_header.render(
-            f"▶ {self.current_node.speaker.upper()}", True, self.color_speaker
+            f"> {self.current_node.speaker.upper()}", True, self.color_speaker
         )
         self._cached_loc_surf = self.font_header.render(
             f"[{self.current_node.location}]", True, self.color_location
@@ -142,8 +145,10 @@ class CommsHUD:
                 clean_body = body_part.strip()
             else:
                 clean_body = raw_label.strip()
-            display_label = f"[{opt.key_name}] {clean_body}"[:36]
-            card_lbl = self.font_option.render(display_label, True, (0, 220, 255))
+            display_label = widgets.fit_text(
+                self.font_option, f"[{opt.key_name}] {clean_body}", self._option_label_width
+            )
+            card_lbl = self.font_option.render(display_label, True, theme.INFO)
             self._cached_option_cards[stance] = (card_lbl, None)
 
     def trigger_transmission(self, node_or_id: Any) -> bool:
@@ -288,7 +293,7 @@ class CommsHUD:
         # Fast-forward typewriter on space or return
         active_text = self.response_text if self.response_text else (self.current_node.prompt if self.current_node else "")
         if self.typewriter_chars < len(active_text):
-            if event.key in (pygame.K_SPACE, pygame.K_RETURN):
+            if event.key in (pygame.K_SPACE, pygame.K_RETURN, pygame.K_KP_ENTER):
                 self.typewriter_chars = float(len(active_text))
                 if not self.selected_stance and self.current_node and self.current_node.options:
                     self.is_waiting_for_choice = True
@@ -310,7 +315,7 @@ class CommsHUD:
                 return True
 
         # If transmission has no options or response is active, allow manual dismissal
-        if not self.is_waiting_for_choice and event.key in (pygame.K_SPACE, pygame.K_RETURN, pygame.K_ESCAPE):
+        if not self.is_waiting_for_choice and event.key in (pygame.K_SPACE, pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_ESCAPE):
             self.dismiss()
             return True
 
@@ -416,12 +421,14 @@ class CommsHUD:
 
         # 1. Blit static cached background
         surface.blit(self.bg_surface, (self.box_x, self.box_y))
+        if not self._fonts_ready:
+            return
 
         # 2. Render Speaker Portrait / Transceiver Box (Left column)
         port_x = self.box_x + 14
         port_y = self.box_y + 14
         port_size = 64
-        pygame.draw.rect(surface, (20, 35, 50), (port_x, port_y, port_size, port_size))
+        pygame.draw.rect(surface, theme.PANEL_RAISED, (port_x, port_y, port_size, port_size))
         pygame.draw.rect(surface, self.color_border_subtle, (port_x, port_y, port_size, port_size), 1)
 
         portrait_surf = self._get_portrait_surface(self.current_node.portrait)
@@ -431,7 +438,7 @@ class CommsHUD:
             # Subtle waveform across lower edge of portrait
             wave_y = port_y + 54
             amp = 3.0 if self.is_active else 1.0
-            wave_col = (120, 240, 160)
+            wave_col = theme.SUCCESS
             wave_width = 1
         else:
             # Transceiver RF Signal Badge (pre-rendered)
@@ -463,7 +470,7 @@ class CommsHUD:
                 surface.blit(self._cached_loc_surf, (loc_x, header_y))
 
         # 4. Message Body (Typewriter)
-        body_y = header_y + 22
+        body_y = header_y + 20
         active_full_text = self.response_text if self.response_text else self.current_node.prompt
         visible_len = int(min(len(active_full_text), self.typewriter_chars))
         body_key = (active_full_text, visible_len)
@@ -473,17 +480,17 @@ class CommsHUD:
             visible_text = active_full_text[:visible_len]
             self._cached_body_lines = self._wrap_body_lines(visible_text)
             self._cached_body_surfs = [
-                self.font_body.render(line, True, self.color_text)
+                self._text_cache.render(self.font_body, line, self.color_text)
                 for line in self._cached_body_lines
             ]
 
-        line_spacing = 14 if len(self._cached_body_surfs) > 3 else 16
+        line_spacing = self.font_body.get_linesize()
         for idx, txt_surf in enumerate(self._cached_body_surfs):
             surface.blit(txt_surf, (header_x, body_y + idx * line_spacing))
 
         # 5. Choice Options Cards (Rendered when choice is active)
         if self.is_waiting_for_choice and self.current_node.options:
-            opts_y = self.box_y + 92
+            opts_y = self.box_y + 104
             opt_spacing = (self.box_width - port_size - 40) // 3
             stance_keys = ["loyal", "neutral", "dissident"]
 
@@ -495,11 +502,11 @@ class CommsHUD:
                 card_h = 42
 
                 # Uniform neutral card border (no stance-based coloring)
-                col = (0, 180, 230)
-                pygame.draw.rect(surface, (16, 26, 38), (card_x, opts_y, card_w, card_h))
+                col = theme.INFO
+                pygame.draw.rect(surface, theme.PANEL_RAISED, (card_x, opts_y, card_w, card_h))
                 pygame.draw.rect(surface, col, (card_x, opts_y, card_w, card_h), 1)
 
                 if stance in self._cached_option_cards:
                     card_item = self._cached_option_cards[stance]
                     card_lbl = card_item[0] if isinstance(card_item, tuple) else card_item
-                    surface.blit(card_lbl, (card_x + 6, opts_y + 12))
+                    surface.blit(card_lbl, (card_x + 6, opts_y + (card_h - card_lbl.get_height()) // 2))
