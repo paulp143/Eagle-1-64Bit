@@ -454,7 +454,7 @@ class SuperDestroyerView:
             theme_col = profile.theme_color if profile else theme.INFO
             pygame.draw.rect(surf, theme_col, (0, 0, size[0], size[1]), width=2)
 
-            f_badge = self.font_badge or (pygame.font.Font(None, 12) if pygame.font.get_init() else None)
+            f_badge = self.font_badge or theme.get_font("mono_tiny")
             cx, cy = size[0] // 2, size[1] // 2
 
             if clean_npc == "npc_reiner":
