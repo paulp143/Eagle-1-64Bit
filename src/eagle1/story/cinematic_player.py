@@ -318,6 +318,7 @@ _EPILOGUE_PROMPT_TEXT: str = "[ENTER / SPACE / ESC] RETURN TO MAIN MENU"
 _EPILOGUE_HEADER_TEXT: str = "CAMPAIGN COMPLETE"
 _STAR_COUNT: int = 140
 _STAR_SEED: int = 73
+_SURFACE_TYPE = pygame.Surface
 
 
 class CinematicPlayer:
@@ -352,6 +353,15 @@ class CinematicPlayer:
         self._epilogue_line_surfs: List[pygame.Surface] = []
         self._skip_prompt_surf: Optional[pygame.Surface] = None
         self._epilogue_prompt_surf: Optional[pygame.Surface] = None
+
+        self._font_retry_done: bool = False
+        self._scene_renderers: Dict[str, Callable[[pygame.Surface], None]] = {
+            CINEMATIC_SCENE_SUICIDE_DIVE: self._draw_scene_suicide_dive,
+            CINEMATIC_SCENE_HANGAR_CLONES: self._draw_scene_hangar_clones,
+            CINEMATIC_SCENE_SCRAP_YARD_EXECUTION: self._draw_scene_scrap_yard_execution,
+            CINEMATIC_SCENE_OBSERVATION_DECK_FUNERAL: self._draw_scene_observation_deck_funeral,
+            CINEMATIC_SCENE_EPILOGUE_CARD: self._draw_scene_epilogue_card,
+        }
 
         self._init_fonts()
         self._init_surfaces()
@@ -668,3 +678,174 @@ class CinematicPlayer:
             surf for surf in (self._render_text(self.font_epilogue, ln, _COLOR_EPILOGUE_TEXT) for ln in wrapped)
             if surf is not None
         ]
+
+    # ------------------------------------------------------------------
+    # Input
+    # ------------------------------------------------------------------
+    def handle_event(self, event: Any) -> Optional[str]:
+        if getattr(event, "type", None) != pygame.KEYDOWN:
+            return None
+        key = getattr(event, "key", None)
+        if self.phase == CINEMATIC_PHASE_PLAYING:
+            if self.allow_skip and key in (pygame.K_ESCAPE, pygame.K_SPACE):
+                self.skip_to_epilogue()
+            return None
+        if self.phase == CINEMATIC_PHASE_EPILOGUE:
+            confirm_keys = (pygame.K_ESCAPE, pygame.K_SPACE, pygame.K_RETURN, pygame.K_KP_ENTER)
+            if key in confirm_keys and self.epilogue_elapsed >= CINEMATIC_EPILOGUE_CONFIRM_DELAY:
+                self.phase = CINEMATIC_PHASE_FINISHED
+                return CINEMATIC_ACTION_RETURN_MAIN_MENU
+        return None
+
+    # ------------------------------------------------------------------
+    # Rendering (no font or Surface allocation in this call chain)
+    # ------------------------------------------------------------------
+    def draw(self, surface: pygame.Surface) -> None:
+        if not isinstance(surface, _SURFACE_TYPE):
+            return
+        if self.phase not in (CINEMATIC_PHASE_PLAYING, CINEMATIC_PHASE_EPILOGUE):
+            return
+        if not self._fonts_ready and not self._font_retry_done and pygame.font.get_init():
+            # One-time lazy retry if fonts were unavailable at construction time.
+            self._font_retry_done = True
+            self._init_fonts()
+            if self._fonts_ready:
+                if self.phase == CINEMATIC_PHASE_PLAYING:
+                    self._rebuild_keyframe_text_cache()
+                else:
+                    self._build_epilogue_cache()
+        try:
+            if self.phase == CINEMATIC_PHASE_PLAYING:
+                kf = self.current_keyframe
+                if kf is not None:
+                    self._draw_scene(surface, kf)
+                if self._caption_surf is not None:
+                    cw = self._caption_surf.get_width()
+                    surface.blit(self._caption_surf, ((self.screen_w - cw) // 2, CINEMATIC_LETTERBOX_HEIGHT + 24))
+                if self.fade_alpha > 0:
+                    self._fade_surf.set_alpha(self.fade_alpha)
+                    surface.blit(self._fade_surf, (0, 0))
+                self._draw_letterbox_and_subtitles(surface)
+            else:
+                self._draw_epilogue(surface)
+        except pygame.error as exc:
+            logger.warning("CinematicPlayer draw failed: %s", exc)
+
+    def _project(self, wx: float, wy: float) -> Tuple[int, int]:
+        pan_x, pan_y, zoom = self.camera
+        return (
+            int(self.screen_w / 2 + (wx - pan_x) * zoom),
+            int(self.screen_h / 2 + (wy - pan_y) * zoom),
+        )
+
+    def _scale(self, length: float) -> int:
+        return max(1, int(length * self.camera[2]))
+
+    def _draw_starfield(self, surface: pygame.Surface, parallax: float) -> None:
+        for sx, sy, radius in self._stars:
+            x = int((sx - self.camera[0] * parallax) % self.screen_w)
+            y = int((sy - self.camera[1] * parallax) % self.screen_h)
+            pygame.draw.circle(surface, (200, 205, 220), (x, y), radius)
+
+    def _draw_scene(self, surface: pygame.Surface, keyframe: CinematicKeyframe) -> None:
+        renderer = self._scene_renderers.get(keyframe.scene_type)
+        if renderer is None:
+            surface.fill((0, 0, 0))
+            return
+        renderer(surface)
+
+    def _draw_scene_suicide_dive(self, surface: pygame.Surface) -> None:
+        surface.fill((18, 10, 14))
+        self._draw_starfield(surface, 0.3)
+        pygame.draw.circle(surface, (90, 30, 30), self._project(0, -40), self._scale(150))
+        pygame.draw.circle(surface, (200, 60, 40), self._project(0, -40), self._scale(170), width=3)
+        silhouette = [self._project(x, y) for x, y in [(0, 230), (-38, 300), (0, 282), (38, 300)]]
+        pygame.draw.polygon(surface, (220, 225, 235), silhouette)
+        for tip in [(-14, 380), (0, 400), (14, 380)]:
+            pygame.draw.line(surface, (255, 140, 40), self._project(0, 300), self._project(*tip), self._scale(3))
+
+    def _draw_scene_hangar_clones(self, surface: pygame.Surface) -> None:
+        surface.fill((20, 24, 30))
+        pygame.draw.line(surface, (70, 80, 95), self._project(-600, 140), self._project(600, 140), self._scale(2))
+        for row in range(3):
+            for col in range(7):
+                cx = -330 + col * 110
+                cy = -110 + row * 110
+                pygame.draw.circle(surface, (150, 160, 175), self._project(cx, cy - 26), self._scale(12))
+                body = pygame.Rect(self._project(cx - 14, cy - 12), (self._scale(28), self._scale(48)))
+                pygame.draw.rect(surface, (110, 120, 135), body)
+
+    def _draw_scene_scrap_yard_execution(self, surface: pygame.Surface) -> None:
+        surface.fill((26, 20, 16))
+        pygame.draw.line(surface, (170, 40, 30), self._project(-700, 60), self._project(700, 60), self._scale(2))
+        pygame.draw.polygon(surface, (60, 50, 42), [self._project(x, y) for x, y in [(-520, 60), (-420, -40), (-300, 60)]])
+        pygame.draw.polygon(surface, (60, 50, 42), [self._project(x, y) for x, y in [(260, 60), (380, -70), (520, 60)]])
+        pygame.draw.circle(surface, (200, 190, 170), self._project(0, 10), self._scale(11))
+        kneeling = pygame.Rect(self._project(-12, 22), (self._scale(24), self._scale(30)))
+        pygame.draw.rect(surface, (150, 140, 120), kneeling)
+        for x in (-90, 90):
+            frame = pygame.Rect(self._project(x - 16, -40), (self._scale(32), self._scale(80)))
+            pygame.draw.rect(surface, (40, 40, 46), frame)
+            pygame.draw.circle(surface, (255, 40, 30), self._project(x, -28), self._scale(4))
+
+    def _draw_scene_observation_deck_funeral(self, surface: pygame.Surface) -> None:
+        surface.fill((8, 10, 20))
+        self._draw_starfield(surface, 0.15)
+        pygame.draw.circle(surface, (40, 70, 120), self._project(260, -120), self._scale(120))
+        frame = pygame.Rect(self._project(-560, -220), (self._scale(1120), self._scale(380)))
+        pygame.draw.rect(surface, (60, 70, 85), frame, width=self._scale(6))
+        pygame.draw.line(surface, (60, 70, 85), self._project(0, -220), self._project(0, 160), self._scale(6))
+        for x in (-270, -90, 90, 270):
+            coffin = pygame.Rect(self._project(x - 60, 190), (self._scale(120), self._scale(36)))
+            pygame.draw.rect(surface, (70, 60, 50), coffin)
+            flag = pygame.Rect(self._project(x - 60, 202), (self._scale(120), self._scale(8)))
+            pygame.draw.rect(surface, (255, 215, 0), flag)
+
+    def _draw_scene_epilogue_card(self, surface: pygame.Surface) -> None:
+        surface.fill((5, 5, 8))
+
+    def _draw_letterbox_and_subtitles(self, surface: pygame.Surface) -> None:
+        h = CINEMATIC_LETTERBOX_HEIGHT
+        surface.blit(self._letterbox_surf, (0, 0))
+        surface.blit(self._letterbox_surf, (0, self.screen_h - h))
+        if self.allow_skip and self._skip_prompt_surf is not None:
+            sw, sh = self._skip_prompt_surf.get_size()
+            surface.blit(self._skip_prompt_surf, (self.screen_w - sw - 24, (h - sh) // 2))
+        idx = self._active_subtitle_index()
+        if idx is None or idx not in self._subtitle_cache:
+            return
+        speaker_surf, line_surfs = self._subtitle_cache[idx]
+        y = self.screen_h - h + 6
+        if speaker_surf is not None:
+            surface.blit(speaker_surf, ((self.screen_w - speaker_surf.get_width()) // 2, y))
+            y += 18
+        for line in line_surfs:
+            surface.blit(line, ((self.screen_w - line.get_width()) // 2, y))
+            y += 21
+
+    def _blit_centered(self, surface: pygame.Surface, surf: Optional[pygame.Surface], y: int) -> None:
+        if surf is None:
+            return
+        surface.blit(surf, ((self.screen_w - surf.get_width()) // 2, y))
+
+    def _draw_epilogue(self, surface: pygame.Surface) -> None:
+        surface.fill((6, 8, 14))
+        pw, ph = self._epilogue_panel.get_size()
+        px = (self.screen_w - pw) // 2
+        py = (self.screen_h - ph) // 2
+        surface.blit(self._epilogue_panel, (px, py))
+
+        y = py + 24
+        self._blit_centered(surface, self._epilogue_header_surf, y)
+        y += 26
+        self._blit_centered(surface, self._epilogue_title_surf, y)
+        y += 52
+        for surf in self._epilogue_stat_surfs:
+            self._blit_centered(surface, surf, y)
+            y += 30
+        y += 14
+        for surf in self._epilogue_line_surfs:
+            self._blit_centered(surface, surf, y)
+            y += 26
+        if self.epilogue_elapsed >= CINEMATIC_EPILOGUE_CONFIRM_DELAY:
+            self._blit_centered(surface, self._epilogue_prompt_surf, py + ph - 32)

@@ -6,13 +6,17 @@ import pygame
 import pytest
 
 from eagle1.story.cinematic_player import (
+    CINEMATIC_ACTION_RETURN_MAIN_MENU,
+    CINEMATIC_LETTERBOX_HEIGHT,
     CINEMATIC_PHASE_EPILOGUE,
+    CINEMATIC_PHASE_FINISHED,
     CINEMATIC_PHASE_IDLE,
     CINEMATIC_PHASE_PLAYING,
     CINEMATIC_SCENE_EPILOGUE_CARD,
     CINEMATIC_SCENE_HANGAR_CLONES,
     CINEMATIC_SCENE_SUICIDE_DIVE,
     UNKNOWN_PILOT_STATUS,
+    VALID_CINEMATIC_SCENE_TYPES,
     CinematicKeyframe,
     CinematicPlayer,
     CinematicSequence,
@@ -431,3 +435,160 @@ def test_restart_resets_cues_and_timeline():
     assert player.keyframe_index == 0
     assert player.fired_audio_cues == ["cue_a"]
     assert player.skipped is False
+
+
+def _key(key):
+    return pygame.event.Event(pygame.KEYDOWN, key=key)
+
+
+def test_escape_skips_to_epilogue_without_firing_remaining_cues():
+    audio = _FakeAudio()
+    player = _started_player(audio)
+    assert player.handle_event(_key(pygame.K_ESCAPE)) is None
+    assert player.phase == CINEMATIC_PHASE_EPILOGUE
+    assert player.skipped is True
+    assert player.fired_audio_cues == ["cue_a"]
+
+
+def test_space_skips_to_epilogue():
+    player = _started_player()
+    assert player.handle_event(_key(pygame.K_SPACE)) is None
+    assert player.phase == CINEMATIC_PHASE_EPILOGUE
+
+
+def test_skip_disabled_ignores_escape_and_space():
+    player = _started_player(allow_skip=False)
+    player.handle_event(_key(pygame.K_ESCAPE))
+    player.handle_event(_key(pygame.K_SPACE))
+    assert player.phase == CINEMATIC_PHASE_PLAYING
+
+
+def test_epilogue_confirm_respects_delay():
+    player = _started_player()
+    player.handle_event(_key(pygame.K_ESCAPE))
+    assert player.handle_event(_key(pygame.K_ESCAPE)) is None
+    assert player.phase == CINEMATIC_PHASE_EPILOGUE
+    player.update(0.39)
+    assert player.handle_event(_key(pygame.K_ESCAPE)) is None
+    player.update(0.02)
+    assert player.handle_event(_key(pygame.K_ESCAPE)) == CINEMATIC_ACTION_RETURN_MAIN_MENU
+    assert player.phase == CINEMATIC_PHASE_FINISHED
+    assert player.is_active is False
+
+
+@pytest.mark.parametrize("key", [pygame.K_ESCAPE, pygame.K_SPACE, pygame.K_RETURN, pygame.K_KP_ENTER])
+def test_epilogue_confirm_keys(key):
+    player = _started_player()
+    player.update(10.0)
+    assert player.handle_event(_key(key)) == CINEMATIC_ACTION_RETURN_MAIN_MENU
+
+
+def test_irrelevant_events_return_none():
+    player = _started_player()
+    events = [
+        pygame.event.Event(pygame.KEYUP, key=pygame.K_ESCAPE),
+        pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1),
+        _key(pygame.K_a),
+        object(),
+        None,
+    ]
+    for event in events:
+        assert player.handle_event(event) is None
+    assert player.phase == CINEMATIC_PHASE_PLAYING
+
+
+@pytest.mark.parametrize("scene_type", VALID_CINEMATIC_SCENE_TYPES)
+def test_draw_every_scene_type_headless(dummy_surface, scene_type):
+    seq = _single_keyframe_sequence(
+        scene_type=scene_type,
+        subtitles=(CinematicSubtitle(0.0, 2.0, "VIPER-2", "Copy that."),),
+    )
+    player = _started_player(sequence=seq)
+    player.update(1.0)
+    player.draw(dummy_surface)
+    player.update(5.0)
+    player.draw(dummy_surface)
+
+
+def test_letterbox_bars_are_black(dummy_surface):
+    player = _started_player()
+    player.update(1.0)
+    player.draw(dummy_surface)
+    assert dummy_surface.get_at((10, 10))[:3] == (0, 0, 0)
+    assert dummy_surface.get_at((10, 719 - 10))[:3] == (0, 0, 0)
+    assert pygame.transform.average_color(dummy_surface, pygame.Rect(0, 100, 1280, 500))[:3] != (0, 0, 0)
+
+
+def test_subtitle_renders_only_in_bottom_bar_window(dummy_surface):
+    bottom = pygame.Rect(0, 720 - CINEMATIC_LETTERBOX_HEIGHT, 1280, CINEMATIC_LETTERBOX_HEIGHT)
+
+    active = _started_player()
+    active.update(1.0)
+    active.draw(dummy_surface)
+    assert pygame.transform.average_color(dummy_surface, bottom)[:3] != (0, 0, 0)
+
+    inactive = _started_player()
+    inactive.update(1.7)
+    dummy_surface.fill((0, 0, 0))
+    inactive.draw(dummy_surface)
+    assert pygame.transform.average_color(dummy_surface, bottom)[:3] == (0, 0, 0)
+
+
+def test_draw_allocates_no_fonts_or_surfaces_per_frame(dummy_surface, monkeypatch):
+    player = _started_player()
+
+    def _boom(*args, **kwargs):
+        raise AssertionError("allocation in frame loop")
+
+    monkeypatch.setattr(pygame.font, "SysFont", _boom)
+    monkeypatch.setattr(pygame.font, "Font", _boom)
+    monkeypatch.setattr(pygame, "Surface", _boom)
+    for _ in range(400):
+        player.update(1 / 60)
+        player.draw(dummy_surface)
+    assert player.phase == CINEMATIC_PHASE_EPILOGUE
+
+
+def test_draw_without_fonts_is_safe(dummy_surface, monkeypatch):
+    def _raise_pygame_error(*args, **kwargs):
+        raise pygame.error("no font")
+
+    monkeypatch.setattr(pygame.font, "get_init", lambda: False)
+    monkeypatch.setattr(pygame.font, "init", _raise_pygame_error)
+    monkeypatch.setattr(pygame.font, "SysFont", _raise_pygame_error)
+
+    player = _started_player()
+    assert player._fonts_ready is False
+    player.update(1.0)
+    player.draw(dummy_surface)
+    player.update(10.0)
+    player.draw(dummy_surface)
+    assert player._subtitle_cache == {}
+    assert player._epilogue_stat_surfs == []
+
+
+def test_draw_noop_when_idle_or_invalid_surface(dummy_surface):
+    dummy_surface.fill((1, 2, 3))
+    CinematicPlayer().draw(dummy_surface)
+    assert dummy_surface.get_at((640, 360))[:3] == (1, 2, 3)
+    player = _started_player()
+    player.draw(None)
+    player.draw("x")
+
+
+def test_epilogue_surfaces_cached_once(dummy_surface):
+    player = _started_player()
+    player.update(10.0)
+    ids = [id(surf) for surf in player._epilogue_stat_surfs]
+    assert len(ids) == 5
+    for _ in range(3):
+        player.update(1 / 60)
+        player.draw(dummy_surface)
+    assert [id(surf) for surf in player._epilogue_stat_surfs] == ids
+
+
+def test_long_subtitle_truncated_to_two_lines():
+    long_text = " ".join(["word"] * 200)
+    seq = _single_keyframe_sequence(subtitles=(CinematicSubtitle(0.0, 2.0, "VIPER-1", long_text),))
+    player = _started_player(sequence=seq)
+    assert len(player._subtitle_cache[0][1]) == 2
