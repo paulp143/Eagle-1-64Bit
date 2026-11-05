@@ -1,4 +1,6 @@
 import pygame
+
+from eagle1.ui import hud_layout, theme, widgets
 import math
 import random
 
@@ -219,10 +221,8 @@ class PowerUpDrop:
         # Outer pulsing glow halo
         pulse = (math.sin(self.bob_timer * 2.0) + 1.0) * 0.5  # 0 to 1
         glow_radius = int(self.radius + 4 + pulse * 4)
-        glow_surf = pygame.Surface((glow_radius * 2, glow_radius * 2), pygame.SRCALPHA)
-        glow_alpha = int(70 + pulse * 60)
-        glow_color = (*self.color, glow_alpha)
-        pygame.draw.circle(glow_surf, glow_color, (glow_radius, glow_radius), glow_radius)
+        glow_alpha = int(70 + pulse * 60) // 10 * 10  # quantized so the glow cache stays small
+        glow_surf = _get_glow_surface(glow_radius, tuple(self.color), glow_alpha)
         surface.blit(glow_surf, (int(screen_x - glow_radius), int(draw_y - glow_radius)))
 
         # Inner solid base orb
@@ -233,6 +233,21 @@ class PowerUpDrop:
         sym_text = font.render(self.info["symbol"], True, (255, 255, 255))
         sym_rect = sym_text.get_rect(center=(int(screen_x), int(draw_y)))
         surface.blit(sym_text, sym_rect)
+
+
+_GLOW_CACHE = {}
+_TETHER_CACHE = {}
+
+
+def _get_glow_surface(radius, color, alpha):
+    """Return a cached soft glow disc (keyed by radius, color and alpha) instead of allocating per frame."""
+    key = (radius, color, alpha)
+    surf = _GLOW_CACHE.get(key)
+    if surf is None:
+        surf = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
+        pygame.draw.circle(surf, (*color, alpha), (radius, radius), radius)
+        _GLOW_CACHE[key] = surf
+    return surf
 
 
 class DroneCompanion:
@@ -302,7 +317,11 @@ class DroneCompanion:
         pcy = player_cy - camera_y
 
         # Draw holographic energy tether to player
-        tether_surf = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
+        tether_surf = _TETHER_CACHE.get(surface.get_size())
+        if tether_surf is None:
+            tether_surf = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
+            _TETHER_CACHE[surface.get_size()] = tether_surf
+        tether_surf.fill((0, 0, 0, 0))
         pygame.draw.line(tether_surf, (155, 89, 182, 90), (int(pcx), int(pcy)), (int(sx), int(sy)), 1)
         surface.blit(tether_surf, (0, 0))
 
@@ -409,23 +428,26 @@ class PowerUpManager:
         self._font_small = None
         self._font_hud = None
         self._font_banner = None
+        self._hud_cache = widgets.TextCache(256)
+        banner_rect = hud_layout.MILESTONE_BANNER_RECT
+        self._banner_surf = pygame.Surface(banner_rect.size, pygame.SRCALPHA)
 
     @property
     def font_small(self):
         if self._font_small is None:
-            self._font_small = pygame.font.SysFont("arial", 13, bold=True)
+            self._font_small = theme.get_font("label")
         return self._font_small
 
     @property
     def font_hud(self):
         if self._font_hud is None:
-            self._font_hud = pygame.font.SysFont("arial", 16, bold=True)
+            self._font_hud = theme.get_font("label")
         return self._font_hud
 
     @property
     def font_banner(self):
         if self._font_banner is None:
-            self._font_banner = pygame.font.SysFont("arial", 26, bold=True)
+            self._font_banner = theme.get_font("title")
         return self._font_banner
 
     def is_active(self, ability_id):
@@ -497,7 +519,7 @@ class PowerUpManager:
 
         ability_name = ABILITIES[ability]["name"]
         self.milestone_banner = {
-            "title": f"★ MILESTONE {threshold:,} PTS REACHED! ★",
+            "title": f"// MILESTONE {threshold:,} PTS REACHED! //",
             "sub": f"{tier_name}: {ability_name} INCOMING!",
             "timer": 4.0
         }
@@ -697,58 +719,50 @@ class PowerUpManager:
 
     def draw_hud(self, surface, game_width, game_height):
         """Draws active buff timers, floating pickup texts, and milestone banners."""
-        # 1. Active Buff Cooldown Bars (Top-Left under Health/Shield)
-        hud_x = 32
-        hud_y = 65
+        font_hud = self.font_hud
+        font_banner = self.font_banner
+        if font_hud is None or font_banner is None:
+            return
+        cache = self._hud_cache
+
+        # 1. Active Buff Cooldown Bars (below the squad panel, see hud_layout)
+        hud_x, hud_y = hud_layout.BUFF_BARS_ORIGIN
         bar_w = 130
         bar_h = 12
 
         for buff_id, time_left in self.active_buffs.items():
             info = ABILITIES[buff_id]
-            max_duration = info["duration"]
-            ratio = max(0.0, min(1.0, time_left / max_duration))
+            ratio = max(0.0, min(1.0, time_left / info["duration"]))
             color = Rarity.COLORS[info["rarity"]]
+            widgets.draw_bar(surface, pygame.Rect(hud_x, hud_y, bar_w, bar_h), ratio, color)
 
-            # Background bar
-            pygame.draw.rect(surface, (20, 25, 35), (hud_x, hud_y, bar_w, bar_h))
-            # Fill bar
-            pygame.draw.rect(surface, color, (hud_x, hud_y, int(bar_w * ratio), bar_h))
-            # Border
-            pygame.draw.rect(surface, (80, 90, 110), (hud_x, hud_y, bar_w, bar_h), 1)
-
-            # Text
-            label = f"{info['name']}: {time_left:.1f}s"
-            text_surf = self.font_hud.render(label, True, (255, 255, 255))
-            surface.blit(text_surf, (hud_x + bar_w + 8, hud_y - 2))
+            label = widgets.fit_text(font_hud, f"{info['name'].upper()}: {time_left:.1f}s", 220)
+            surface.blit(cache.render(font_hud, label, theme.TEXT), (hud_x + bar_w + 8, hud_y - 3))
 
             hud_y += 20
 
-        # 2. Floating Popups (Screen Center-Left)
-        popup_x = 32
-        popup_base_y = 260
+        # 2. Floating Popups (below the buff bars)
+        popup_x = hud_layout.BUFF_BARS_ORIGIN[0]
+        # Popups rise by up to ~60 px, so start low enough to never cross the buff bars above.
+        popup_base_y = hud_layout.BUFF_BARS_ORIGIN[1] + 20 * len(self.active_buffs) + 70
         for p in self.floating_popups:
             py = popup_base_y - p["y_off"]
-            txt_surf = self.font_hud.render(p["text"], True, p["color"])
-            surface.blit(txt_surf, (popup_x, int(py)))
+            surface.blit(cache.render(font_hud, p["text"], p["color"]), (popup_x, int(py)))
 
-        # 3. Milestone Notification Banner (Top Center)
+        # 3. Milestone Notification Banner (below the hero panel zone)
         if self.milestone_banner:
             banner = self.milestone_banner
             alpha_ratio = min(1.0, banner["timer"] / 0.8) if banner["timer"] < 0.8 else 1.0
+            banner_rect = hud_layout.MILESTONE_BANNER_RECT
+            bw, bh = banner_rect.size
 
-            bw = 560
-            bh = 65
-            bx = game_width // 2 - bw // 2
-            by = 48
+            b_surf = self._banner_surf
+            b_surf.fill(theme.with_alpha(theme.PANEL, int(220 * alpha_ratio)))
+            pygame.draw.rect(b_surf, (*theme.ACCENT, int(255 * alpha_ratio)), (0, 0, bw, bh), 2)
 
-            b_surf = pygame.Surface((bw, bh), pygame.SRCALPHA)
-            b_surf.fill((15, 20, 30, int(220 * alpha_ratio)))
-            pygame.draw.rect(b_surf, (243, 156, 18, int(255 * alpha_ratio)), (0, 0, bw, bh), 2)
-
-            t_surf = self.font_banner.render(banner["title"], True, (255, 215, 0))
-            s_surf = self.font_hud.render(banner["sub"], True, (220, 240, 255))
-
+            t_surf = cache.render(font_banner, banner["title"], theme.ACCENT)
+            s_surf = cache.render(font_hud, banner["sub"], theme.TEXT)
             b_surf.blit(t_surf, t_surf.get_rect(centerx=bw // 2, centery=bh // 2 - 12))
             b_surf.blit(s_surf, s_surf.get_rect(centerx=bw // 2, centery=bh // 2 + 15))
 
-            surface.blit(b_surf, (bx, by))
+            surface.blit(b_surf, banner_rect.topleft)
