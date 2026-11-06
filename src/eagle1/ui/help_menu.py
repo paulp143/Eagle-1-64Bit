@@ -66,11 +66,11 @@ WEAPONS = [
         "name": "Eagle Homing Rockets",
         "type": "Secondary Ordnance (Guided Kinetic Warhead)",
         "trigger": "E / F / Left-CTRL or Right-Click",
-        "damage": "4 DMG (Heavy Kinetic Explosion)",
-        "range": "1200 px max target tracking range  |  2.5s maximum flight lifetime",
-        "cooldown": "350 ms firing delay  |  Velocity: 7.0 px/frame  |  Agility: 2.0°/frame",
-        "capacity": "4 rockets  |  Reload: 25.0s when all 4 rockets are exhausted",
-        "notes": "Requires active Radar Lock (target inside CONE or OMNI lock zone). Automatically locks closest hostile in radar zone across all active wave squadrons.",
+        "damage": "20 DMG (one-shots light fighters, 4 hits on bombers)",
+        "range": "1200 px max tracking range  |  2.5s maximum flight lifetime",
+        "cooldown": "350 ms firing delay  |  Velocity: 11.5 px/frame  |  Agility: 5.5°/frame",
+        "capacity": "4 rockets  |  Reload: 12.0s when all 4 rockets are exhausted",
+        "notes": "Air-to-air only. Requires radar lock (CONE or OMNI forward arc). Enemies may break perpendicular to the missile or eject flares that can decoy it; EMS-stunned targets cannot defend.",
         "color": (255, 120, 60),
     },
     {
@@ -671,7 +671,7 @@ class HelpMenu:
         accent_color = theme.INFO if is_cone else theme.WARNING
         widgets.draw_panel(surface, p_rect, theme.PANEL_RAISED, accent_color, accent_color)
 
-        mode_title = "MODE 1: CONE (Long-Range Forward Sector)" if is_cone else "MODE 2: OMNI (360° Close-Quarters Sphere)"
+        mode_title = "MODE 1: CONE (Long-Range Forward Sector)" if is_cone else "MODE 2: OMNI (Close-Range Wide Forward Arc)"
         self._text(surface, self.font_subtitle, mode_title.upper(), accent_color, (x + 16, y + 12), w - 32)
 
         if is_cone:
@@ -686,13 +686,13 @@ class HelpMenu:
             ]
         else:
             specs = [
-                ("Search Geometry:", "Full 360° Spherical Perimeter around ship"),
+                ("Search Geometry:", "150° wide forward arc (±75° around the nose)"),
                 ("Minimum Arming Range:", "0 pixels (Zero blind spot point-blank lock)"),
                 ("Maximum Target Range:", "420 pixels (Tight defensive perimeter)"),
-                ("HUD Visualization:", "Glowing 360° circular perimeter ring around ship"),
-                ("Tactical Role:", "Close Dogfighting & Defense - 360° situational awareness"),
-                ("Best Situation:", "Enemies maneuvering behind you, circling, or flanking"),
-                ("Limitation:", "Cannot acquire distant targets (>420 pixels)"),
+                ("HUD Visualization:", "Orange arc sector on the minimap"),
+                ("Tactical Role:", "Close dogfighting - snap locks on targets crossing your nose"),
+                ("Best Situation:", "Turning fights and flanking targets ahead of the wing line"),
+                ("Limitation:", "No locks behind the ship or beyond 420 px"),
             ]
 
         curr_y = y + 44
