@@ -122,3 +122,73 @@ def test_beam_turn_increases_angle_off_rocket_los():
     los_to_rocket = math.degrees(math.atan2(rcx - ecx, rcy - ecy))
     # Started flying straight away from the rocket (180° off LOS); beaming rotates toward 90° off LOS.
     assert _angle_diff(enemy.angle, los_to_rocket) < 170.0
+
+
+# ---------------------------------------------------------------------------
+# Evasion roll (a well-timed break can make the rocket overshoot)
+# ---------------------------------------------------------------------------
+
+class _FixedRng:
+    def __init__(self, values):
+        self._values = list(values)
+
+    def random(self):
+        return self._values.pop(0)
+
+
+class _EvadingEnemy(_StubEnemy):
+    is_air_target = True
+
+    def __init__(self, x, y, mode="MISSILE_DEFENSE"):
+        super().__init__(x, y)
+        self.bfm_mode = mode
+        self.health = 20
+        self.exploding = False
+
+
+def _close_rocket(enemy):
+    return _StubRocket(enemy.x + 19, enemy.y + 15 + 60, target=enemy)
+
+
+def test_evasion_roll_success_breaks_lock():
+    enemy = _EvadingEnemy(1000, 1000)
+    rocket = _close_rocket(enemy)
+    assert missile_defense.update_rocket_evasion(rocket, rng=_FixedRng([0.0])) is True
+    assert rocket.decoyed is True
+    assert rocket.target is None
+
+
+def test_evasion_roll_failure_keeps_lock_and_rolls_once():
+    enemy = _EvadingEnemy(1000, 1000)
+    rocket = _close_rocket(enemy)
+    assert missile_defense.update_rocket_evasion(rocket, rng=_FixedRng([0.99])) is False
+    assert rocket.target is enemy
+    assert rocket.evasion_rolled is True
+    assert missile_defense.update_rocket_evasion(rocket, rng=_FixedRng([])) is False
+
+
+def test_no_evasion_roll_when_not_breaking():
+    enemy = _EvadingEnemy(1000, 1000, mode="TAIL_STALK")
+    rocket = _close_rocket(enemy)
+    assert missile_defense.update_rocket_evasion(rocket, rng=_FixedRng([0.0])) is False
+    assert not getattr(rocket, "evasion_rolled", False)
+
+
+def test_no_evasion_roll_outside_range():
+    enemy = _EvadingEnemy(1000, 1000)
+    rocket = _StubRocket(1000, 1000 + missile_defense.EVASION_ROLL_RANGE + 100, target=enemy)
+    assert missile_defense.update_rocket_evasion(rocket, rng=_FixedRng([0.0])) is False
+
+
+def test_stunned_enemy_cannot_evade():
+    enemy = _EvadingEnemy(1000, 1000)
+    enemy.stun_timer = 1.0
+    rocket = _close_rocket(enemy)
+    assert missile_defense.update_rocket_evasion(rocket, rng=_FixedRng([0.0])) is False
+
+
+def test_decoyed_rocket_is_not_rolled_again():
+    enemy = _EvadingEnemy(1000, 1000)
+    rocket = _close_rocket(enemy)
+    rocket.decoyed = True
+    assert missile_defense.update_rocket_evasion(rocket, rng=_FixedRng([0.0])) is False

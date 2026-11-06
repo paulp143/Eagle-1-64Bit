@@ -1028,6 +1028,7 @@ class Player(pygame.Rect):
             self.target = target
             self.decoyed = False
             self.countermeasure_rolled = False
+            self.evasion_rolled = False
             self.used = False
             self.original_image = rocket_image
             self.image = pygame.transform.rotate(self.original_image, self.angle)
@@ -2019,6 +2020,9 @@ def move():
             fx, fy = missile_defense.entity_center(prev_target)
             popup = "MISSILE DECOYED" if rocket.decoyed else "FLARES"
             ground_support_manager.add_combat_popup(popup, fx, fy - 30, theme.WARNING)
+        elif missile_defense.update_rocket_evasion(rocket):
+            ex, ey = missile_defense.entity_center(prev_target)
+            ground_support_manager.add_combat_popup("EVADED", ex, ey - 30, theme.WARNING)
         rocket.update_position(rocket_targets, player=player)
         missile_defense.check_flare_detonation(rocket)
         if rocket.used:
@@ -2030,7 +2034,8 @@ def move():
             )
             explosion_group.add(range_explosion)
             audio_manager.play_sfx("explosion_small")
-        else:
+        elif not rocket.decoyed:
+            # Decoyed/evaded rockets have lost their lock and can no longer fuse on a target
             for enemy in wave_manager.enemies:
                 if rocket.colliderect(enemy) and not enemy.exploding:
                     rocket.used = True

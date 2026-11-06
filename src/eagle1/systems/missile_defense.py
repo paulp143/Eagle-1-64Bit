@@ -36,6 +36,10 @@ BOMBER_FLARE_DEPLOY_CHANCE = 0.85
 MISSILE_WARNING_RANGE = 420.0
 MISSILE_REACTION_DELAY_FRAMES = 10
 MISSILE_EVASION_TURN_MULT = 1.3
+# The beam turn alone cannot out-turn a homing rocket, so a well-timed break
+# (fighter in MISSILE_DEFENSE when the rocket closes) gets one overshoot roll.
+EVASION_ROLL_RANGE = 100.0
+EVASION_SUCCESS_CHANCE = 0.20
 
 _RNG = random.Random()
 
@@ -208,3 +212,38 @@ def compute_beam_heading(enemy_cx: float, enemy_cy: float, enemy_angle: float,
     candidates = (los + 90.0, los - 90.0)
     best = min(candidates, key=lambda c: abs((c - enemy_angle + 180) % 360 - 180))
     return (best + 180) % 360 - 180
+
+
+def update_rocket_evasion(rocket, rng: Optional[random.Random] = None) -> bool:
+    """Roll once whether a breaking fighter makes the rocket overshoot.
+
+    Applies only while the target is in the MISSILE_DEFENSE beam break and the
+    rocket is within EVASION_ROLL_RANGE. On success the rocket loses its lock
+    (`decoyed = True`, `target = None`), flies on ballistically and can no
+    longer hit that target. Returns True on a successful evasion.
+    """
+    if rocket.used or getattr(rocket, "decoyed", False) or getattr(rocket, "evasion_rolled", False):
+        return False
+
+    target = rocket.target
+    if (
+        not is_air_target(target)
+        or getattr(target, "bfm_mode", "") != "MISSILE_DEFENSE"
+        or getattr(target, "exploding", False)
+        or getattr(target, "health", 0) <= 0
+        or getattr(target, "stun_timer", 0) > 0
+    ):
+        return False
+
+    rx, ry = entity_center(rocket)
+    tx, ty = entity_center(target)
+    if math.hypot(tx - rx, ty - ry) > EVASION_ROLL_RANGE:
+        return False
+
+    rocket.evasion_rolled = True
+    rng = rng or _RNG
+    if rng.random() >= EVASION_SUCCESS_CHANCE:
+        return False
+    rocket.decoyed = True
+    rocket.target = None
+    return True
