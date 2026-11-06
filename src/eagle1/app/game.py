@@ -706,6 +706,8 @@ class BomberEnemy(pygame.Rect):
         self.angle = 180.0
         self.bullet_damage = 15.0
         self.velocity = (0.0, 0.0)
+        self.flares_remaining = missile_defense.BOMBER_FLARES
+        self.flare_deploy_chance = missile_defense.BOMBER_FLARE_DEPLOY_CHANCE
 
     def update(self, target_pos=(1500, 1500), speed_factor=1.0):
         if self.exploding:
@@ -814,6 +816,7 @@ mission_select_menu = MissionSelectMenu(
 stratagem_select_menu = StratagemSelectMenu()
 pending_mission_config = None
 bomber_enemies = []
+active_flares = []
 orbital_base = None
 
 def get_display_scale_and_offset():
@@ -1023,6 +1026,8 @@ class Player(pygame.Rect):
             self.max_flight_time = ROCKET_MAX_FLIGHT_TIME  # 2.5 Sekunden
             self.distance_traveled = 0.0
             self.target = target
+            self.decoyed = False
+            self.countermeasure_rolled = False
             self.used = False
             self.original_image = rocket_image
             self.image = pygame.transform.rotate(self.original_image, self.angle)
@@ -1083,7 +1088,7 @@ class Player(pygame.Rect):
                 self.used = True
                 return
 
-            if targets is not None:
+            if targets is not None and not self.decoyed:
                 if not self.target or getattr(self.target, 'exploding', False) or getattr(self.target, 'health', 0) <= 0:
                     self.lock_on(targets, player=player)
 
@@ -1392,6 +1397,8 @@ class Light_Enemy(pygame.Rect):
         self.orbit_direction = orbit_direction
         self.orbit_radius = orbit_radius
         self.formation_offset = formation_offset
+        self.flares_remaining = missile_defense.LIGHT_ENEMY_FLARES
+        self.flare_deploy_chance = missile_defense.LIGHT_ENEMY_FLARE_DEPLOY_CHANCE
         self.orbit_angle = math.degrees(math.atan2(self.pos_x - MAP_WIDTH / 2, self.pos_y - MAP_HEIGHT / 2))
 
     def get_effective_turn_rate(self):
@@ -1981,7 +1988,15 @@ def move():
     rocket_targets = get_rocket_targets()
 
     for rocket in player.rockets:
+        prev_target = rocket.target
+        new_flares = missile_defense.update_rocket_countermeasures(rocket)
+        if new_flares:
+            active_flares.extend(new_flares)
+            fx, fy = missile_defense.entity_center(prev_target)
+            popup = "MISSILE DECOYED" if rocket.decoyed else "FLARES"
+            ground_support_manager.add_combat_popup(popup, fx, fy - 30, theme.WARNING)
         rocket.update_position(rocket_targets, player=player)
+        missile_defense.check_flare_detonation(rocket)
         if rocket.used:
             range_explosion = Large_explosion_a(
                 rocket.x + ROCKET_WIDTH // 2,
@@ -2123,6 +2138,10 @@ def move():
     speed_factor = powerup_manager.modify_enemy_speed(1.0) * slow_mo_mult
     bullet_speed_factor = powerup_manager.modify_enemy_bullet_speed(1.0) * slow_mo_mult
 
+    for flare in active_flares:
+        flare.update(speed_factor)
+    active_flares[:] = [f for f in active_flares if f.is_alive]
+
     for enemy in wave_manager.enemies:
         if not enemy.exploding:
             enemy.update(player, wave_manager.enemies, speed_factor=speed_factor)
@@ -2200,6 +2219,7 @@ def respawn(mission_config=None, selected_stratagems=None):
     player.shooting = False
     player.reloading = False
     player.rockets.clear()
+    active_flares.clear()
     player.used_rockets = 0
     player.rocket_shooting = False
     player.rocket_reloading = False
@@ -2411,6 +2431,8 @@ def draw(mouse_pos=None):
                 )
             )
             canvas.blit(rocket.image, rocket_rect.topleft)
+
+        missile_defense.draw_flares(canvas, active_flares, camera_x, camera_y)
 
         # Draw health drops
         for drop in health_drops:

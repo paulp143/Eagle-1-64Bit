@@ -8,7 +8,9 @@ Heading conventions used in this codebase:
 
 import math
 import random
-from typing import Iterable
+from typing import Iterable, List, Optional
+
+import pygame
 
 # OMNI radar: wide forward arc instead of a 360° sphere (half-angle in degrees).
 RADAR_OMNI_HALF_ANGLE = 75.0
@@ -99,3 +101,82 @@ class Flare:
         self.frames_left -= 1
         if self.frames_left <= 0:
             self.health = 0.0
+
+
+def entity_center(entity) -> tuple:
+    """World-space center of any Rect-like entity (uses x/y/width/height)."""
+    return (entity.x + entity.width / 2, entity.y + entity.height / 2)
+
+
+def spawn_flare_salvo(entity) -> List[Flare]:
+    """Eject FLARES_PER_SALVO flares from the entity center, evenly spread around it."""
+    cx, cy = entity_center(entity)
+    flares = []
+    for k in range(FLARES_PER_SALVO):
+        theta = 2 * math.pi * k / FLARES_PER_SALVO
+        flares.append(Flare(cx, cy, math.cos(theta) * FLARE_EJECT_SPEED, math.sin(theta) * FLARE_EJECT_SPEED))
+    return flares
+
+
+def update_rocket_countermeasures(rocket, rng: Optional[random.Random] = None) -> List[Flare]:
+    """Roll the target's flare response once per rocket when it closes inside FLARE_TRIGGER_RANGE.
+
+    Returns the newly ejected flares (empty list if none). A successful decoy roll
+    re-targets the rocket onto the first flare and marks it `decoyed`.
+    """
+    if rocket.used or getattr(rocket, "decoyed", False) or getattr(rocket, "countermeasure_rolled", False):
+        return []
+
+    target = rocket.target
+    if (
+        not is_air_target(target)
+        or getattr(target, "flares_remaining", 0) <= 0
+        or getattr(target, "exploding", False)
+        or getattr(target, "health", 0) <= 0
+        or getattr(target, "stun_timer", 0) > 0
+    ):
+        return []
+
+    rx, ry = entity_center(rocket)
+    tx, ty = entity_center(target)
+    if math.hypot(tx - rx, ty - ry) > FLARE_TRIGGER_RANGE:
+        return []
+
+    rocket.countermeasure_rolled = True
+    rng = rng or _RNG
+    if rng.random() >= getattr(target, "flare_deploy_chance", 0.0):
+        return []
+
+    target.flares_remaining -= 1
+    flares = spawn_flare_salvo(target)
+    if rng.random() < FLARE_DECOY_CHANCE:
+        rocket.target = flares[0]
+        rocket.decoyed = True
+    return flares
+
+
+def check_flare_detonation(rocket) -> bool:
+    """Detonate a decoyed rocket on its flare once inside FLARE_DETONATION_RADIUS."""
+    flare = rocket.target
+    if not getattr(rocket, "decoyed", False) or not isinstance(flare, Flare) or not flare.is_alive:
+        return False
+    rx, ry = entity_center(rocket)
+    fx, fy = flare.center()
+    if math.hypot(fx - rx, fy - ry) > FLARE_DETONATION_RADIUS:
+        return False
+    rocket.used = True
+    flare.health = 0.0
+    return True
+
+
+def draw_flares(surface: pygame.Surface, flares: Iterable[Flare],
+                camera_x: float, camera_y: float) -> None:
+    """Draw every alive flare as a glowing two-tone dot in screen space."""
+    for flare in flares:
+        if not flare.is_alive:
+            continue
+        cx, cy = flare.center()
+        sx = int(cx - camera_x)
+        sy = int(cy - camera_y)
+        pygame.draw.circle(surface, FLARE_OUTER_COLOR, (sx, sy), 5)
+        pygame.draw.circle(surface, FLARE_CORE_COLOR, (sx, sy), 2)
