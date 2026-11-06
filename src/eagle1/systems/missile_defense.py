@@ -180,3 +180,31 @@ def draw_flares(surface: pygame.Surface, flares: Iterable[Flare],
         sy = int(cy - camera_y)
         pygame.draw.circle(surface, FLARE_OUTER_COLOR, (sx, sy), 5)
         pygame.draw.circle(surface, FLARE_CORE_COLOR, (sx, sy), 2)
+
+
+def find_incoming_rocket(enemy, rockets: Optional[Iterable],
+                         warning_range: float = MISSILE_WARNING_RANGE):
+    """Closest live, non-decoyed rocket homing on `enemy` within `warning_range`, else None."""
+    if not rockets:
+        return None
+    ex, ey = entity_center(enemy)
+    closest = None
+    closest_dist = warning_range
+    for rocket in rockets:
+        if rocket.used or getattr(rocket, "decoyed", False) or rocket.target is not enemy:
+            continue
+        rx, ry = entity_center(rocket)
+        dist = math.hypot(rx - ex, ry - ey)
+        if dist <= closest_dist:
+            closest = rocket
+            closest_dist = dist
+    return closest
+
+
+def compute_beam_heading(enemy_cx: float, enemy_cy: float, enemy_angle: float,
+                         rocket_cx: float, rocket_cy: float) -> float:
+    """Enemy-convention heading perpendicular to the rocket line of sight, on the side needing the smaller turn. Returns degrees in [-180, 180)."""
+    los = math.degrees(math.atan2(rocket_cx - enemy_cx, rocket_cy - enemy_cy))
+    candidates = (los + 90.0, los - 90.0)
+    best = min(candidates, key=lambda c: abs((c - enemy_angle + 180) % 360 - 180))
+    return (best + 180) % 360 - 180

@@ -1399,6 +1399,7 @@ class Light_Enemy(pygame.Rect):
         self.formation_offset = formation_offset
         self.flares_remaining = missile_defense.LIGHT_ENEMY_FLARES
         self.flare_deploy_chance = missile_defense.LIGHT_ENEMY_FLARE_DEPLOY_CHANCE
+        self.missile_reaction_frames = 0
         self.orbit_angle = math.degrees(math.atan2(self.pos_x - MAP_WIDTH / 2, self.pos_y - MAP_HEIGHT / 2))
 
     def get_effective_turn_rate(self):
@@ -1412,7 +1413,7 @@ class Light_Enemy(pygame.Rect):
                 if getattr(other, 'squadron_id', None) == self.squadron_id and not getattr(other, 'exploding', False):
                     other.state = "AGRO"
 
-    def update(self, target_player=None, enemies=None, speed_factor=1.0):
+    def update(self, target_player=None, enemies=None, speed_factor=1.0, incoming_rockets=None):
         if self.exploding:
             return
 
@@ -1432,6 +1433,19 @@ class Light_Enemy(pygame.Rect):
             pcx = target.pos_x + PLAYER_WIDTH / 2
             pcy = target.pos_y + PLAYER_HEIGHT / 2
             dist_to_player = math.hypot(pcx - cx, pcy - cy)
+
+            # Incoming-missile awareness (short reaction delay before the beam break)
+            incoming = missile_defense.find_incoming_rocket(self, incoming_rockets)
+            if incoming is None:
+                self.missile_reaction_frames = 0
+            else:
+                self.missile_reaction_frames += 1
+            missile_threat = (
+                incoming is not None
+                and self.missile_reaction_frames > missile_defense.MISSILE_REACTION_DELAY_FRAMES
+            )
+            if missile_threat and self.state == "PATROL":
+                self.trigger_agro(enemies)
 
             # Check Agro Radius
             if self.state == "PATROL":
@@ -1477,6 +1491,13 @@ class Light_Enemy(pygame.Rect):
                     los_angle = math.degrees(math.atan2(dx, dy))
                     self.speed = CORNER_SPEED if sq_id % 2 == 0 else CORNER_SPEED * 1.15
                     target_angle = (los_angle + evade_sign * 95.0) % 360
+                elif missile_threat:
+                    # MISSILE_DEFENSE: beam the incoming rocket at corner speed to force an overshoot
+                    self.bfm_mode = "MISSILE_DEFENSE"
+                    self.bfm_commit_timer = 0
+                    self.speed = CORNER_SPEED
+                    r_cx, r_cy = missile_defense.entity_center(incoming)
+                    target_angle = missile_defense.compute_beam_heading(cx, cy, self.angle, r_cx, r_cy)
                 elif self.bfm_commit_timer > 0:
                     # Stay committed to current break heading so enemy passes through the merge
                     # instead of orbiting in a tiny circle
@@ -1554,7 +1575,10 @@ class Light_Enemy(pygame.Rect):
             # Rotate enemy sprite so it turns to face heading
             prev_angle = self.angle
             angle_diff = (target_angle - self.angle + 180) % 360 - 180
-            turn_mult = 1.85 if (self.bfm_mode == "MERGE_BREAK" and dist_to_player < 280.0) else 1.0
+            if self.bfm_mode == "MISSILE_DEFENSE":
+                turn_mult = missile_defense.MISSILE_EVASION_TURN_MULT
+            else:
+                turn_mult = 1.85 if (self.bfm_mode == "MERGE_BREAK" and dist_to_player < 280.0) else 1.0
             effective_turn_rate = self.get_effective_turn_rate() * turn_mult * speed_factor
             if abs(angle_diff) <= effective_turn_rate:
                 self.angle = target_angle
@@ -2144,7 +2168,7 @@ def move():
 
     for enemy in wave_manager.enemies:
         if not enemy.exploding:
-            enemy.update(player, wave_manager.enemies, speed_factor=speed_factor)
+            enemy.update(player, wave_manager.enemies, speed_factor=speed_factor, incoming_rockets=player.rockets)
         
         for bullet in enemy.bullets:
             bullet.update_position(speed_factor=bullet_speed_factor)
