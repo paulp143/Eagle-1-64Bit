@@ -42,21 +42,17 @@ def _run_engagement(seed: int, evasion: bool, flares: bool) -> bool:
     flare_list = []
 
     for _ in range(MAX_FRAMES):
-        enemy.update(target_player=p, enemies=[enemy], speed_factor=1.0,
-                     incoming_rockets=[rocket] if evasion else None)
-        new_flares = missile_defense.update_rocket_countermeasures(rocket, rng=rng)
-        flare_list += new_flares
-        if not new_flares and evasion:
-            missile_defense.update_rocket_evasion(rocket, rng=rng)
-        for flare in flare_list:
-            flare.update()
-        rocket.update_position([enemy], player=p)
-        missile_defense.check_flare_detonation(rocket)
-        # Mirrors game.py: decoyed/evaded rockets can no longer fuse on a target
-        if not rocket.used and not rocket.decoyed and rocket.colliderect(enemy):
+        # Same order as game.move(): rockets (incl. countermeasure rolls) first, enemies afterwards.
+        step = missile_defense.step_rocket(rocket, [enemy], player=p, rng=rng)
+        flare_list += step.flares
+        if missile_defense.rocket_can_fuse(rocket) and rocket.colliderect(enemy):
             return True
         if rocket.used:
             return False
+        enemy.update(target_player=p, enemies=[enemy], speed_factor=1.0,
+                     incoming_rockets=[rocket] if evasion else None)
+        for flare in flare_list:
+            flare.update()
     return False
 
 
@@ -68,12 +64,15 @@ def _hit_rate(evasion: bool, flares: bool, n: int = ENGAGEMENTS) -> float:
 
 
 def test_baseline_rocket_tracking_is_reliable():
-    assert _hit_rate(False, False) >= 0.90
+    rate = _hit_rate(False, False)
+    assert rate >= 0.90, f"baseline hit rate {rate:.3f} < 0.90 (rocket tracking regressed)"
 
 
 def test_evasion_alone_does_not_neuter_rockets():
-    assert 0.70 <= _hit_rate(True, False) <= 0.95
+    rate = _hit_rate(True, False)
+    assert 0.70 <= rate <= 0.95, f"evasion-only hit rate {rate:.3f} outside 0.70-0.95"
 
 
 def test_full_countermeasures_hit_rate_band():
-    assert 0.50 <= _hit_rate(True, True) <= 0.80
+    rate = _hit_rate(True, True)
+    assert 0.50 <= rate <= 0.80, f"full countermeasure hit rate {rate:.3f} outside 0.50-0.80"
