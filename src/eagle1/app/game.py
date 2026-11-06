@@ -1168,7 +1168,7 @@ class Player(pygame.Rect):
         audio_manager.play_sfx("rocket_lock")
 
     def is_enemy_in_lock_zone(self, enemy):
-        """Prüft, ob sich der Gegner im aktiven Radar-Lock-Bereich befindet."""
+        """Return True if the enemy is inside the active radar lock zone (CONE: long forward sector, OMNI: short wide forward arc)."""
         if not enemy or getattr(enemy, 'exploding', False) or getattr(enemy, 'health', 0) <= 0:
             return False
 
@@ -1181,7 +1181,9 @@ class Player(pygame.Rect):
         dist = math.hypot(diff_x, diff_y)
 
         if self.radar_mode == "OMNI":
-            return dist <= RADAR_OMNI_RANGE
+            if dist > RADAR_OMNI_RANGE:
+                return False
+            return missile_defense.heading_deviation_deg(cx, cy, self.angle, tx, ty) <= missile_defense.RADAR_OMNI_HALF_ANGLE
 
         elif self.radar_mode == "CONE":
             if dist <= RADAR_CONE_RANGE and dist >= RADAR_CONE_MIN_RANGE:
@@ -2567,8 +2569,19 @@ def draw(mouse_pos=None):
             pygame.draw.line(minimap_surface, (0, 240, 220, 130), (p1_x, p1_y), (p2_x, p2_y), 1)
 
         elif player.radar_mode == "OMNI":
-            omni_r_mm = int(RADAR_OMNI_RANGE * MINIMAP_SCALE)
-            pygame.draw.circle(minimap_surface, (255, 140, 40, 190), (int(player_mm_x), int(player_mm_y)), omni_r_mm, 1)
+            omni_r_mm = RADAR_OMNI_RANGE * MINIMAP_SCALE
+            half = math.radians(missile_defense.RADAR_OMNI_HALF_ANGLE)
+            p_rad = math.radians(player.angle)
+            omni_color = (255, 140, 40, 190)
+            for edge in (p_rad + half, p_rad - half):
+                ex = player_mm_x - math.sin(edge) * omni_r_mm
+                ey = player_mm_y - math.cos(edge) * omni_r_mm
+                pygame.draw.line(minimap_surface, omni_color, (player_mm_x, player_mm_y), (ex, ey), 1)
+            arc_rect = pygame.Rect(
+                int(player_mm_x - omni_r_mm), int(player_mm_y - omni_r_mm), int(omni_r_mm * 2), int(omni_r_mm * 2)
+            )
+            center_math = p_rad + math.pi / 2  # screen-forward expressed in pygame.draw.arc angle space
+            pygame.draw.arc(minimap_surface, omni_color, arc_rect, center_math - half, center_math + half, 1)
 
         # Power-ups as glowing dots on minimap
         powerup_manager.draw_minimap_blips(minimap_surface, MINIMAP_SCALE)
