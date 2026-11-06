@@ -1124,6 +1124,9 @@ class Player(pygame.Rect):
 
         self.kamikaze_attack_damage = PLAYER_ATTACK_DAMAGE_KAMIKAZE
         self.invincible = False
+        # Absolute pygame tick at which timed invincibility (e.g. after the orbital rearm
+        # cinematic) ends; 0 means post-hit i-frames, which INVINCIBLE_END clears instead.
+        self.invincible_timer = 0
         self.invincible_time = PLAYER_INVINCIBLE_TIME
         self.max_shield = PLAYER_MAX_SHIELD
         self.shield = PLAYER_MAX_SHIELD
@@ -1275,10 +1278,16 @@ class Player(pygame.Rect):
     def add_score(self):
         self.score += 1
 
+    def update_invincibility(self, now_ms):
+        """End timed invincibility once its deadline (``invincible_timer``) has passed."""
+        if self.invincible and self.invincible_timer > 0 and now_ms >= self.invincible_timer:
+            self.invincible = False
+            self.invincible_timer = 0
+
     def take_damage(self, damage):
         if self.invincible:
             return
-        
+
         audio_manager.play_sfx("player_damage")
 
         if self.shield < damage:
@@ -1850,6 +1859,8 @@ def move():
     if player.health <= 0 or game_state in ("mission_debriefing", "super_destroyer"):
         return
 
+    player.update_invincibility(pygame.time.get_ticks())
+
     # Boundary damage
     if player.pos_x < 0 or player.pos_x + PLAYER_WIDTH > MAP_WIDTH or \
        player.pos_y < 0 or player.pos_y + PLAYER_HEIGHT > MAP_HEIGHT:
@@ -2219,6 +2230,8 @@ def respawn(mission_config=None, selected_stratagems=None):
         player.highscore = player.score
         add_highscore(player.score)
     player.health = player.max_health
+    player.invincible = False
+    player.invincible_timer = 0
     player.bullets.clear()
     player.used_bullets = 0
     player.shooting = False
