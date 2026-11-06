@@ -15,6 +15,7 @@ from eagle1.systems.ground_support import (
     SCORE_EXTRACTION_BONUS,
     StratagemSelectMenu,
 )
+from eagle1.systems import missile_defense
 from eagle1.systems.powerups import (
     DAMAGE_BOOST_MULTIPLIER,
     RAPID_FIRE_COOLDOWN_MS,
@@ -683,6 +684,8 @@ active_mission_config = MISSION_CONFIGS[MissionType.ENDLESS_WAR]
 
 class BomberEnemy(pygame.Rect):
     """Heavy Automaton aerial bomber targeting friendly orbital bases or structures."""
+    is_air_target = True
+
     def __init__(self, x=None, y=None):
         rx = x if x is not None else random.randint(300, MAP_WIDTH - 300)
         ry = y if y is not None else -80.0
@@ -1030,6 +1033,7 @@ class Player(pygame.Rect):
                 candidates = [targets]
             else:
                 candidates = []
+            candidates = [t for t in candidates if missile_defense.is_air_target(t)]
 
             if not candidates:
                 self.target = None
@@ -1318,6 +1322,8 @@ class HealthDrop(pygame.Rect):
 
 
 class Light_Enemy(pygame.Rect):
+    is_air_target = True
+
     class Bullet(pygame.Rect):
         def __init__(self, x, y, angle=0.0, speed=LIGHT_ENEMY_BULLET_SPEED):
             pygame.Rect.__init__(self, int(x), int(y), BULLET_WIDTH, BULLET_HEIGHT)
@@ -1961,15 +1967,11 @@ def move():
                         explosion_group.add(Large_explosion_a(cx, cy, large_explosion_a_spritesheet.frames, speed=0.6))
                     break
 
-    # Rocket Update & Collision across all targets (aerial enemies, bombers, ground units, fabricators, strider, academy targets)
-    all_combat_targets = list(wave_manager.enemies) + list(bomber_enemies) + [g for g in ground_support_manager.enemy_ground_units if g.is_alive] + [f for f in ground_support_manager.enemy_fabricators if f.is_alive]
-    if ground_support_manager.factory_strider and ground_support_manager.factory_strider.is_alive:
-        all_combat_targets.append(ground_support_manager.factory_strider)
-    if active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL:
-        all_combat_targets.extend(academy_manager.get_combat_targets())
+    # Rocket Update & Collision across aerial targets only (fighters, bombers, academy drones)
+    rocket_targets = get_rocket_targets()
 
     for rocket in player.rockets:
-        rocket.update_position(all_combat_targets, player=player)
+        rocket.update_position(rocket_targets, player=player)
         if rocket.used:
             range_explosion = Large_explosion_a(
                 rocket.x + ROCKET_WIDTH // 2,
@@ -2017,43 +2019,8 @@ def move():
                         audio_manager.play_sfx("explosion")
                         break
 
-            if not rocket.used:
-                for ge in ground_support_manager.enemy_ground_units:
-                    if ge.is_alive and rocket.colliderect(ge):
-                        rocket.used = True
-                        ge.take_damage(rocket.damage)
-                        if not ge.is_alive:
-                            score_val = getattr(ge, 'score_value', 25)
-                            player.score += score_val
-                            ground_support_manager.add_combat_popup(f"+{score_val} PTS", ge.pos_x, ge.pos_y, (255, 215, 0))
-                            audio_manager.play_sfx("enemy_defeat")
-                        hit_explosion = Large_explosion_a(
-                            rocket.x + ROCKET_WIDTH // 2,
-                            rocket.y + ROCKET_HEIGHT // 2,
-                            large_explosion_a_spritesheet.frames,
-                            speed=0.6
-                        )
-                        explosion_group.add(hit_explosion)
-                        audio_manager.play_sfx("explosion")
-                        break
-
-            if not rocket.used:
-                for fab in ground_support_manager.enemy_fabricators:
-                    if fab.is_alive and rocket.colliderect(fab):
-                        rocket.used = True
-                        fab.take_damage(rocket.damage)
-                        hit_explosion = Large_explosion_a(
-                            rocket.x + ROCKET_WIDTH // 2,
-                            rocket.y + ROCKET_HEIGHT // 2,
-                            large_explosion_a_spritesheet.frames,
-                            speed=0.6
-                        )
-                        explosion_group.add(hit_explosion)
-                        audio_manager.play_sfx("explosion")
-                        break
-
             if not rocket.used and active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL:
-                for target in academy_manager.get_combat_targets():
+                for target in missile_defense.filter_air_targets(academy_manager.get_combat_targets()):
                     if target.is_alive and rocket.colliderect(target):
                         rocket.used = True
                         target.take_damage(rocket.damage)
@@ -2184,6 +2151,14 @@ def move():
             return
     else:
         wave_manager.update(player)
+
+
+def get_rocket_targets() -> list:
+    """Aerial entities homing rockets may lock: wave fighters, bombers, academy drones."""
+    candidates = list(wave_manager.enemies) + list(bomber_enemies)
+    if active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL:
+        candidates.extend(academy_manager.get_combat_targets())
+    return missile_defense.filter_air_targets(candidates)
 
 
 def respawn(mission_config=None, selected_stratagems=None):
@@ -3094,9 +3069,7 @@ def run_game():
                                 ground_support_manager.start_aiming()
                         elif event.button == 3:
                             ground_support_manager.stop_aiming()
-                            targets = list(wave_manager.enemies) + [g for g in ground_support_manager.enemy_ground_units if g.is_alive] + [f for f in ground_support_manager.enemy_fabricators if f.is_alive]
-                            if active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL:
-                                targets.extend(academy_manager.get_combat_targets())
+                            targets = get_rocket_targets()
                             player.set_shoot_rocket(targets)
 
             # Button release to deploy equipped Stratagem
@@ -3421,9 +3394,7 @@ def run_game():
                                 player.set_shoot()
 
                         if (keys[pygame.K_e] or (keys[pygame.K_f] and not (keys[pygame.K_LMETA] or keys[pygame.K_RMETA])) or keys[pygame.K_LCTRL]) and not player.rocket_reloading:
-                            targets = list(wave_manager.enemies) + [g for g in ground_support_manager.enemy_ground_units if g.is_alive] + [f for f in ground_support_manager.enemy_fabricators if f.is_alive]
-                            if active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL:
-                                targets.extend(academy_manager.get_combat_targets())
+                            targets = get_rocket_targets()
                             player.set_shoot_rocket(targets)
 
                         move()
