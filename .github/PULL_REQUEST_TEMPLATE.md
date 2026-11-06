@@ -12,5 +12,8 @@
 
 ## Verification Steps
 - [ ] All automated tests pass: `python -m pytest`
-- [ ] Game starts cleanly in headless mode: `python tools/generate_audio_assets.py`
+- [ ] Lint is clean: `ruff check .`
+- [ ] No files in `data/` (profile, saves, settings, highscores) are part of the diff
 - [ ] Manual gameplay verification (if gameplay/UI changes were made)
+- [ ] README screenshots regenerated for visible UI changes: `python tools/capture_screenshots.py`
+- [ ] Documentation updated (`README.md`, `contributing.md`, Tactical Manual, `controls_reference.py`) where behavior or controls changed

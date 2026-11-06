@@ -11,8 +11,9 @@
 ```text
 Eagle-1-64Bit/
 ├── run_game.py               # Repository-root launcher (also: `python -m eagle1`).
-├── main.py, ground_support.py, help_menu.py,
-│   audio_manager.py, academy_briefing.py   # Thin compatibility shims re-exporting src/eagle1/*.
+├── main.py, ground_support.py, help_menu.py, settings_menu.py,
+│   powerup_system.py, audio_manager.py, academy_briefing.py,
+│   generate_audio_assets.py  # Thin compatibility shims re-exporting src/eagle1/* and tools/*.
 ├── src/eagle1/
 │   ├── app/game.py           # Game loop (60 FPS), camera, Player, aerial combat, WaveManager,
 │   │                         # mission configs (MissionType), state machine, rendering pipeline, HUD.
@@ -21,18 +22,26 @@ Eagle-1-64Bit/
 │   │   │                     # Factory Strider boss, stratagems, CAS beacons, supply drops, reticle.
 │   │   ├── powerups.py       # 8 abilities across 3 rarities, drops with pity counter, drones, micro-missiles.
 │   │   ├── audio_manager.py  # 16-channel mixer, procedural SFX & dynamic combat music, persistence.
-│   │   ├── academy_briefing.py, hangar_cinematic.py   # Academy tutorial briefing and hangar cinematic.
+│   │   ├── academy_briefing.py   # Academy tutorial drills and graduation ceremony.
+│   │   └── hangar_cinematic.py   # Orbital rearm cinematic (gantry hoist, wing arms, checklist) + Stratagem Hero.
 │   ├── story/                # Campaign: Super Destroyer hub view, MissionController, StoryManager,
-│   │                         # comms HUD, dialogue data/DB, campaign save.
-│   ├── ui/                   # Help menu (6 tabs), settings menu, enlistment, debriefing, layout helpers.
-│   ├── data/player_profile.py# Player profile persistence.
+│   │                         # comms HUD, cinematic player, dialogue data/DB, campaign save.
+│   ├── ui/                   # "Military Terminal" design system and every screen:
+│   │                         # theme.py (palette, type scale, bundled-font loader), widgets.py (allocation-free
+│   │                         # panels/bars/TextCache), menu_nav.py (MenuButton/MenuNavigator), hud.py + hud_layout.py
+│   │                         # (HUD renderer and non-overlapping zones), controls_reference.py (single key-binding
+│   │                         # list), help/settings/mission-select/enlistment/debriefing screens, gameplay_settings.py.
+│   ├── data/player_profile.py# Player profile persistence (class-level revision counter for change detection).
 │   ├── effects.py            # Visual combat effects.
 │   └── paths.py              # PROJECT_ROOT, asset dirs, platform-aware user data dir.
-├── tools/                    # generate_audio_assets.py, portrait/icon generators, macOS packaging.
-├── tests/                    # Headless pytest suite (conftest.py sets dummy SDL drivers).
-├── data/                     # audio_settings.json, highscores, player_profile.json, campaign_save.json.
-├── images/, audio/           # Sprites, backgrounds, screenshots; WAV assets (music/ and sfx/).
-├── docs/                     # intent.md, spec.md, story.md.
+├── tools/                    # generate_audio_assets.py, portrait/icon generators, macOS packaging,
+│                             # capture_screenshots.py (headless README screenshots).
+├── tests/                    # Headless pytest suite (conftest.py sets dummy SDL drivers and an isolated user data dir).
+├── data/                     # audio_settings.json, gameplay_settings.json, highscores, player_profile.json,
+│                             # campaign_save.json (user data, never overwrite).
+├── assets/fonts/             # Bundled OFL fonts (Chakra Petch, Share Tech Mono) + license texts.
+├── images/, audio/           # Sprites, backgrounds, portraits, screenshots/; WAV assets (music/ and sfx/).
+├── docs/                     # Local design notes (intent.md, spec.md, story.md); git-ignored.
 └── frontend/                 # Project website (deployed via GitHub Pages).
 ```
 
@@ -76,7 +85,7 @@ Always keep coordinate spaces strictly separated:
   - Rings turn red with pulsing crosshairs when hovering over hostile targets or CAS beacons.
 
 ### 3. Stratagems & Ground Support
-- **8 Stratagems** (quick-select keys `1`–`8`, menu `V`/`TAB`, deploy `C`):
+- **8 Stratagems** (pick 4 in the pre-mission loadout with `1`–`8`/arrows + `Enter`, deploy with `Space`; in flight `1`–`5`/wheel select the quickbar slot (1 = cannons, 2–5 = equipped stratagems), hold/release `Space` aims and drops, `C` calls the equipped strike, arsenal overlay `V`/`TAB`):
   1. Machine Gun Dive (12s)
   2. Eagle 500kg Bomb (35s)
   3. Cluster Bomb (18s)
@@ -91,7 +100,8 @@ Always keep coordinate spaces strictly separated:
 - **Hostile Ground Units**: Automaton Troopers (35 HP), Heavy Walkers (120 HP), and Fabricators (220 HP, spawns troops every 8s).
 
 ### 4. Mission Flow & States
-- State machine managed in `src/eagle1/app/game.py` (`game_state`): `"main_menu"`, `"mission_select"`, `"stratagem_select"`, `"settings_menu"`, `"help_menu"`, `"pause_menu"`, `"enlistment"`, `"mission_debriefing"`, `"super_destroyer"`; the empty string `""` means active gameplay.
+- State machine managed in `src/eagle1/app/game.py` (`game_state`): `"main_menu"`, `"mission_select"`, `"stratagem_select"`, `"settings_menu"`, `"help_menu"`, `"pause_menu"`, `"enlistment"`, `"mission_debriefing"`, `"super_destroyer"`; the empty string `""` means active gameplay (game over is `""` with `player.health <= 0`).
+- Main-menu and game-over key handling live in `handle_main_menu_keydown` / `handle_gameover_keydown` (ESC/Q pressed twice quits from the main menu). The arcade `mission_select` list is opened from the debriefing screen (`MISSIONS`); the campaign runs through the Super Destroyer hub.
 - 6 operational modes (`MissionType`): *Academy Tutorial*, *Air Superiority*, *Orbital Base Defense*, *Factory Strider Boss Raid*, *Outpost Demolition*, and *Endless War*.
 - Always ensure `respawn()` properly resets wave timers, mission goals, entity lists, and HUD state.
 
@@ -100,7 +110,7 @@ Always keep coordinate spaces strictly separated:
 ## Engineering Guidelines for Modifications
 
 1. **Targeted, Incremental Changes**:
-   - `src/eagle1/app/game.py` (~3,600 lines) and `src/eagle1/systems/ground_support.py` (~3,200 lines) are very large. Do not rewrite or restructure entire sections when making localized fixes or features.
+   - `src/eagle1/app/game.py` (~3,500 lines) and `src/eagle1/systems/ground_support.py` (~3,250 lines) are very large. Do not rewrite or restructure entire sections when making localized fixes or features.
    - Prefer extending modular managers (`GroundSupportManager`, `PowerUpManager`, `AudioManager`, `SettingsMenu`, `HelpMenu`) or adding a focused new module rather than appending ad-hoc logic into `game.py`.
    - Edit code under `src/eagle1/`, not the root-level compatibility shims.
 2. **Path Resolution & Portability**:
@@ -109,11 +119,13 @@ Always keep coordinate spaces strictly separated:
 3. **Performance & 60 FPS Frame Budget**:
    - Do not perform file I/O, heavy surface allocations, or font re-creations inside the render/update loop.
    - Cache fonts and pre-render text or transparent surfaces where applicable.
+   - UI code follows the rules in `contributing.md` ("UI and Theme Rules"): colors and fonts only from `eagle1.ui.theme`, sharp corners, `widgets.TextCache` for dynamic text, HUD elements inside `eagle1.ui.hud_layout` zones, key hints from `eagle1.ui.controls_reference`, and no `◄ ► ★ ✖ ✚ ⚠` glyphs (missing from the bundled fonts). `tests/test_ui_consistency.py` enforces them.
 4. **Entity Safety**:
    - Always guard against empty collections, dead entities, or `None` targets before dereferencing properties.
    - Cleanly remove dead/expired entities from tracking lists (`[e for e in enemies if e.is_alive]`).
 5. **Preserve User Data**:
    - Never overwrite or reset `data/highscore.txt`, `data/stratagem_hero_highscore.txt`, `data/player_profile.json` or `data/campaign_save.json` with dummy test data.
+   - `tests/conftest.py` redirects `EAGLE1_USER_DATA_DIR` to a temp dir for the whole suite; scripts you run outside pytest (renders, experiments) must set it too, as `tools/capture_screenshots.py` does.
    - Ensure `data/audio_settings.json` handles missing keys gracefully with fallback defaults.
    - Do not swallow errors with bare `except Exception: pass`; catch concrete exceptions (`OSError`, `ValueError`, `pygame.error`) and log them.
 6. **Proactive Improvement Suggestions**:
@@ -134,7 +146,7 @@ python -m pip install -r requirements-dev.txt && python -m pip install -e .
 python -m pytest tests/
 ruff check .
 ```
-CI runs the suite headless on Python 3.10–3.12; the project supports Python >= 3.9.
+CI runs the suite headless on Python 3.10–3.12; the project supports Python >= 3.9 (no `X | Y` type unions or `match` statements). The suite has ~980 tests.
 
 ### 2. Headless Execution
 When running automated scripts or test checks in environments without a physical display or audio hardware, configure headless dummy drivers before initializing Pygame:
@@ -146,20 +158,26 @@ import pygame
 pygame.init()
 ```
 
-### 3. Audio Asset Generation
+### 3. README Screenshots
+After visible UI changes, regenerate the README images (headless, user data redirected to a temp dir):
+```bash
+python tools/capture_screenshots.py
+```
+
+### 4. Audio Asset Generation
 If audio assets are missing or modified:
 ```bash
 python tools/generate_audio_assets.py
 ```
 
-### 4. Manual Gameplay Verification
+### 5. Manual Gameplay Verification
 Whenever making user-visible gameplay, UI, control, or physics changes:
 ```bash
 python run_game.py   # or: python -m eagle1
 ```
 Verify:
-- Clean launch to Main Menu.
-- Mission selection and gameplay loop start.
+- Clean launch to Main Menu; arrow keys + `Enter` navigate, `ESC` twice quits.
+- Mission selection, stratagem loadout (`Enter` toggles, `Space` deploys) and gameplay loop start.
 - Pause menu (`P`), Settings (`O`), and Help manual (`H`).
 - Weapon firing, collision detection, and score updates.
 - Game over and respawn (`R`).
@@ -167,7 +185,8 @@ Verify:
 ---
 
 ## Documentation Synchronization
-- If controls, weapon statistics, stratagems, or operational modes are added or changed, update `README.md` and the relevant tab in `help_menu.py`.
+- If controls, weapon statistics, stratagems, or operational modes are added or changed, update `README.md`, the relevant tab in `src/eagle1/ui/help_menu.py`, and `src/eagle1/ui/controls_reference.py` (Settings, manual and HUD hint read key bindings from it).
+- If a screen changes visibly, regenerate the README screenshots with `python tools/capture_screenshots.py`.
 - If development, installation, or test workflows change, update `contributing.md`.
 
 ---

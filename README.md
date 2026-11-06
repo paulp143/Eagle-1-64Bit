@@ -4,19 +4,20 @@
 [![Download Windows](https://img.shields.io/badge/Download-Windows%20.zip-00f0ff?style=flat&logo=windows)](https://github.com/paulp143/Eagle-1-64Bit/releases/latest/download/Eagle-1-Windows.zip)
 [![Download macOS](https://img.shields.io/badge/Download-macOS%20.dmg-a29bfe?style=flat&logo=apple)](https://github.com/paulp143/Eagle-1-64Bit/releases/latest/download/Eagle-1-macOS.dmg)
 [![Download Linux](https://img.shields.io/badge/Download-Linux%20.tar.gz-55efc4?style=flat&logo=linux)](https://github.com/paulp143/Eagle-1-64Bit/releases/latest/download/Eagle-1-Linux.tar.gz)
-[![Tests](https://img.shields.io/badge/Tests-672%20passed-brightgreen?style=flat&logo=pytest)](https://github.com/paulp143/Eagle-1-64Bit/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/Tests-978%20passed-brightgreen?style=flat&logo=pytest)](https://github.com/paulp143/Eagle-1-64Bit/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/badge/Release-v0.4.0-orange?style=flat&logo=github)](https://github.com/paulp143/Eagle-1-64Bit/releases/latest)
 
-A 2D top-down space combat arcade game built in Python using Pygame. The game features an expansive 3000×3000 scrolling arena, inertia-driven flight mechanics, quad-cannon combat, homing rockets, radar lock-on modes, a power-up system, friendly Helldiver ground squads, hostile Automaton ground forces, destructible fabricators, a stratagem air strike arsenal, a dynamic predictive aiming reticle, a multi-act narrative campaign with in-flight radio dilemmas and slow-motion choices, a Super Destroyer capital ship hub deck, and a fully interactive 6-tab in-game help menu.
+A 2D top-down space combat arcade game built in Python using Pygame. The game features an expansive 3000×3000 scrolling arena, inertia-driven flight mechanics, quad-cannon combat, homing rockets, radar lock-on modes, a power-up system, friendly Helldiver ground squads, hostile Automaton ground forces, destructible fabricators, a stratagem air strike arsenal, a dynamic predictive aiming reticle, a multi-act narrative campaign with in-flight radio dilemmas and slow-motion choices, a Super Destroyer capital ship hub deck, a fully interactive 6-tab in-game help menu, and a keyboard-navigable "Military Terminal" interface across every screen.
 
 > 🌐 **Official Website & Downloads:** [paulp143.github.io/Eagle-1-64Bit](https://paulp143.github.io/Eagle-1-64Bit/)
 
-![Eagle-1-64Bit Main Menu](images/Documentation%20images/main_menu.png)
+![Eagle-1 in combat: Close Air Support over the Automaton front with the Military Terminal HUD](images/screenshots/gameplay_hud.png)
 
 
 ## Table of Contents
 
 - [Overview](#overview)
+- [Screenshots](#screenshots)
 - [Key Features](#key-features)
 - [Story Campaign Subsystem (Acts I & II)](#story-campaign-subsystem-acts-i--ii)
   - [Campaign Structure & Canonical Sorties 1–4](#campaign-structure--canonical-sorties-14)
@@ -63,9 +64,46 @@ A 2D top-down space combat arcade game built in Python using Pygame. The game fe
 A custom 2D camera tracks the player ship across the map, clamping to world borders and rendering seamless starfield background tiles. Combat combines primary quad-cannon salvos with secondary steerable homing rockets, 8 stratagem air strikes, and close air support missions for friendly ground troops fighting against hostile Automaton forces.
 
 
+## Screenshots
+
+All screenshots are rendered from the live game code at the internal 1280×720 resolution (`python tools/capture_screenshots.py` regenerates them into `images/screenshots/`).
+
+### Menus & Pre-Flight
+
+| Main Menu | Pilot Enlistment |
+| :---: | :---: |
+| ![Main menu with keyboard focus and the CONTINUE button showing the active pilot callsign](images/screenshots/main_menu.png) | ![Enlistment screen with callsign input and the Contract of Employment](images/screenshots/enlistment.png) |
+| **Operation Select** | **Stratagem Loadout** |
+| ![Mission select list with five operational modes](images/screenshots/mission_select.png) | ![Stratagem loadout with four equipped slots and keyboard focus](images/screenshots/stratagem_loadout.png) |
+
+### In Flight
+
+| Close Air Support HUD | Factory Strider Boss Raid |
+| :---: | :---: |
+| ![Gameplay HUD with status, squad, weapons panel, minimap and stratagem dock](images/screenshots/gameplay_hud.png) | ![Factory Strider boss with boss health bar and squad danger banner](images/screenshots/strider_raid.png) |
+| **Air Strike Arsenal (`V` / `TAB`)** | **Pause Menu (`P`)** |
+| ![Close air support arsenal overlay with eight stratagems](images/screenshots/arsenal_menu.png) | ![Pause menu over the frozen battlefield frame](images/screenshots/pause_menu.png) |
+
+### Super Destroyer
+
+| Orbital Rearm: Ordnance Hoist | Orbital Rearm: Wing Pylon Service |
+| :---: | :---: |
+| ![Rearm cinematic: gantry hoist lowering a 500 kg round onto Eagle-1 next to the Stratagem Hero terminal](images/screenshots/rearm_hoist.png) | ![Rearm cinematic: articulated service arms at the wing pylons and the rearm checklist](images/screenshots/rearm_wing_service.png) |
+| **Hub Deck: The Bridge** | **NPC Dialogue** |
+| ![Super Destroyer hub deck bridge zone](images/screenshots/super_destroyer_bridge.png) | ![Dialogue with Democracy Officer Karl Reiner and three stance options](images/screenshots/super_destroyer_dialogue.png) |
+| **After-Action Report** | **Tactical Manual (`H`)** |
+| ![Mission debriefing with rank, stats and focusable buttons](images/screenshots/debriefing.png) | ![Tactical manual squad tab](images/screenshots/manual_squad.png) |
+
+### Settings & Manual
+
+| Settings: Gameplay & HUD | Settings: Flight Controls |
+| :---: | :---: |
+| ![Gameplay and HUD toggles](images/screenshots/settings_gameplay.png) | ![Controls tab generated from the shared key-binding list](images/screenshots/settings_controls.png) |
+
+
 ## Key Features
 
-- **Story Campaign Mode & Pilot Enlistment:** Streamlined story-driven main menu (`NEW GAME`, conditional `CONTINUE` locked until enlistment, `SETTINGS`, `TACTICAL MANUAL`, `QUIT`). Recruits enter their official pilot callsign, review the official Super Earth Helldivers Division **Contract of Employment** (with all indemnity, martyrdom deductions, and binding Clause 6.4), and take the Oath of Democracy before deploying.
+- **Story Campaign Mode & Pilot Enlistment:** Streamlined story-driven main menu (`NEW GAME`, conditional `CONTINUE` locked until enlistment, `SETTINGS`, `TACTICAL MANUAL`, `QUIT TO DESKTOP`). Recruits enter their official pilot callsign, review the official Super Earth Helldivers Division **Contract of Employment** (with all indemnity, martyrdom deductions, and binding Clause 6.4), and take the Oath of Democracy before deploying.
 - **Super Destroyer Hub Deck Screen (`game_state == "super_destroyer"`):** Staging tactical and narrative hub aboard the *SES Leviathan of Truth* overlooking Vandalon Prime. Freely explore 3 operational zones:
   - **The Bridge:** Confer with Democracy Officer Karl Reiner and Ship Master Cynthia Vance regarding high command directives and the Super Earth Patriotism Index.
   - **The Ready Room:** Debrief Fireteam Viper (Apex, Braker, Ghost, Doc) with dynamic dialogue reacting to recent sortie casualties, flawless squad extractions, and replacement reinforcements.
@@ -79,7 +117,7 @@ A custom 2D camera tracks the player ship across the map, clamping to world bord
 - **Combat Telemetry & Narrative Trigger Engine (`NarrativeTriggerManager`):** Real-time 60 FPS evaluation of battlefield milestones (`CombatTelemetrySnapshot`) ensuring chronological cue dispatch.
 - **Tactical Time Dilation (0.4× Slow-Motion):** Radio dilemma transmissions automatically engage 0.4× slow-motion, providing critical reaction time while keeping thruster steering and quad-cannons fully responsive.
 - **Super Earth Naval Academy Tutorial Mission (`academy_briefing.py`):** The introductory campaign training sortie guided by Chief Flight Drill Instructor Commander Vance. Features 6 progressive training drills (yaw steering gates, afterburners & air brakes, hazard perimeter turnaround, convergence pip cannon accuracy, radar modes & missile lock, and 500kg CAS bunker strike) culminating in a graduation ceremony awarding the "Wings of Liberty" aviator badge and unlocking operational stratagems.
-- **Mission Selection System:** Tactical operational menu (`game_state = "mission_select"`) featuring 5 focused arcade modes alongside the story campaign.
+- **Mission Selection System:** Tactical operational menu (`game_state = "mission_select"`, opened via `MISSIONS` on the After-Action Report) featuring 5 focused arcade modes alongside the story campaign.
 - **5 Focused Operational Modes:**
   - **Air Superiority:** Pure aerial dogfighting against 5 wave squadrons (ground hostiles disabled); extraction beacon deploys upon wave 5 completion.
   - **Orbital Base Defense:** Protect a stationary friendly Orbital Defense Base across 5 waves against rebalanced **Automaton Bombers** (75 HP). Extraction is strictly gated until all 5 bomber waves are repelled and bombers are no longer spawning, whereupon Pelican-1 deploys for evacuation.
@@ -87,7 +125,8 @@ A custom 2D camera tracks the player ship across the map, clamping to world bord
   - **Outpost Demolition:** Demolish 3 Automaton Fabricator foundries defended by Troopers & Walkers across 6 waves, auto-triggering Pelican extraction upon clearing the foundries.
   - **Endless War:** Combined full-scale classic operation featuring all ground and aerial hostiles.
 - **Cross-Platform Standalone Packaging:** Native standalone distribution via PyInstaller for Windows (`.zip`), macOS (`.dmg` disk image and `.zip`), and Linux (`.tar.gz`) without requiring a local Python installation.
-- **Automated Headless Test Suite:** 672 automated pytest tests covering mission configs, ground combat, fabricators, stratagems, flight physics, player profiles, enlistment, academy drills, Super Destroyer hub deck, NPC dialogue trees, in-flight narrative triggers, campaign sessions, and full regression suites.
+- **Military Terminal UI:** One design system (`src/eagle1/ui/theme.py`) for every screen: dark navy panels with sharp corners and yellow corner brackets, bundled OFL fonts (Chakra Petch, Share Tech Mono), arrow-key + `Enter` navigation in all menus, non-overlapping HUD zones, and a single key-binding list shared by the Settings menu, the Tactical Manual and the HUD hint bar.
+- **Automated Headless Test Suite:** 978 automated pytest tests covering mission configs, ground combat, fabricators, stratagems, flight physics, player profiles, enlistment, academy drills, Super Destroyer hub deck, NPC dialogue trees, in-flight narrative triggers, campaign sessions, UI theme/layout guards (no per-frame allocations, no unsupported glyphs, no overlapping HUD zones), and full regression suites.
 
 
 
@@ -102,7 +141,7 @@ The campaign is orchestrated by `MissionController` and registered in `CAMPAIGN_
 1. **Sortie 1: Baptism of Fire (`MissionType.AIR_SUPERIORITY`)**:
    - Initial dogfight over Vandalon Prime.
    - **In-Flight Dilemma (`sortie_1_inflight`)**: Reiner orders immediate engagement of primary fighter wings, abandoning squad low-altitude cover. Choosing **[1] LOYAL** commits all passes to fighters (+8.0 loyalty), while **[3] DISSIDENT** breaks formation to cover Viper Squad (-8.0 loyalty).
-2. **Sortie 2: The Red Perimeter (`MissionType.ORBITAL_BASE_DEFENSE`)**:
+2. **Sortie 2: The Red Perimeter (`MissionType.BASE_DEFENSE`)**:
    - Holding action defending the orbital defense base.
    - Radio chatter reports mounting squad casualties and desperate perimeter defense.
 3. **Sortie 3: The Fabricator Furnace (`MissionType.OUTPOST_DEMOLITION`)**:
@@ -175,14 +214,14 @@ The ground support subsystem (`ground_support.py`) brings a living planetary bat
 ### Hostile Ground Forces & Fabricators
 
 - **Automaton Troopers (`EnemyGroundUnit` - Trooper):**
-  - Fast-moving foot soldiers (35 HP, 25 PTS) armed with red laser blasters.
+  - Fast-moving foot soldiers (30 HP, 25 PTS) armed with red laser blasters.
   - Form battle lines and advance towards Helldiver defensive positions.
 - **Automaton Heavy Walkers (`EnemyGroundUnit` - Walker):**
-  - Armored bipedal walkers (120 HP, 60 PTS) equipped with rapid dual-pulse lasers.
+  - Armored bipedal walkers (100 HP, 60 PTS) equipped with rapid dual-pulse lasers.
   - Absorb sustained fire and pose high threat to Helldiver shields.
 - **Automaton Fabricators (`EnemyFabricator`):**
   - Fortified manufacturing structures (220 HP, 150 PTS) with glowing thermal exhaust ports and factory antennas.
-  - Continuously construct and deploy ground reinforcements (Troopers & Walkers) every 8 seconds.
+  - Continuously construct and deploy ground reinforcements (Troopers & Walkers): first unit after 12 seconds, then every 16 seconds.
   - Can be targeted and destroyed by cannons, homing rockets, and precision air strikes, triggering multi-stage secondary explosions.
 
 ### Air-to-Ground Combat (Cannons, Rockets & Strikes)
@@ -213,7 +252,7 @@ The ground support subsystem (`ground_support.py`) brings a living planetary bat
 - Deploy an orbital resupply pod via key **`X`** (30s cooldown).
 - Lands with a deceleration thruster and deploys medical nanites and ammo crates.
 - Restores shields and 60 HP to nearby Helldivers.
-- Flying over the pod fully replenishes the player's quad-cannon bullets, homing rockets, energy shields, and repairs hull damage.
+- Flying over the pod fully reloads the player's quad-cannon bullets and homing rockets, restores +10 shield and repairs +2 hull.
 
 ### Objectives & Pelican-1 Extraction
 
@@ -260,26 +299,33 @@ Access the comprehensive stratagem arsenal by pressing **`V`** or **`TAB`** to o
 ### Super Destroyer Orbital Rearm (`R`) & Stratagem Hero
 Stratagems operate with discrete charge counts and fast operational delays between deployments. When charges are exhausted or low, pressing **`R`** triggers a **15.0s Super Destroyer Orbital Rearm**:
 1. **Atmospheric Ascent (1.2s):** Eagle-1 accelerates skyward with flared afterburners and streaks through the upper atmosphere.
-2. **Orbital Maintenance Bay & Combat Freeze (12.6s):** Eagle-1 docks in low orbit aboard the SES Super Destroyer maintenance deck. Ground combat is safely frozen so Helldivers cannot take damage while the player plays the **Stratagem Hero Arcade Terminal** (using Arrow Keys or WASD). An articulated gantry crane reloads the 500kg heavy bomb and wing rockets with welding sparks and pneumatic steam.
+2. **Orbital Maintenance Bay & Combat Freeze (12.6s):** Eagle-1 docks in low orbit aboard the SES Super Destroyer maintenance deck. Ground combat is safely frozen so Helldivers cannot take damage while the player plays the **Stratagem Hero Arcade Terminal** (using Arrow Keys or WASD). The rearm is choreographed on the service pad:
+   - An overhead gantry hoist slides over the airframe, extends its three-stage telescoping arm and lowers a 500 kg round onto Eagle-1, where the clamp jaws release it (latched at 3.5 s).
+   - Two articulated service arms swing out of the pad to the wing pylons (4.5–7.5 s) with welding sparks.
+   - A `REARM SEQUENCE` checklist (`ORDNANCE`, `WING PYLONS`, `CHARGES`, `FINAL CHECK`) and cyan airframe-scan brackets track progress until all systems report nominal.
 3. **Catapult Launch & Atmospheric Re-entry (1.2s):** Eagle-1 catapults through the hangar blast doors with warning klaxons, plunging back to the battlefield with a fiery atmospheric plasma sheath, full weapon charges, and a 1.0s invulnerability window.
+
+| Ordnance hoist (≈2.6 s) | Wing pylon service (≈5.8 s) |
+| :---: | :---: |
+| ![Gantry hoist lowering the 500 kg round](images/screenshots/rearm_hoist.png) | ![Wing service arms and rearm checklist](images/screenshots/rearm_wing_service.png) |
 
 ### Stratagem Arsenal Table
 
-| Key | Stratagem | Charges | Op Delay | Blast Profile | Effect & Tactical Application |
+| Arsenal Key | Stratagem | Charges | Op Delay | Blast Profile | Effect & Tactical Application |
 | :---: | :--- | :---: | :---: | :---: | :--- |
-| **`1`** | **Machine Gun Dive** | 3 | 4.0s | Straight-line stream | 26 rapid 20mm rotary cannon tracer rounds (55px width) shredding targets along flight vector. |
-| **`2`** | **Eagle 500kg Bomb** | 1 | 8.0s | 480px Colossal blast | Buffed high-explosive ground-zero detonation dealing massive 38.0 Heavy burst damage. |
-| **`3`** | **Cluster Bomb** | 3 | 5.0s | 280px Carpet saturation | 10 explosive sub-munitions (5.2 damage each) blanketing a wide circular area against swarms. |
-| **`4`** | **Napalm Strike** | 2 | 6.0s | 300px Wall of fire | Line of searing incendiary canisters igniting ground/air enemies with heavy burning damage over 6.5s. |
-| **`5`** | **Gas Strike** | 2 | 6.0s | 240px Corrosive cloud | Lingering chemical cloud inflicting rapid corrosive tick damage and slowing enemies for 7.0s. |
-| **`6`** | **Rocket Pods** | 2 | 5.0s | 3 Guided missiles | Heavy armor-piercing guided anti-tank missiles tracking priority hostile craft. |
-| **`7`** | **EMS Stun Strike** | 2 | 6.0s | 280px EMP wave | Electromagnetic pulse disabling and freezing enemy flight systems and engines for 4.5s. |
-| **`8`** | **Smoke Screen** | 2 | 6.0s | 280px Radar cloud | Thick radar-absorbing smoke screen breaking enemy agro and concealing ground forces. |
+| **`1`** | **Machine Gun Dive** | 3 | 3.0s | Straight-line stream | 26 rapid 20mm rotary cannon tracer rounds (55px width) shredding targets along flight vector. |
+| **`2`** | **Eagle 500kg Bomb** | 1 | 4.0s | 480px Colossal blast | Buffed high-explosive ground-zero detonation dealing massive 38.0 Heavy burst damage. |
+| **`3`** | **Cluster Bomb** | 3 | 3.5s | 320px Carpet saturation | 10 explosive sub-munitions (5.2 damage each) blanketing a wide circular area against swarms. |
+| **`4`** | **Napalm Strike** | 2 | 4.0s | 300px Wall of fire | Line of searing incendiary canisters igniting ground/air enemies with heavy burning damage over 6.5s. |
+| **`5`** | **Gas Strike** | 2 | 4.0s | 240px Corrosive cloud | Lingering chemical cloud inflicting rapid corrosive tick damage and slowing enemies for 7.0s. |
+| **`6`** | **Rocket Pods** | 2 | 3.5s | 3 Guided missiles | Heavy armor-piercing guided anti-tank missiles tracking priority hostile craft. |
+| **`7`** | **EMS Stun Strike** | 2 | 3.0s | 320px EMP wave | Electromagnetic pulse disabling and freezing enemy flight systems and engines for 4.5s. |
+| **`8`** | **Smoke Screen** | 2 | 3.0s | 300px Radar cloud | Thick radar-absorbing smoke screen breaking enemy agro and concealing ground forces. |
 
 
 ## Power-Up System
 
-The game incorporates a dedicated power-up subsystem (`powerup_system.py`) providing 8 unique abilities divided into three rarity tiers.
+The game incorporates a dedicated power-up subsystem (`src/eagle1/systems/powerups.py`) providing 8 unique abilities divided into three rarity tiers.
 
 ### Abilities Table
 
@@ -309,7 +355,7 @@ The game incorporates a dedicated power-up subsystem (`powerup_system.py`) provi
 
 ### Secondary Homing Rockets (`Player.Rocket`)
 
-- **Capacity & Reload:** Carries up to 4 rockets and reloads automatically when depleted.
+- **Capacity & Reload:** Carries up to 4 rockets and reloads automatically (12.0 s) when depleted.
 - **Target Acquisition:** Acquires both aerial squadrons and ground hostiles (Automaton Troopers, Walkers, Fabricators).
 - **Fire Controls:** Triggered using **Right Mouse Button**, `E`, `F`, or `Left Control`.
 - **Flight Dynamics:** Rockets travel with smooth turning physics and explode on impact.
@@ -359,26 +405,25 @@ Access the interactive in-game tactical manual at any time by pressing **`H`**. 
 
 ### Game States
 
+`game_state` in `src/eagle1/app/game.py` drives every screen (`""` = active gameplay):
+
 ```text
-[ Launch Application ]
-          │
-          ▼
-  ┌───────────────┐
-  │   Main Menu   │
-  └───────┬───────┘
-          │
-          ▼
-  ┌───────────────┐         ┌───────────────┐
-  │   Gameplay    │ ── P ──►│  Pause Menu   │
-  └───────┬───────┘         └───────┬───────┘
-          │                         │
-          ▼                         │
-  ┌───────────────┐                 │
-  │   Game Over   │◄────────────────┘
-  └───────┬───────┘
-          │
-          ▼
- [ Respawn & Play ]
+[ Launch ] ──► main_menu ──N──► enlistment ──sign contract──► Academy tutorial ("")
+                 │  │  │                                            │
+                 │  │  └── O / H ──► settings_menu / help_menu ──ESC──► (back to caller)
+                 │  └── ESC, ESC ──► quit                            └─ graduation ──► mission_debriefing
+                 │
+                 └── C / CONTINUE ─────────────────────────► super_destroyer (hub deck)
+                                                                     │ L / F catapult launch
+                                                                     ▼
+          pause_menu ◄──P── gameplay ("") ──hull 0──► game over ──R──► respawn
+           │ P / RESUME ──►    │                         └──SPACE──► main_menu
+           └── ESC ──► main_menu │ victory
+                                 ▼
+                       mission_debriefing ──RETURN TO HUB──► super_destroyer
+                                 │ MISSIONS
+                                 ▼
+                       mission_select ──Enter──► stratagem_select ──SPACE (4 equipped)──► gameplay ("")
 ```
 
 
@@ -455,95 +500,18 @@ Or run `pytest` directly with detailed test reporting:
 pytest -v
 ```
 
-### Test Coverage Summary (99 Tests)
+### Test Coverage Summary (978 Tests, 66 Modules)
 
-- **`tests/test_enlistment_and_profile.py` (7 tests):**
-  - Player profile schema initialization, serialization, and username validation.
-  - Active profile detection vs first-time detection.
-  - Profile corruption recovery and atomic file persistence.
-- **`tests/test_enlistment_screen.py` (7 tests):**
-  - Super Earth Contract of Employment full clause text verification.
-  - Interactive callsign input, typing, backspace, and character limit checks.
-  - Contract container scrolling and oath signature button state.
-- **`tests/test_story_menu.py` (3 tests):**
-  - TextBox enabled/disabled UI state and click rejection.
-  - Main menu first-time state (CONTINUE disabled with tooltip).
-  - Main menu active profile state (CONTINUE displays pilot callsign).
-- **`tests/test_academy_briefing.py` (12 tests):**
-  - Academy tutorial manager initial state and drill state sequence.
-  - Waypoint gate collision and vector alignment checks.
-  - Target dummy drones and bunker destruction.
-  - Throttle accumulator holding and boundary turnaround.
-  - Commander Vance comms typewriter and procedural audio cues.
-  - Wings of Liberty graduation badge and celebration particle mechanics.
-  - Minimap target, waypoint, hazard perimeter, and objective rendering.
-- **`tests/test_academy_integration.py` (8 tests):**
-  - Academy tutorial initialization via `respawn()`.
-  - Cannon and rocket damage against training drones during gameplay loop.
-  - 500kg bomb air strike destruction of the training foundry bunker.
-  - Throttle and air brake drill progression (forward and reverse order).
-  - Completion transition to debriefing screen.
-  - Headless rendering of academy world and HUD elements.
-- **`tests/test_mission_modes_regression.py` (8 tests):**
-  - Air Superiority 5-wave squadron lifecycle and extraction trigger.
-  - Orbital Base Defense base setup and bomber waves.
-  - Factory Strider Boss Raid walking fortress initialization and victory trigger.
-  - Outpost Demolition 3 fabricator foundries and demolition extraction.
-  - Endless War multi-wave ground and air simulation.
-  - High score file isolation integrity.
-  - Main menu campaign flow and CONTINUE mission resuming.
-- **`tests/test_bomber_extraction.py` (3 tests):**
-  - Bomber waves blocking early extraction beacon activation.
-  - Active bombers preventing extraction even when beacon is active.
-  - Successful extraction activation when bombers are repelled.
-- **`tests/test_debriefing_screen.py` (4 tests):**
-  - Rank evaluation (Rank S/A/B/C) based on score and squad survival.
-  - Keyboard shortcuts ([R], [SPACE], [ESC]) and mouse click navigation.
-  - Headless rendering of after-action report results.
-- **`tests/test_ground_support.py` (7 tests):**
-  - Initial squad roster instantiation (Viper 1-4 with full health and shields).
-  - Helldiver callsigns and role assignments (Lead, Heavy, Scout, Medic).
-  - Supply drop pod parachute descent, ground landing, and replenishment availability.
-  - CAS ground delivery bonus (`+500 PTS`) and survivor wave reward (`+500 PTS`) constants.
-  - Buffed 500kg bomb blast radius (`480.0px`) verifying heavy demolition power against multi-unit targets.
-  - Factory Strider boss defeat automatically activating immediate Pelican extraction.
-  - Helldiver obstacle unstuck watchdog resetting stuck units to outpost clear ground.
-- **`tests/test_health_and_damage.py` (5 tests):**
-  - Player initial health (5 HP) and shield (20 points) setup.
-  - Shields-first damage absorption priority preserving hull integrity.
-  - Physical collision damage absorption draining shields before depleting hull.
-  - Spillover mechanics when damage exceeds current shield capacity.
-  - Post-hit invulnerability state preventing overlapping damage.
-- **`tests/test_math_and_physics.py` (4 tests):**
-  - Flight speed boundaries clamped between `PLAYER_MIN_SPEED` (2.0) and `PLAYER_MAX_SPEED` (7.0).
-  - Camera viewport coordinate clamping against map boundaries (`0 .. 3000`).
-  - Dynamic predictive reticle lead formula ($\text{lead} = 320.0 + v \times 8.0$).
-  - Radar operational search ranges for directional `CONE` and 360° `OMNI` modes.
-- **`tests/test_persistence.py` (3 tests):**
-  - Safe high score reading, writing, and corrupted-file recovery using temporary files.
-  - Audio settings fallback to default values when configuration file is missing.
-  - Graceful partial-key dictionary merging for missing settings.
-- **`tests/test_powerups.py` (4 tests):**
-  - Ability definitions catalog (8 abilities across Common, Rare, and Epic tiers).
-  - Initial `PowerUpManager` state verification.
-  - Power-up drop entity lifecycle, positioning, and expiration countdown.
-  - Pity system probability progression and base drop constants.
-- **`tests/test_ui_and_menus.py` (3 tests):**
-  - Help menu 6-tab cycle, boundary wrapping, and headless render execution.
-  - Settings menu 3-tab navigation, slider updates, and headless drawing.
-  - Audio manager mute state toggling.
-- **`tests/test_weapons_and_cooldowns.py` (7 tests):**
-  - Primary quad-cannon capacity (200 rounds) and reload timer (5.0s).
-  - Secondary homing rocket payload (4 missiles) and reload cycle (25.0s).
-  - Stratagem definitions (8 air strikes with cooldowns, blast radii, and tactical metadata).
-  - Discrete stratagem charge consumption and operational deployment delays.
-  - Eagle Rearm timer mechanics (15.0s fixed duration restoring all charges).
-  - Stratagem Hero minigame arrow code input matching and combo scoring.
-  - Single-slot weapon quickbar cycling (avoiding double-slot jumps).
-- **`tests/test_hangar_cinematic.py` (8 tests):**
-  - Hangar cinematic sequence transitions and state management.
-- **`tests/test_macos_compatibility.py` (4 tests):**
-  - Platform detection, resolution, and window flags for macOS.
+`tests/conftest.py` redirects `EAGLE1_USER_DATA_DIR` to a temporary directory for the whole session, so no test can read or overwrite the real `data/` files (profile, campaign save, settings, highscores).
+
+| Area | Representative modules | What is covered |
+| :--- | :--- | :--- |
+| Flight & combat | `test_flight_dynamics.py`, `test_dogfight_combat.py`, `test_enemy_bfm_ai.py`, `test_missile_intercept.py`, `test_health_and_damage.py`, `test_math_and_physics.py`, `test_weapons_and_cooldowns.py` | Inertia flight model, enemy BFM AI, rocket guidance, shields-first damage, camera clamping, reticle lead, cannon/rocket reloads, stratagem charges. |
+| Ground war & missions | `test_ground_support.py`, `test_bomber_extraction.py`, `test_mission_modes_regression.py`, `test_mission_progression.py` | Helldiver squad AI, CAS delivery, supply drops, Factory Strider, extraction gating, all mission modes. |
+| Story campaign | `test_act1_sorties.py`, `test_act2_sorties.py`, `test_campaign_e2e_progression.py`, `test_campaign_session.py`, `test_narrative_triggers.py`, `test_story_*.py`, `test_cinematic_player.py`, `test_super_destroyer.py` | Sortie triggers and dilemmas, loyalty vector, saves, cinematics, hub deck and NPC dialogue. |
+| Tutorial & rearm | `test_academy_briefing.py`, `test_academy_integration.py`, `test_hangar_cinematic.py`, `test_hangar_cinematic_theme.py` | Academy drills and graduation, rearm phases, hoist/wing-arm choreography, Stratagem Hero highscore persistence. |
+| UI system | `test_theme.py`, `test_widgets.py`, `test_menu_nav.py`, `test_controls_reference.py`, `test_hud_layout.py`, `test_hud_renderer.py`, `test_*_theme.py`, `test_main_menu_redesign.py`, `test_pause_gameover_ui.py`, `test_ui_consistency.py` | Design tokens and font fallback, keyboard navigation (ESC-twice quit, loadout SPACE/ENTER), HUD zones never overlap, no per-frame Surface/font allocation, no unsupported glyphs, settings persistence. |
+| Platform & persistence | `test_paths.py`, `test_persistence.py`, `test_enlistment_and_profile.py`, `test_gameplay_settings.py`, `test_macos_compatibility.py`, `test_asset_casing.py` | User data dir resolution, atomic saves, corrupted-file recovery, macOS window flags, asset filename casing. |
 
 
 
@@ -664,23 +632,26 @@ For players downloading standalone releases from GitHub Releases:
 
 ## Usage Examples
 
-### Starting a Standard Game Session
+### Starting a Campaign
 
-1. Run `python main.py`.
-2. Press `Shift` or click `PLAY`.
-3. Steer with `A`/`D` and adjust throttle with `W`/`S`.
-4. Fire quad cannons with `Spacebar`, and launch homing rockets with `Right Click` when locked on.
-5. Press `V` or `1`-`8` to choose an air strike stratagem; press `C` to deploy it.
-6. Check on the Helldiver squad; when they call in CAS, fly to the beacon to deliver ordnance for `+500 PTS`.
-7. Destroy Automaton Fabricators to stop enemy ground reinforcement waves.
-8. Call a supply drop with `X` when running low on ammo or when the ground squad is wounded.
-9. Press `H` at any time to open the tactical help manual.
+1. Run `python run_game.py` (or `python -m eagle1`).
+2. Press `N` (or select `NEW GAME` with the arrow keys and `Enter`), type your callsign and sign the contract.
+3. Fly the Naval Academy drills; afterwards `C` / `CONTINUE` takes you to the Super Destroyer hub.
+4. In the hub, `A` / `D` switch zones, `Tab` focuses NPC cards, `E` talks to them, and `L` / `F` launches the next sortie from the hangar deck.
 
-### Resetting the Highscore
+### Flying a Sortie
 
-1. Launch to the main menu.
-2. Press and hold `Left Shift` + `Right Shift` + `R`.
-3. The stored highscore in `data/highscore.txt` will reset to `0`.
+1. Steer with `A`/`D` and adjust throttle with `W`/`S`.
+2. Fire quad cannons with `Spacebar`, and launch homing rockets with `Right Click` (or `E` / `F` / `LCTRL`) when locked on.
+3. Pick a stratagem slot with `1`–`5` or the mouse wheel; hold `Spacebar` to aim in slow motion and release to deploy, or press `C` to call the equipped strike.
+4. Answer Helldiver CAS requests by delivering the requested ordnance onto the beacon for `+500 PTS`.
+5. Call a supply drop with `X`; press `R` for a full orbital rearm (15 s, plays Stratagem Hero).
+6. Press `H` at any time for the Tactical Manual and `P` to pause.
+
+### Arcade Operations
+
+1. After a sortie, choose `MISSIONS` on the After-Action Report to open the operation list, then pick an operation with `Up` / `Down` + `Enter` (or `1`–`5`).
+2. Choose four stratagems in the loadout (`1`–`8` or arrows to focus, `Enter` to toggle) and press `Spacebar` to deploy.
 
 
 
@@ -699,6 +670,7 @@ src/eagle1/
 │   ├── campaign_act2.py      # Sorties 3 & 4 trigger tables, 500kg friendly-fire crisis & casualty checks
 │   ├── campaign_session.py   # Runtime session driver linking combat loop, time dilation & telemetry
 │   ├── campaign_save.py      # Atomic JSON campaign persistence with tampering validation
+│   ├── cinematic_player.py   # Letterboxed story cinematics (timeline, camera, subtitles, epilogue cards)
 │   ├── comms_hud.py          # Time-dilated in-flight radio transmission and typewriter dialogue overlay
 │   ├── dialogue_data.py      # Character dialogue scripts, dynamic radio banter queues & NPC profiles
 │   ├── dialogue_db.py        # Centralized dialogue database (briefings, crises, debriefings)
@@ -715,7 +687,7 @@ src/eagle1/
 │   ├── audio_manager.py      # Centralized 16-channel mixer, procedural SFX & dynamic combat music,
 │   │                         # thruster modulation, voice limiter, persistence
 │   ├── academy_briefing.py   # Naval Academy tutorial scenario & 6 progressive flight drills
-│   └── hangar_cinematic.py   # In-engine pre-sortie hangar launch and rearm cinematics
+│   └── hangar_cinematic.py   # Orbital rearm cinematic (gantry hoist, wing service arms, checklist) + Stratagem Hero
 ├── ui/
 │   ├── theme.py              # "Military Terminal" design tokens (palette, type scale) and bundled-font loader
 │   ├── widgets.py            # Allocation-free panels, brackets, bars, TextCache, pixel-based text wrapping
@@ -723,6 +695,7 @@ src/eagle1/
 │   ├── controls_reference.py # Single source of truth for key bindings shown in Settings, Help and the HUD
 │   ├── hud.py                # HudRenderer: status cluster, weapons panel, minimap cache, banners, controls hint
 │   ├── hud_layout.py         # Fixed, non-overlapping HUD zones (1280x720)
+│   ├── layout.py             # Rect helpers (vertical stacks, overlap validation) used by menus and tests
 │   ├── mission_select_menu.py # Operation selection list
 │   ├── help_menu.py          # 6-tab tactical manual overlay (Weapons, Abilities, Radar, Controls, Enemies, Squad)
 │   ├── settings_menu.py      # Tabbed settings interface (Audio, Gameplay/HUD, Flight Controls)
@@ -737,10 +710,11 @@ tools/
 ├── generate_portrait_assets.py # Pixel-art character portrait synthesizer for comms and hub
 ├── build_macos_icon.py       # Apple `.icns` multi-resolution icon bundle generator
 ├── build_macos_dmg.py        # Drag-and-drop macOS `.dmg` installer packager
+├── capture_screenshots.py    # Renders the README screenshots headlessly into images/screenshots/
 └── package_macos.py          # Complete macOS standalone packaging pipeline (.app, .dmg, .zip)
 
-tests/                        # Automated headless pytest suite (672 tests across 42 modules)
-├── conftest.py               # Headless Pygame fixture & dummy rendering surface
+tests/                        # Automated headless pytest suite (978 tests across 66 modules)
+├── conftest.py               # Headless Pygame fixture, dummy surface, isolated user data dir
 ├── test_act1_sorties.py      # Sorties 1 & 2 dialogue, trigger evaluation, and objective shifts
 ├── test_act2_sorties.py      # Sorties 3 & 4 500kg crisis, casualty checks, and debriefing nodes
 ├── test_campaign_e2e_progression.py # Full campaign progression, catapult launches, and ending branches
@@ -758,7 +732,7 @@ tests/                        # Automated headless pytest suite (672 tests acros
 └── test_weapons_and_cooldowns.py # Primary cannons, homing rockets, and stratagems
 ```
 
-Root-level launcher scripts (`run_game.py`, `main.py`) and legacy wrappers (`ground_support.py`, `powerup_system.py`, `audio_manager.py`, `help_menu.py`, `settings_menu.py`, `generate_audio_assets.py`) provide backward compatibility delegating directly to the modular package.
+Root-level launcher scripts (`run_game.py`, `main.py`) and legacy wrappers (`ground_support.py`, `powerup_system.py`, `audio_manager.py`, `help_menu.py`, `settings_menu.py`, `academy_briefing.py`, `generate_audio_assets.py`) provide backward compatibility delegating directly to the modular package.
 
 
 
@@ -775,6 +749,8 @@ Root-level launcher scripts (`run_game.py`, `main.py`) and legacy wrappers (`gro
 │   │   ├── bug_report.yml
 │   │   └── feature_request.yml
 │   └── PULL_REQUEST_TEMPLATE.md
+├── assets/
+│   └── fonts/                # Bundled OFL fonts (Chakra Petch, Share Tech Mono) + license texts
 ├── audio/
 │   ├── music/
 │   └── sfx/
@@ -785,7 +761,7 @@ Root-level launcher scripts (`run_game.py`, `main.py`) and legacy wrappers (`gro
 │   ├── highscore.txt
 │   ├── player_profile.json
 │   └── stratagem_hero_highscore.txt
-├── docs/
+├── docs/                     # Local design notes, git-ignored (not part of the repository)
 │   ├── intent.md             # High-level creative vision & player experience intent
 │   ├── spec.md               # Core gameplay engineering specification & state contracts
 │   └── story.md              # Complete narrative story bible, dialogue matrix & ending branches
@@ -793,9 +769,9 @@ Root-level launcher scripts (`run_game.py`, `main.py`) and legacy wrappers (`gro
 │   ├── assets/
 │   └── index.html
 ├── images/
-│   ├── Documentation images/
+│   ├── Documentation images/ # Legacy screenshots of the pre-0.5 interface
 │   ├── portraits/            # Character dialogue portraits (Reiner, Vance, Ortiz, Viper 1-4)
-│   └── sprites/
+│   └── screenshots/          # Current README screenshots (tools/capture_screenshots.py)
 ├── src/
 │   └── eagle1/
 │       ├── app/
@@ -807,7 +783,7 @@ Root-level launcher scripts (`run_game.py`, `main.py`) and legacy wrappers (`gro
 │       ├── effects.py
 │       ├── paths.py
 │       └── __main__.py
-├── tests/                    # 672 automated tests in headless pytest environment
+├── tests/                    # 978 automated tests in headless pytest environment
 ├── tools/                    # Audio, portrait, and cross-platform packaging tools
 ├── .gitignore
 ├── CODE_OF_CONDUCT.md
@@ -841,20 +817,22 @@ Fonts are loaded only through `eagle1.ui.theme` (with a system-font fallback if 
 
 ### Images (`images/`)
 
-| Asset Filename | Dimensions | Runtime Role |
+| Asset Filename | Source Size | Runtime Role |
 | :--- | :--- | :--- |
-| `Space-Invaders-Ship.png` | 48×61 px | Player starship sprite. Scaled and rotated dynamically during gameplay. |
-| `enemy1.png` | 50×46 px | `Light_Enemy` fighter sprite. |
-| `bullet.png` | 9×12 px | Player cannon projectile sprite. |
-| `enemy_bullet.png` | 9×12 px | Hostile enemy projectile sprite. |
-| `LargeExplosionA_spritesheet.png` | 23 columns | Spritesheet for 23-frame animated explosions, scaled 2× upon enemy defeat. |
-| `light_enemy_explosion.png` | 50×46 px | Static explosion graphic asset (loaded in initialization). |
-| `newbackround.png` | 1280×720 px | In-game starfield background texture, tiled across the 3000×3000 world. |
-| `backround.png` | 1280×720 px | Alternate / legacy background image. |
-| `20260820_085135933_iOS.webp` | 1280×720 px | Background graphic for the main menu screen. |
-| `health.png` | 16×4 px | UI segment icon for player hull health indicator. |
-| `bullet_ui.png` | 4×6 px | UI icon representing available ammunition in the HUD counter. |
-| `a10.png` | Variable | Unused aircraft sprite asset present in image directory. |
+| `Space-Invaders-Ship.png` | 481×611 px | Player starship sprite, scaled to 48×61 px and rotated during gameplay. |
+| `enemy1.png` | 25×23 px | `Light_Enemy` fighter sprite, scaled to 50×46 px. |
+| `bullet.png` | 60×80 px | Player cannon projectile (9×12 px) and homing rocket sprite (12×16 px). |
+| `enemy_bullet.png` | 32×32 px | Hostile enemy projectile sprite. |
+| `LargeExplosionA_spritesheet.png` | 1472×64 px | 23-frame (64 px) explosion animation, scaled 2× upon enemy defeat. |
+| `light_enemy_explosion.png` | 2000×1660 px | Static explosion graphic, loaded at 50×46 px. |
+| `newbackround.png` | 1672×940 px | In-game battlefield background, scaled to 1280×720 and tiled across the 3000×3000 world. |
+| `20260820_085135933_iOS.webp` | 1280×683 px | Main menu backdrop, scaled to 1280×720. |
+| `health.png` | 160×40 px | Hull health segment icon (16×4 px). |
+| `bullet_ui.png` | 80×60 px | Ammunition counter icon (4×6 px). |
+| `Eagle-1.icns` | multi-size | macOS application icon used by the packaging scripts. |
+| `portraits/` | various | Character portraits for the comms HUD and hub dialogues. |
+| `screenshots/` | 1280×720 px | README screenshots rendered by `tools/capture_screenshots.py`. |
+| `backround.png`, `a10.png` | — | Legacy assets, not referenced by the game code. |
 
 
 
@@ -871,16 +849,16 @@ Fonts are loaded only through `eagle1.ui.theme` (with a system-font fallback if 
 | `PLAYER_MAX_SHIELD` | `20` | Base player energy shield capacity. |
 | `PLAYER_MIN_SPEED`, `_MAX_SPEED` | `2.0`, `7.0` | Base minimum and maximum player flight velocities. |
 | `PLAYER_ACCELERATION` | `0.15` | Acceleration / deceleration rate per frame. |
-| `PLAYER_TURN_RATE` | `3.0` | Degrees of rotational turning applied per frame. |
+| `PLAYER_TURN_RATE` | `3.2` | Degrees of rotational turning applied per frame. |
 | `PLAYER_BULLET_DAMAGE` | `1` | Base damage per player cannon projectile hit. |
 | `PLAYER_MAX_BULLETS` | `200` | Cannon magazine capacity (50 quad volleys). |
 | `PLAYER_RELOAD_TIME` | `5000` | Standard cannon reload duration in milliseconds (5.0s). |
-| `ROCKET_VELOCITY` | `7.0` | Secondary homing rocket travel speed. |
-| `ROCKET_TURN_RATE` | `2.0` | Degrees per frame steering rate for homing rockets. |
-| `ROCKET_DAMAGE` | `4` | Kinetic explosion damage dealt per rocket hit. |
+| `ROCKET_VELOCITY` | `11.5` | Secondary homing rocket travel speed. |
+| `ROCKET_TURN_RATE` | `5.5` | Degrees per frame steering rate for homing rockets. |
+| `ROCKET_DAMAGE` | `20` | Kinetic explosion damage dealt per rocket hit. |
 | `ROCKET_MAX_RANGE` | `1200` | Maximum tracking distance for homing rockets (pixels). |
 | `PLAYER_MAX_ROCKETS` | `4` | Maximum rocket capacity. |
-| `PLAYER_ROCKET_RELOAD_TIME` | `25000` | Rocket reload duration in milliseconds (25.0s). |
+| `PLAYER_ROCKET_RELOAD_TIME` | `12000` | Rocket reload duration in milliseconds (12.0s). |
 | `RADAR_CONE_ANGLE` | `50` | Total search arc in degrees for `CONE` radar mode. |
 | `RADAR_CONE_RANGE` | `1050` | Maximum range for `CONE` radar mode (pixels). |
 | `RADAR_OMNI_RANGE` | `420` | Maximum search radius for `OMNI` radar mode (pixels). |
@@ -891,10 +869,10 @@ Fonts are loaded only through `eagle1.ui.theme` (with a system-font fallback if 
 | Constant | Value | Description |
 | :--- | :--- | :--- |
 | `HELLDIVER_COUNT` | `4` | Number of allied squad members in fireteam Viper. |
-| `HELLDIVER_MAX_HEALTH` | `100.0` | Health points per Helldiver unit. |
+| `HELLDIVER_MAX_HEALTH` | `150.0` | Health points per Helldiver unit. |
 | `HELLDIVER_ENGAGE_RADIUS` | `420.0` | Proximity range for Helldiver anti-air cover fire. |
-| `ENEMY_TROOPER_MAX_HEALTH` | `35.0` | Health points for Automaton Trooper ground unit. |
-| `ENEMY_WALKER_MAX_HEALTH` | `120.0` | Health points for Automaton Armored Walker ground unit. |
+| `ENEMY_TROOPER_MAX_HEALTH` | `30.0` | Health points for Automaton Trooper ground unit. |
+| `ENEMY_WALKER_MAX_HEALTH` | `100.0` | Health points for Automaton Armored Walker ground unit. |
 | `ENEMY_FABRICATOR_MAX_HEALTH` | `220.0` | Health points for Automaton Fabricator foundry structure. |
 | `SCORE_CAS_KILL_BONUS` | `100` | Score bonus for destroying hostiles threatening allied troops. |
 | `SCORE_MISSION_DELIVERY_BONUS`| `500` | Score bonus for delivering requested CAS strike to call-in beacon. |
@@ -920,9 +898,13 @@ Fonts are loaded only through `eagle1.ui.theme` (with a system-font fallback if 
   # Alternatively: python -m eagle1
   ```
 
-### 3. Highscore Does Not Save
-- **Cause:** Missing write permissions in the `data/` directory.
-- **Solution:** Verify the user account has write permissions to `data/highscore.txt`.
+### 3. Highscore or Settings Do Not Save
+- **Cause:** Missing write permissions in the user data directory (`data/` when running from source, `~/Library/Application Support/Eagle-1/` on macOS builds, `%APPDATA%/Eagle-1` on Windows, `~/.local/share/Eagle-1` on Linux).
+- **Solution:** Verify write permissions, or point the game to another folder with the `EAGLE1_USER_DATA_DIR` environment variable.
+
+### 4. Text Renders in a Different Font
+- **Cause:** The bundled fonts in `assets/fonts/` are missing (for example in a hand-made build).
+- **Solution:** The game falls back to system fonts and logs a warning once. Restore `assets/fonts/` or rebuild with the packaging scripts, which bundle the fonts automatically.
 
 
 ## Community & Governance
