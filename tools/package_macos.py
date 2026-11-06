@@ -50,6 +50,8 @@ def package_macos():
         "audio:audio",
         "--add-data",
         "data:data",
+        "--add-data",
+        "assets/fonts:assets/fonts",
         "--osx-bundle-identifier",
         "com.paulp143.eagle1",
         "run_game.py",

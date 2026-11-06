@@ -5,35 +5,323 @@ Provides an interactive, multi-tab help menu detailing:
 - Weapons: Specific damages, ranges, velocities, cooldowns, and capacities.
 - Abilities: 8 tactical power-ups across Common, Rare, and Epic tiers, plus passives.
 - Radar Modes: Comprehensive explanation of CONE vs OMNI targeting with visual diagrams.
-- Flight Controls: Complete keybinding reference.
+- Flight Controls: Keybinding reference generated from eagle1.ui.controls_reference.
+- Enemy Intel and Helldivers/Stratagem guides.
+
+Every tab is a static page: it is rendered once into a cached surface on first visit and then
+only blitted, so no text or surface work happens per frame.
 """
 
 import math
+from typing import List
+
 import pygame
+
+from eagle1.ui import theme, widgets
+from eagle1.ui.controls_reference import CATEGORY_ORDER, bindings_by_category
 
 try:
     from eagle1.systems.audio_manager import get_audio_manager
-except Exception:
+except ImportError:
     get_audio_manager = None
 
-# Color Palette (consistent with game UI & sci-fi theme)
-COLOR_BG_OVERLAY = (10, 14, 22, 240)
-COLOR_PANEL_BG = (18, 24, 38)
-COLOR_PANEL_BORDER = (45, 65, 95)
-COLOR_TEXT_WHITE = (245, 245, 250)
-COLOR_TEXT_MUTED = (160, 175, 200)
-COLOR_TEXT_ACCENT = (0, 210, 255)       # Cyber Cyan
-COLOR_TEXT_GOLD = (255, 195, 50)        # Weapons Gold
-COLOR_TEXT_GREEN = (46, 204, 113)       # Common / Success
-COLOR_TEXT_BLUE = (52, 152, 219)        # Rare
-COLOR_TEXT_PURPLE = (175, 100, 240)     # Epic
-COLOR_TEXT_RED = (255, 75, 75)          # Danger / Hostile
+# Color palette (aliases of the central theme tokens; names kept for compatibility)
+COLOR_BG_OVERLAY = theme.OVERLAY_RGBA
+COLOR_PANEL_BG = theme.PANEL_RAISED
+COLOR_PANEL_BORDER = theme.BORDER
+COLOR_TEXT_WHITE = theme.TEXT
+COLOR_TEXT_MUTED = theme.TEXT_MUTED
+COLOR_TEXT_ACCENT = theme.INFO
+COLOR_TEXT_GOLD = theme.ACCENT
+COLOR_TEXT_GREEN = theme.SUCCESS
+COLOR_TEXT_BLUE = (52, 152, 219)        # Rare tier (data color)
+COLOR_TEXT_PURPLE = (175, 100, 240)     # Epic tier (data color)
+COLOR_TEXT_RED = theme.DANGER
 
-COLOR_TAB_INACTIVE_BG = (22, 30, 48)
-COLOR_TAB_INACTIVE_BORDER = (50, 70, 105)
-COLOR_TAB_HOVER_BG = (35, 50, 80)
-COLOR_TAB_ACTIVE_BG = (0, 120, 180)
-COLOR_TAB_ACTIVE_BORDER = (0, 220, 255)
+COLOR_TAB_INACTIVE_BG = theme.PANEL_RAISED
+COLOR_TAB_HOVER_BG = theme.PANEL_HOVER
+COLOR_TAB_ACTIVE_BG = theme.PANEL_HOVER
+
+VALUE_TEXT = theme.lerp_color(theme.TEXT, theme.ACCENT, 0.35)
+
+FLOW_STEP = 18
+
+# ---------------------------------------------------------------------------
+# Static help content (data only)
+# ---------------------------------------------------------------------------
+
+WEAPONS = [
+    {
+        "name": "Main Autocannon (Quad-Barrel)",
+        "type": "Primary Weapon (Kinetic Ballistic)",
+        "trigger": "SPACE (Hold or Tap)",
+        "damage": "1 per round  (4 DMG per quad-volley)  |  Boosted: 2 per round (8 DMG)",
+        "range": "Full Map Bounds (0-3000 px)  |  Velocity: 8.0 px/frame (480 px/s)",
+        "cooldown": "100 ms between volleys  (50 ms under Rapid Fire)",
+        "capacity": "200 rounds (50 quad volleys)  |  Reload: 5.0s (3.0s under Rapid Fire)",
+        "notes": "Fires 4 parallel projectiles simultaneously from wing and fuselage hardpoints. Bullets persist until hitting enemies or map borders.",
+        "color": (255, 210, 80),
+    },
+    {
+        "name": "Eagle Homing Rockets",
+        "type": "Secondary Ordnance (Guided Kinetic Warhead)",
+        "trigger": "E / F / Left-CTRL or Right-Click",
+        "damage": "4 DMG (Heavy Kinetic Explosion)",
+        "range": "1200 px max target tracking range  |  2.5s maximum flight lifetime",
+        "cooldown": "350 ms firing delay  |  Velocity: 7.0 px/frame  |  Agility: 2.0°/frame",
+        "capacity": "4 rockets  |  Reload: 25.0s when all 4 rockets are exhausted",
+        "notes": "Requires active Radar Lock (target inside CONE or OMNI lock zone). Automatically locks closest hostile in radar zone across all active wave squadrons.",
+        "color": (255, 120, 60),
+    },
+    {
+        "name": "Swarm Micro-Missiles",
+        "type": "Autonomous Ability Weapon (Swarm Homing Pods)",
+        "trigger": "Auto-fired every 0.8s during Swarm Homing Pods buff (12s)",
+        "damage": "2.0 DMG per micro-missile",
+        "range": "~900 px effective range  |  Velocity: 7.5 px/frame  |  Agility: 4.0°/frame",
+        "cooldown": "Continuous 0.8s auto-salvo interval",
+        "capacity": "Autonomous salvo during buff lifetime",
+        "notes": "High-maneuverability self-guided micro-projectiles launched automatically from dorsal pods to relentlessly track enemies.",
+        "color": (200, 100, 255),
+    },
+    {
+        "name": "Vanguard Drone Pulse Laser",
+        "type": "Autonomous Escort Weapon (Vanguard Drone)",
+        "trigger": "Automatic firing by orbiting Vanguard Drone (20s duration)",
+        "damage": "1.0 DMG per focused laser pulse",
+        "range": "350 px engagement perimeter centered around player ship",
+        "cooldown": "Fires once every 0.6 seconds when enemy is within 350 px",
+        "capacity": "Unlimited during drone deployment",
+        "notes": "Drone physically intercepts and eliminates incoming enemy bullets while systematically attacking nearby hostiles.",
+        "color": (120, 220, 255),
+    },
+    {
+        "name": "Hull Impact Collision",
+        "type": "Emergency Melee Contact",
+        "trigger": "Ramming into an enemy aircraft (Light enemies will strafe to evade)",
+        "damage": "25 DMG (One-Hit Elimination) dealt to enemy aircraft  |  Self-Damage: 12 DMG absorbed by shield first",
+        "range": "0 px (Direct physical contact; causes physical separation recoil)",
+        "cooldown": "Immediate upon contact  |  Triggers 1.0s temporary invincibility",
+        "capacity": "Absorbed by shield pool (20 max) before damaging hull structure",
+        "notes": "Light hostiles break away at <180px. Impact drains shield with recoil push to prevent multi-hits.",
+        "color": (255, 80, 80),
+    },
+]
+
+ABILITY_COLUMN_1 = [
+    {
+        "tier": "COMMON TIER (70% Roll Chance)",
+        "tier_color": COLOR_TEXT_GREEN,
+        "name": "Rapid Fire",
+        "dur": "10s Duration",
+        "stats": "Cooldown: 100ms -> 50ms (2x Fire Rate)  |  Reload: 5.0s -> 3.0s (-40%)",
+        "desc": "Overcharges main autocannon cyclic rate, delivering dense volleys.",
+        "color": COLOR_TEXT_GREEN,
+    },
+    {
+        "tier": "COMMON TIER (70% Roll Chance)",
+        "tier_color": COLOR_TEXT_GREEN,
+        "name": "Shield Bubble",
+        "dur": "10s Duration",
+        "stats": "+15 Overcharge Shield (Max 35)  |  Regen Rate: 2.0s -> 1.0s (2x)",
+        "desc": "Instantly expands shield barrier beyond normal max and accelerates recovery.",
+        "color": COLOR_TEXT_GREEN,
+    },
+    {
+        "tier": "COMMON TIER (70% Roll Chance)",
+        "tier_color": COLOR_TEXT_GREEN,
+        "name": "Thruster Overdrive",
+        "dur": "10s Duration",
+        "stats": "Max Speed: 7.0 -> 11.0 (+57%)  |  Accel: 0.15 -> 0.25  |  Turn: 3° -> 4.5°",
+        "desc": "Injects thrusters with hyper-fuel for superior dogfighting maneuverability.",
+        "color": COLOR_TEXT_GREEN,
+    },
+    {
+        "tier": "RARE TIER (20% Roll Chance)",
+        "tier_color": COLOR_TEXT_BLUE,
+        "name": "Chrono Slip (Time Slow)",
+        "dur": "8s Duration",
+        "stats": "Enemy Speed: 50% (x0.5)  |  Hostile Bullet Velocity: 50% (x0.5)",
+        "desc": "Dilates localized space-time; enemies and bullets crawl while you move at normal speed.",
+        "color": COLOR_TEXT_BLUE,
+    },
+    {
+        "tier": "RARE TIER (20% Roll Chance)",
+        "tier_color": COLOR_TEXT_BLUE,
+        "name": "Cryo Frostbite (Freeze Blast)",
+        "dur": "10s Duration",
+        "stats": "Frost Slow: 60% (x0.4 speed)  |  3 Hits = 1.5s Complete Solid Freeze",
+        "desc": "Rounds coat enemy hulls in liquid sub-zero cryogen. 3 hits completely freeze enemy.",
+        "color": COLOR_TEXT_BLUE,
+    },
+]
+
+ABILITY_COLUMN_2 = [
+    {
+        "tier": "RARE TIER (20% Roll Chance)",
+        "tier_color": COLOR_TEXT_BLUE,
+        "name": "Damage Multiplier",
+        "dur": "10s Duration",
+        "stats": "Cannon Damage: 1 -> 2 DMG per bullet  (4 -> 8 DMG per quad-volley)",
+        "desc": "Empowers autocannon munitions with high-yield depleted uranium charges.",
+        "color": COLOR_TEXT_BLUE,
+    },
+    {
+        "tier": "EPIC TIER (10% Roll Chance)",
+        "tier_color": COLOR_TEXT_PURPLE,
+        "name": "Vanguard Drone Companion",
+        "dur": "20s Duration",
+        "stats": "Orbiting Radius: 85 px  |  Laser Damage: 1.0 DMG (350 px range, 0.6s CD)",
+        "desc": "Deploys an autonomous escort drone that intercepts enemy bullets and fires lasers.",
+        "color": COLOR_TEXT_PURPLE,
+    },
+    {
+        "tier": "EPIC TIER (10% Roll Chance)",
+        "tier_color": COLOR_TEXT_PURPLE,
+        "name": "Swarm Homing Pods",
+        "dur": "12s Duration",
+        "stats": "Damage: 2.0 DMG / missile  |  Salvo: Every 0.8s  |  Tracking Range: 900 px",
+        "desc": "Mounts micro-missile pods launching continuous high-agility self-guided rockets.",
+        "color": COLOR_TEXT_PURPLE,
+    },
+    {
+        "tier": "PASSIVE SHIP DEFENSES",
+        "tier_color": (255, 200, 80),
+        "name": "Deflector Shield & Hull Armor",
+        "dur": "Permanent Passive",
+        "stats": "Shield: 20 (+1 / 2.0s regen)  |  Hull: 5 HP (No passive recovery!)",
+        "desc": "Shield absorbs hits before hull. Taking damage gives 1.0s immunity. Boundary: 0.1 DMG/tick.",
+        "color": (100, 200, 255),
+    },
+    {
+        "tier": "ANTI-RETREAT & LOW HP SURVIVAL",
+        "tier_color": (50, 255, 120),
+        "name": "Kill-to-Heal Nanites & Overdrive",
+        "dur": "Active when HP <= 2",
+        "stats": "+1 HP Nanite drop guaranteed on kill  |  +50% Score  |  -25% Cooldowns",
+        "desc": "Fleeing at low HP is fatal! Defeat enemies to spawn green nanites and trigger Overdrive.",
+        "color": (50, 255, 120),
+    },
+]
+
+_WAVES_CARD_1 = {
+    "title": "1. Mission Selector & Wave Scaling",
+    "tag": "TACTICAL OPERATIONS [1-5]",
+    "accent": COLOR_TEXT_GOLD,
+    "bullets": [
+        ("Tactical Mission Selector:", "Select from 5 focused operation modes: Air Superiority, Base Defense, Boss Raid, Demolition, Endless."),
+        ("Focused Operational Modes:", "Play pure aerial dogfights, ground boss raids, or orbital defense without overwhelming chaos."),
+        ("Tactical Squadron Formations:", "Enemies deploy in coordinated flights of 2-4 starfighters in V-formation rather than solo."),
+        ("Boids Flocking Separation:", "Units maintain spatial separation (70px repulsion radius) to eliminate clipping or stacking."),
+    ],
+    "footer": "Wave Clear Bonus: +250 x Wave Level awarded during the 3-second intermission banner.",
+}
+
+_WAVES_CARD_2 = {
+    "title": "2. 1000px Agro Perimeter & Map Circling",
+    "tag": "AGRO: 1000px | DE-AGRO: 1500px",
+    "accent": COLOR_TEXT_ACCENT,
+    "bullets": [
+        ("Patrol State (Holding Fire):", "Outside 1000px, squadrons orbit the map center at 2.0 px/frame without shooting."),
+        ("Squadron Alert Network:", "Breaching 1000px or damaging any plane immediately alerts the ENTIRE squadron."),
+        ("Pursuit Acceleration:", "Alerted hostiles enter AGRO state and accelerate to 3.2 px/frame (60% speed increase)."),
+        ("Minimap Tactical Blips:", "Minimap radar displays patrolling squadrons as ORANGE dots and alerted pursuers as RED dots."),
+    ],
+    "footer": "Note: Attacking an orbiting formation triggers pursuit from all wingmen!",
+}
+
+_WAVES_CARD_3 = {
+    "title": "3. Smart Combat AI & Directional Ballistics",
+    "tag": "AIM GATE: ±15° | TURN: 2.0°/F",
+    "accent": (255, 130, 60),
+    "bullets": [
+        ("Line-of-Sight Tracking:", "Calculates true angle to player via atan2 math, turning smoothly at 2.0° per frame."),
+        ("Alignment-Gated Firing:", "Hostiles hold fire until nose is aligned within ±15° of line of sight (no blind spam)."),
+        ("True 2D Vector Ballistics:", "Enemy bullets fire from the nose carrying directional velocity (dx, dy) towards player."),
+        ("Debuff Susceptibility:", "Enemy turn rate, thrust, and bullets are realistically impaired by Time Slow & Cryo Freeze."),
+    ],
+    "footer": "Evasion Tip: Banking 90° across the enemy's nose breaks their ±15° firing alignment!",
+}
+
+_WAVES_CARD_4 = {
+    "title": "4. Anti-Retreat Dynamics & Adrenaline Overdrive",
+    "tag": "CRITICAL HP <= 2 | HEAL ON KILL",
+    "accent": (50, 255, 120),
+    "bullets": [
+        ("The Low-HP Dilemma:", "Shields passively recover, but Hull HP NEVER regenerates. Running at low HP is fatal."),
+        ("High-Speed Pursuit:", "Enemies hunt at 3.2 px/frame in AGRO; you cannot easily outrun alerted squadrons."),
+        ("Kill-to-Heal Nanites:", "When at critical hull (<= 2 HP), every defeated enemy drops a guaranteed +1 HP Nanite!"),
+        ("Adrenaline Overdrive:", "Operating at <= 2 HP grants +50% score bonus and 25% faster weapon cyclic fire & reload."),
+    ],
+    "footer": "Doctrine: Never flee when damaged! Turn into hostiles, kill, and harvest nanites.",
+}
+
+WAVE_CARDS = [_WAVES_CARD_1, _WAVES_CARD_2, _WAVES_CARD_3, _WAVES_CARD_4]
+
+_SQUAD_CARD_1 = {
+    "title": "Allied Helldiver Squad",
+    "tag": "ALLIED GROUND UNITS",
+    "accent": (46, 204, 113),
+    "bullets": [
+        ("Tactical 4-Man Squad:", "Viper 1-4 (Lead, Heavy, Scout, Medic) guarding the outpost with individual shields & HP."),
+        ("Tactical AI & Cover Fire:", "Helldivers navigate around obstacles and actively fire upward anti-air tracer rounds at hostiles."),
+        ("Minimap Tracking:", "Represented as bright cyan blips with an active tactical defense perimeter circle on the radar."),
+        ("Status Indicators:", "Overhead health/shield bars and real-time state tags: DEFENDING, ENGAGING, SUPPLYING, K.I.A."),
+    ],
+    "footer": "TIP: Stay near the squad when danger alerts fire to intercept hostile strafing runs.",
+}
+
+_SQUAD_CARD_2 = {
+    "title": "Air Strike Stratagem Arsenal",
+    "tag": "TACTICAL 5-SLOT DOCK",
+    "accent": (255, 200, 50),
+    "bullets": [
+        ("Charges & Operational Delay:", "Stratagems have discrete stocks (e.g. 500kg x1, Strafe x3) and fast operational delays."),
+        ("Eagle Rearm [R]:", "Eagle-1 blasts into orbit aboard the Super Destroyer (15s); ground combat freezes and Helldivers are safe."),
+        ("Stratagem Hero:", "Input arrow/WASD codes on the hangar arcade terminal to score bonus points and climb the Hero leaderboard!"),
+        ("Re-entry:", "Eagle-1 returns with full charges and 1.0s invulnerability."),
+        ("500kg Bomb:", "480px blast radius, 38 heavy DMG: wrecks fabricators and bosses."),
+    ],
+    "footer": "TACTICAL DOCK: Quickbar displays live charges, operational cooldowns, and rearm status.",
+}
+
+_SQUAD_CARD_3 = {
+    "title": "Tactical Supply Drops & Alerts",
+    "tag": "[X] RESUPPLY POD",
+    "accent": (0, 200, 255),
+    "bullets": [
+        ("Supply Drop [X]:", "Calls down an orbital pod delivering medical nanites, full ammo reload, and rockets (30s CD)."),
+        ("Ground Resupply:", "Allied Helldivers move to nearby landed supply pods when wounded to restore shields and health."),
+        ("Danger Zone Alerts:", "Audible and visual flashing alert banner appears when enemy aircraft close in within 680px."),
+        ("Off-Screen Compass:", "Cyan directional pointer at screen borders indicates distance and bearing to the squad."),
+    ],
+    "footer": "CRITICAL: Drop pods near the squad before heavy waves to keep them alive.",
+}
+
+_SQUAD_CARD_4 = {
+    "title": "Objectives & Boss Encounters",
+    "tag": "OBJECTIVES & REWARDS",
+    "accent": (255, 120, 50),
+    "bullets": [
+        ("Factory Strider Boss (300 HP):", "Colossal walker firing heavy plasma bolts (red laser telegraph) and chin lasers."),
+        ("Base Defense (5 Waves):", "Protect orbital base against 75 HP Automaton Bombers. Repel all 5 waves to extract."),
+        ("Outpost Demolition (6 Waves):", "Destroy 3 Automaton Fabricator foundries; auto-triggers Pelican extraction."),
+        ("Pelican-1 Evacuation (+2.5k):", "Hold perimeter until Pelican-1 lands. Surviving squad boards to secure victory!"),
+    ],
+    "footer": "VICTORY: Finish the primary objectives to summon Pelican-1 and extract survivors!",
+}
+
+SQUAD_CARDS = [_SQUAD_CARD_1, _SQUAD_CARD_2, _SQUAD_CARD_3, _SQUAD_CARD_4]
+
+SYSTEM_NOTES = [
+    ("Rearm [R]:", "Eagle-1 returns to the Super Destroyer for a 15 s rearm and combat freezes. "
+     "Play Stratagem Hero with the arrow keys for bonus score."),
+    ("Slow-Mo Aiming:", "Hold fire with a stratagem equipped to slow time (3 s max) and aim; release to deploy."),
+    ("Fullscreen:", "CMD+F or F11 toggles fullscreen with the aspect ratio preserved. CMD+Q quits (Mac)."),
+    ("Debriefing:", "[R] replay, [H] hub, [SPACE] mission select, [ESC] main menu."),
+    ("Respawn:", "Press [R] after K.I.A. to respawn, or [SPACE] to return to the lobby."),
+    ("Help Tabs:", "[1-6] jump to a tab, [TAB] / arrows cycle, [SHIFT+TAB] goes back."),
+]
 
 
 class HelpMenu:
@@ -47,30 +335,40 @@ class HelpMenu:
     TAB_HELLDIVERS = 5
 
     TAB_NAMES = [
-        "1. Weapons & Combat",
-        "2. Abilities & Buffs",
-        "3. Radar Modes (Q)",
-        "4. Controls Manual",
-        "5. Waves & Enemy AI",
-        "6. Helldivers & Strikes",
+        "1 WEAPONS",
+        "2 ABILITIES",
+        "3 RADAR",
+        "4 CONTROLS",
+        "5 ENEMIES",
+        "6 SQUAD",
     ]
+
+    FOOTER_TEXT = "[1-6] TAB   [TAB / ARROWS] CYCLE   [SHIFT+TAB] BACK   [ESC / H] CLOSE"
 
     def __init__(self, width=1280, height=720):
         self.width = width
         self.height = height
         self.active_tab = self.TAB_WEAPONS
 
-        # Initialize fonts lazily or safely
-        if not pygame.font.get_init():
-            pygame.font.init()
+        self.font_title = theme.get_font("title")
+        self.font_subtitle = theme.get_font("heading")
+        self.font_heading = theme.get_font("label")
+        self.font_body = theme.get_font("body_small")
+        self.font_body_bold = theme.get_font("label")
+        self.font_small = theme.get_font("body_small")
+        self.font_tag = theme.get_font("mono_tiny")
+        self.font_mono = theme.get_font("mono")
+        self._fonts_ready = None not in (
+            self.font_title, self.font_subtitle, self.font_heading, self.font_body,
+            self.font_tag, self.font_mono,
+        )
+        self._cache = widgets.TextCache(1024)
+        self._overlay = widgets.make_overlay((self.width, self.height), COLOR_BG_OVERLAY)
 
-        self.font_title = pygame.font.SysFont("arial", 28, bold=True)
-        self.font_subtitle = pygame.font.SysFont("arial", 18, bold=True)
-        self.font_heading = pygame.font.SysFont("arial", 16, bold=True)
-        self.font_body = pygame.font.SysFont("arial", 13, bold=False)
-        self.font_body_bold = pygame.font.SysFont("arial", 13, bold=True)
-        self.font_small = pygame.font.SysFont("arial", 12, bold=False)
-        self.font_tag = pygame.font.SysFont("arial", 11, bold=True)
+        margin_x, margin_y = 24, 15
+        self.panel_rect = pygame.Rect(margin_x, margin_y, self.width - 2 * margin_x, self.height - 2 * margin_y)
+        self.content_rect = pygame.Rect(margin_x + 16, 76, self.width - 2 * margin_x - 32, self.height - margin_y - 120)
+        self.footer_rect = pygame.Rect(34, self.height - 48, self.width - 68, 30)
 
         # Tab button rectangles
         self.tab_rects = []
@@ -78,6 +376,11 @@ class HelpMenu:
 
         # Close button rect (top right)
         self.close_btn_rect = pygame.Rect(self.width - 145, 20, 115, 36)
+
+        self._page_cache = {}
+        self._footer_surf = None
+        if self._fonts_ready:
+            self._footer_surf = self.font_tag.render(self.FOOTER_TEXT, True, COLOR_TEXT_MUTED)
 
     def _init_tab_rects(self):
         """Pre-computes tab button layout across top header."""
@@ -104,6 +407,19 @@ class HelpMenu:
         """Cycles to the previous tab."""
         self.active_tab = (self.active_tab - 1) % len(self.TAB_NAMES)
 
+    @staticmethod
+    def _play_click():
+        if get_audio_manager:
+            get_audio_manager().play_sfx("ui_click")
+
+    def _switch_tab(self, index):
+        """Activate a tab; returns "tab_changed" only when the tab actually changed."""
+        if index == self.active_tab:
+            return None
+        self.active_tab = index
+        self._play_click()
+        return "tab_changed"
+
     def handle_event(self, event, mouse_pos=None):
         """
         Handles keyboard and mouse inputs.
@@ -114,65 +430,26 @@ class HelpMenu:
         """
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             if mouse_pos is not None:
-                # Check Close button
                 if self.close_btn_rect.collidepoint(mouse_pos):
-                    if get_audio_manager:
-                        get_audio_manager().play_sfx("ui_click")
+                    self._play_click()
                     return "close"
-
-                # Check Tab buttons
                 for i, rect in enumerate(self.tab_rects):
                     if rect.collidepoint(mouse_pos):
-                        self.active_tab = i
-                        if get_audio_manager:
-                            get_audio_manager().play_sfx("ui_click")
-                        return "tab_changed"
+                        return self._switch_tab(i)
 
         elif event.type == pygame.KEYDOWN:
             if event.key in (pygame.K_ESCAPE, pygame.K_h):
-                if get_audio_manager:
-                    get_audio_manager().play_sfx("ui_click")
+                self._play_click()
                 return "close"
-            elif event.key == pygame.K_1:
-                self.active_tab = self.TAB_WEAPONS
-                if get_audio_manager:
-                    get_audio_manager().play_sfx("ui_click")
-                return "tab_changed"
-            elif event.key == pygame.K_2:
-                self.active_tab = self.TAB_ABILITIES
-                if get_audio_manager:
-                    get_audio_manager().play_sfx("ui_click")
-                return "tab_changed"
-            elif event.key == pygame.K_3:
-                self.active_tab = self.TAB_RADAR
-                if get_audio_manager:
-                    get_audio_manager().play_sfx("ui_click")
-                return "tab_changed"
-            elif event.key == pygame.K_4:
-                self.active_tab = self.TAB_CONTROLS
-                if get_audio_manager:
-                    get_audio_manager().play_sfx("ui_click")
-                return "tab_changed"
-            elif event.key == pygame.K_5:
-                self.active_tab = self.TAB_WAVES
-                if get_audio_manager:
-                    get_audio_manager().play_sfx("ui_click")
-                return "tab_changed"
-            elif event.key == pygame.K_6:
-                self.active_tab = self.TAB_HELLDIVERS
-                if get_audio_manager:
-                    get_audio_manager().play_sfx("ui_click")
-                return "tab_changed"
-            elif event.key in (pygame.K_TAB, pygame.K_RIGHT):
-                self.next_tab()
-                if get_audio_manager:
-                    get_audio_manager().play_sfx("ui_click")
-                return "tab_changed"
-            elif event.key == pygame.K_LEFT:
-                self.prev_tab()
-                if get_audio_manager:
-                    get_audio_manager().play_sfx("ui_click")
-                return "tab_changed"
+            if pygame.K_1 <= event.key <= pygame.K_6:
+                return self._switch_tab(event.key - pygame.K_1)
+            if event.key == pygame.K_TAB:
+                shift = bool(event.mod & pygame.KMOD_SHIFT)
+                return self._switch_tab((self.active_tab + (-1 if shift else 1)) % len(self.TAB_NAMES))
+            if event.key == pygame.K_RIGHT:
+                return self._switch_tab((self.active_tab + 1) % len(self.TAB_NAMES))
+            if event.key == pygame.K_LEFT:
+                return self._switch_tab((self.active_tab - 1) % len(self.TAB_NAMES))
 
         return None
 
@@ -182,45 +459,36 @@ class HelpMenu:
 
     def draw(self, surface, mouse_pos=None):
         """Renders the entire help menu overlay onto the target surface."""
-        # Semi-transparent dark backdrop
-        overlay = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
-        overlay.fill(COLOR_BG_OVERLAY)
-        surface.blit(overlay, (0, 0))
+        surface.blit(self._overlay, (0, 0))
+        if not self._fonts_ready:
+            return
 
-        # Main window panel
-        margin_x = 24
-        margin_y = 15
-        panel_rect = pygame.Rect(margin_x, margin_y, self.width - 2 * margin_x, self.height - 2 * margin_y)
-        pygame.draw.rect(surface, (14, 18, 28), panel_rect, border_radius=10)
-        pygame.draw.rect(surface, COLOR_PANEL_BORDER, panel_rect, width=2, border_radius=10)
-
-        # Header Tabs
+        widgets.draw_panel(surface, self.panel_rect)
         self._draw_tabs(surface, mouse_pos)
-
-        # Close Button
         self._draw_close_button(surface, mouse_pos)
+        pygame.draw.line(surface, COLOR_PANEL_BORDER, (self.panel_rect.x + 10, 68), (self.panel_rect.right - 10, 68), 1)
 
-        # Horizontal separator line under header
-        pygame.draw.line(surface, COLOR_PANEL_BORDER, (margin_x + 10, 68), (self.width - margin_x - 10, 68), 1)
-
-        # Content area
-        content_rect = pygame.Rect(margin_x + 16, 76, self.width - 2 * margin_x - 32, self.height - margin_y - 120)
-
-        if self.active_tab == self.TAB_WEAPONS:
-            self._draw_tab_weapons(surface, content_rect)
-        elif self.active_tab == self.TAB_ABILITIES:
-            self._draw_tab_abilities(surface, content_rect)
-        elif self.active_tab == self.TAB_RADAR:
-            self._draw_tab_radar(surface, content_rect)
-        elif self.active_tab == self.TAB_CONTROLS:
-            self._draw_tab_controls(surface, content_rect)
-        elif self.active_tab == self.TAB_WAVES:
-            self._draw_tab_waves(surface, content_rect)
-        elif self.active_tab == self.TAB_HELLDIVERS:
-            self._draw_tab_helldivers(surface, content_rect)
-
-        # Footer Navigation Bar
+        surface.blit(self._get_page(self.active_tab), self.content_rect.topleft)
         self._draw_footer(surface)
+
+    def _get_page(self, tab):
+        """Return the cached page surface for ``tab``, rendering it once on first visit."""
+        page = self._page_cache.get(tab)
+        if page is None:
+            page = pygame.Surface(self.content_rect.size)
+            page.fill(theme.PANEL)
+            rect = pygame.Rect(0, 0, *self.content_rect.size)
+            renderers = {
+                self.TAB_WEAPONS: self._draw_tab_weapons,
+                self.TAB_ABILITIES: self._draw_tab_abilities,
+                self.TAB_RADAR: self._draw_tab_radar,
+                self.TAB_CONTROLS: self._draw_tab_controls,
+                self.TAB_WAVES: self._draw_tab_waves,
+                self.TAB_HELLDIVERS: self._draw_tab_helldivers,
+            }
+            renderers[tab](page, rect)
+            self._page_cache[tab] = page
+        return page
 
     def _draw_tabs(self, surface, mouse_pos):
         """Draws top tab navigation buttons."""
@@ -229,48 +497,74 @@ class HelpMenu:
             is_hovered = (mouse_pos is not None and rect.collidepoint(mouse_pos))
 
             if is_active:
-                bg = COLOR_TAB_ACTIVE_BG
-                border = COLOR_TAB_ACTIVE_BORDER
-                txt_color = COLOR_TEXT_WHITE
+                bg, txt_color = COLOR_TAB_ACTIVE_BG, COLOR_TEXT_WHITE
             elif is_hovered:
-                bg = COLOR_TAB_HOVER_BG
-                border = COLOR_TEXT_ACCENT
-                txt_color = COLOR_TEXT_WHITE
+                bg, txt_color = COLOR_TAB_HOVER_BG, COLOR_TEXT_WHITE
             else:
-                bg = COLOR_TAB_INACTIVE_BG
-                border = COLOR_TAB_INACTIVE_BORDER
-                txt_color = COLOR_TEXT_MUTED
+                bg, txt_color = COLOR_TAB_INACTIVE_BG, COLOR_TEXT_MUTED
 
-            pygame.draw.rect(surface, bg, rect, border_radius=6)
-            pygame.draw.rect(surface, border, rect, width=1, border_radius=6)
-
-            label = self.font_subtitle.render(self.TAB_NAMES[i], True, txt_color)
-            label_rect = label.get_rect(center=rect.center)
-            surface.blit(label, label_rect)
+            widgets.draw_panel(surface, rect, bg, theme.ACCENT if is_hovered else COLOR_PANEL_BORDER, brackets=False)
+            if is_active:
+                pygame.draw.rect(surface, theme.ACCENT, (rect.x, rect.bottom - 3, rect.w, 3))
+            label = widgets.fit_text(self.font_subtitle, self.TAB_NAMES[i], rect.w - 16)
+            surf = self._cache.render(self.font_subtitle, label, txt_color)
+            surface.blit(surf, surf.get_rect(center=rect.center))
 
     def _draw_close_button(self, surface, mouse_pos):
         """Draws the Close / Return button."""
         is_hovered = (mouse_pos is not None and self.close_btn_rect.collidepoint(mouse_pos))
-        bg = (160, 40, 40) if is_hovered else (80, 25, 30)
-        border = COLOR_TEXT_RED if is_hovered else (140, 50, 50)
-
-        pygame.draw.rect(surface, bg, self.close_btn_rect, border_radius=6)
-        pygame.draw.rect(surface, border, self.close_btn_rect, width=1, border_radius=6)
-
-        txt = self.font_subtitle.render("Close (ESC)", True, COLOR_TEXT_WHITE)
-        txt_rect = txt.get_rect(center=self.close_btn_rect.center)
-        surface.blit(txt, txt_rect)
+        widgets.draw_panel(
+            surface, self.close_btn_rect,
+            COLOR_TAB_HOVER_BG if is_hovered else COLOR_TAB_INACTIVE_BG,
+            theme.DANGER if is_hovered else COLOR_PANEL_BORDER,
+            brackets=False,
+        )
+        txt = self._cache.render(self.font_heading, "BACK [ESC]", COLOR_TEXT_WHITE)
+        surface.blit(txt, txt.get_rect(center=self.close_btn_rect.center))
 
     def _draw_footer(self, surface):
         """Draws bottom bar with keybinding guidance."""
-        footer_rect = pygame.Rect(34, self.height - 48, self.width - 68, 30)
-        pygame.draw.rect(surface, (18, 24, 38), footer_rect, border_radius=5)
-        pygame.draw.rect(surface, (35, 50, 75), footer_rect, width=1, border_radius=5)
+        widgets.draw_panel(surface, self.footer_rect, theme.PANEL_RAISED, theme.BORDER, brackets=False)
+        if self._footer_surf is not None:
+            surface.blit(self._footer_surf, self._footer_surf.get_rect(center=self.footer_rect.center))
 
-        hints = "[1-6] Quick Tab Switch  |  [TAB / Arrows] Cycle Tabs  |  [ESC / H] Return to Game"
-        txt = self.font_body.render(hints, True, COLOR_TEXT_MUTED)
-        txt_rect = txt.get_rect(center=footer_rect.center)
-        surface.blit(txt, txt_rect)
+    # ------------------------------------------------------------------ helpers
+    def _text(self, surface, font, text, color, pos, max_w=None):
+        """Blit single-line text, ellipsized to ``max_w`` pixels when given."""
+        if max_w is not None:
+            text = widgets.fit_text(font, text, max_w)
+        surf = self._cache.render(font, text, color)
+        surface.blit(surf, pos)
+        return surf
+
+    def _flow_split(self, label, desc, width):
+        """Split ``desc`` so it flows right after ``label``; returns (label_w, first_line, rest_lines)."""
+        label_w = self.font_heading.size(label + " ")[0]
+        words = desc.split()
+        first: List[str] = []
+        while words and self.font_body.size(" ".join(first + [words[0]]))[0] <= width - label_w:
+            first.append(words.pop(0))
+        rest = widgets.wrap_text_px(self.font_body, " ".join(words), width) if words else []
+        return label_w, " ".join(first), rest
+
+    def _flow_height(self, label, desc, width):
+        _, _, rest = self._flow_split(label, desc, width)
+        return (1 + len(rest)) * FLOW_STEP
+
+    def _draw_flow(self, surface, x, y, width, label, desc, label_color=COLOR_TEXT_WHITE, desc_color=COLOR_TEXT_MUTED):
+        """Draw ``label`` followed by wrapped ``desc``; returns the consumed height."""
+        label_w, first, rest = self._flow_split(label, desc, width)
+        surface.blit(self._cache.render(self.font_heading, label, label_color), (x, y))
+        if first:
+            surface.blit(self._cache.render(self.font_body, first, desc_color), (x + label_w, y + 1))
+        for i, line in enumerate(rest):
+            surface.blit(self._cache.render(self.font_body, line, desc_color), (x, y + (i + 1) * FLOW_STEP + 1))
+        return (1 + len(rest)) * FLOW_STEP
+
+    def _draw_title(self, surface, rect, title, color, sub=None):
+        self._text(surface, self.font_title, title, color, (rect.x + 10, rect.y + 2), rect.width - 20)
+        if sub:
+            self._text(surface, self.font_body, sub, COLOR_TEXT_MUTED, (rect.x + 12, rect.y + 34), rect.width - 24)
 
     # =========================================================================
     # TAB 1: WEAPONS & COMBAT
@@ -278,108 +572,43 @@ class HelpMenu:
 
     def _draw_tab_weapons(self, surface, rect):
         """Renders comprehensive weapon specifications, damages, and ranges."""
-        # Section Title
-        title = self.font_title.render("STARBLAST WEAPONRY & COMBAT SYSTEMS", True, COLOR_TEXT_GOLD)
-        surface.blit(title, (rect.x + 10, rect.y + 4))
-
-        sub = self.font_small.render("Tactical specifications, exact damages, projectile speeds, and effective engagement ranges.", True, COLOR_TEXT_MUTED)
-        surface.blit(sub, (rect.x + 12, rect.y + 36))
-
-        weapons = [
-            {
-                "name": "Main Autocannon (Quad-Barrel)",
-                "type": "Primary Weapon (Kinetic Ballistic)",
-                "trigger": "SPACE (Hold or Tap)",
-                "damage": "1 per round  (4 DMG per quad-volley)  |  Boosted: 2 per round (8 DMG)",
-                "range": "Full Map Bounds (0-3000 px)  |  Velocity: 8.0 px/frame (480 px/s)",
-                "cooldown": "100 ms between volleys  (50 ms under Rapid Fire)",
-                "capacity": "200 rounds (50 quad volleys)  |  Reload: 5.0s (3.0s under Rapid Fire)",
-                "notes": "Fires 4 parallel projectiles simultaneously from wing and fuselage hardpoints. Bullets persist until hitting enemies or map borders.",
-                "color": (255, 210, 80),
-            },
-            {
-                "name": "Eagle Homing Rockets",
-                "type": "Secondary Ordnance (Guided Kinetic Warhead)",
-                "trigger": "E / F / Left-CTRL or Right-Click",
-                "damage": "4 DMG (Heavy Kinetic Explosion)",
-                "range": "1200 px max target tracking range  |  2.5s maximum flight lifetime",
-                "cooldown": "350 ms firing delay  |  Velocity: 7.0 px/frame  |  Agility: 2.0°/frame",
-                "capacity": "4 rockets  |  Reload: 25.0s when all 4 rockets are exhausted",
-                "notes": "Requires active Radar Lock (target inside CONE or OMNI lock zone). Automatically locks closest hostile in radar zone across all active wave squadrons.",
-                "color": (255, 120, 60),
-            },
-            {
-                "name": "Swarm Micro-Missiles",
-                "type": "Autonomous Ability Weapon (Swarm Homing Pods)",
-                "trigger": "Auto-fired every 0.8s during Swarm Homing Pods buff (12s)",
-                "damage": "2.0 DMG per micro-missile",
-                "range": "~900 px effective range  |  Velocity: 7.5 px/frame  |  Agility: 4.0°/frame",
-                "cooldown": "Continuous 0.8s auto-salvo interval",
-                "capacity": "Autonomous salvo during buff lifetime",
-                "notes": "High-maneuverability self-guided micro-projectiles launched automatically from dorsal pods to relentlessly track enemies.",
-                "color": (200, 100, 255),
-            },
-            {
-                "name": "Vanguard Drone Pulse Laser",
-                "type": "Autonomous Escort Weapon (Vanguard Drone)",
-                "trigger": "Automatic firing by orbiting Vanguard Drone (20s duration)",
-                "damage": "1.0 DMG per focused laser pulse",
-                "range": "350 px engagement perimeter centered around player ship",
-                "cooldown": "Fires once every 0.6 seconds when enemy is within 350 px",
-                "capacity": "Unlimited during drone deployment",
-                "notes": "Drone physically intercepts and eliminates incoming enemy bullets while systematically attacking nearby hostiles.",
-                "color": (120, 220, 255),
-            },
-            {
-                "name": "Hull Impact Collision",
-                "type": "Emergency Melee Contact",
-                "trigger": "Ramming into an enemy aircraft (Light enemies will strafe to evade)",
-                "damage": "25 DMG (One-Hit Elimination) dealt to enemy aircraft  |  Self-Damage: 12 DMG absorbed by shield first",
-                "range": "0 px (Direct physical contact; causes physical separation recoil)",
-                "cooldown": "Immediate upon contact  |  Triggers 1.0s temporary invincibility",
-                "capacity": "Absorbed by shield pool (20 max) before damaging hull structure",
-                "notes": "Light hostiles break away at <180px. Impact drains shield with recoil push to prevent multi-hits.",
-                "color": (255, 80, 80),
-            },
-        ]
-
-        card_y = rect.y + 58
+        self._draw_title(
+            surface, rect, "STARBLAST WEAPONRY & COMBAT SYSTEMS", COLOR_TEXT_GOLD,
+            "Tactical specifications, exact damages, projectile speeds, and effective engagement ranges.",
+        )
+        card_y = rect.y + 56
         card_w = rect.width - 10
-        card_h = 92
-        spacing = 9
+        card_h = 100
+        spacing = 5
+        text_w = card_w - 36
 
-        for w in weapons:
+        for w in WEAPONS:
             card_rect = pygame.Rect(rect.x + 5, card_y, card_w, card_h)
-            pygame.draw.rect(surface, COLOR_PANEL_BG, card_rect, border_radius=6)
-            pygame.draw.rect(surface, (35, 50, 75), card_rect, width=1, border_radius=6)
+            widgets.draw_panel(surface, card_rect, theme.PANEL_RAISED, theme.BORDER, brackets=False)
+            pygame.draw.rect(surface, w["color"], (card_rect.x, card_y, 3, card_h))
 
-            # Left accent indicator bar
-            pygame.draw.rect(surface, w["color"], (rect.x + 5, card_y, 4, card_h), border_top_left_radius=6, border_bottom_left_radius=6)
+            x = rect.x + 18
+            name_txt = self._text(surface, self.font_heading, w["name"].upper(), w["color"], (x, card_y + 5))
+            trig = widgets.fit_text(self.font_tag, f"FIRE: {w['trigger']}", 640)
+            trig_surf = self._cache.render(self.font_tag, trig, COLOR_TEXT_ACCENT)
+            surface.blit(trig_surf, (card_rect.right - trig_surf.get_width() - 14, card_y + 8))
+            type_x = x + name_txt.get_width() + 12
+            self._text(
+                surface, self.font_tag, f"[{w['type']}]", COLOR_TEXT_MUTED,
+                (type_x, card_y + 8), card_rect.right - trig_surf.get_width() - 30 - type_x,
+            )
 
-            # Name & Type
-            name_txt = self.font_heading.render(w["name"], True, w["color"])
-            surface.blit(name_txt, (rect.x + 18, card_y + 6))
-
-            type_txt = self.font_small.render(f"[{w['type']}]", True, COLOR_TEXT_MUTED)
-            surface.blit(type_txt, (rect.x + 28 + name_txt.get_width(), card_y + 8))
-
-            trig_txt = self.font_small.render(f"Fire: {w['trigger']}", True, COLOR_TEXT_ACCENT)
-            surface.blit(trig_txt, (rect.x + card_w - trig_txt.get_width() - 14, card_y + 7))
-
-            # Row 1: Damage & Range
-            dmg_label = self.font_body_bold.render("Damage: ", True, COLOR_TEXT_WHITE)
-            dmg_val = self.font_body.render(w["damage"], True, (255, 235, 150))
-            surface.blit(dmg_label, (rect.x + 18, card_y + 28))
-            surface.blit(dmg_val, (rect.x + 18 + dmg_label.get_width(), card_y + 28))
-
-            rng_label = self.font_body_bold.render("Range: ", True, COLOR_TEXT_WHITE)
-            rng_val = self.font_body.render(w["range"], True, (160, 225, 255))
-            surface.blit(rng_label, (rect.x + 18, card_y + 48))
-            surface.blit(rng_val, (rect.x + 18 + rng_label.get_width(), card_y + 48))
-
-            # Row 2: Capacity & Tactical notes
-            cap_txt = self.font_small.render(f"Capacity / Cooldown: {w['capacity']}  |  {w['cooldown']}", True, (200, 210, 225))
-            surface.blit(cap_txt, (rect.x + 18, card_y + 68))
+            rows = (
+                ("Damage:", w["damage"], VALUE_TEXT),
+                ("Range:", w["range"], theme.lerp_color(theme.TEXT, theme.INFO, 0.5)),
+                ("Capacity / Cooldown:", f"{w['capacity']}  |  {w['cooldown']}", COLOR_TEXT_WHITE),
+            )
+            ry = card_y + 26
+            for label, value, color in rows:
+                lbl = self._text(surface, self.font_heading, label, COLOR_TEXT_WHITE, (x, ry))
+                self._text(surface, self.font_body, value, color, (x + lbl.get_width() + 6, ry + 1), text_w - lbl.get_width() - 6)
+                ry += 18
+            self._text(surface, self.font_body, w["notes"], COLOR_TEXT_MUTED, (x, ry + 2), text_w)
 
             card_y += card_h + spacing
 
@@ -389,155 +618,34 @@ class HelpMenu:
 
     def _draw_tab_abilities(self, surface, rect):
         """Renders all 8 tactical power-ups across rarity tiers, plus passives."""
-        title = self.font_title.render("TACTICAL ABILITIES & POWER-UP SUBSYSTEM", True, COLOR_TEXT_ACCENT)
-        surface.blit(title, (rect.x + 10, rect.y + 4))
-
-        meta = self.font_small.render(
-            "Drops: 8% Base Chance on kill (+3% Pity per kill without drop)  |  Milestone Airdrops at 1K, 5K, 10K, 25K, 50K  |  Magnet Pull: 130 px",
-            True,
-            COLOR_TEXT_MUTED
+        self._draw_title(
+            surface, rect, "TACTICAL ABILITIES & POWER-UP SUBSYSTEM", COLOR_TEXT_ACCENT,
+            "Drops: 8% base chance on kill (+3% pity per kill without drop)  |  Milestone airdrops at 1K, 5K, 10K, 25K, 50K  |  Magnet pull: 130 px",
         )
-        surface.blit(meta, (rect.x + 12, rect.y + 34))
-
         col_w = (rect.width - 24) // 2
-        card_h = 76
-        start_y = rect.y + 54
-        spacing_y = 8
+        card_h = 98
+        start_y = rect.y + 56
+        spacing_y = 6
 
-        col1_items = [
-            {
-                "tier": "COMMON TIER (70% Roll Chance)",
-                "tier_color": COLOR_TEXT_GREEN,
-                "name": "Rapid Fire",
-                "dur": "10s Duration",
-                "stats": "Cooldown: 100ms -> 50ms (2x Fire Rate)  |  Reload: 5.0s -> 3.0s (-40%)",
-                "desc": "Overcharges main autocannon cyclic rate, delivering dense volleys.",
-                "color": COLOR_TEXT_GREEN,
-            },
-            {
-                "tier": "COMMON TIER (70% Roll Chance)",
-                "tier_color": COLOR_TEXT_GREEN,
-                "name": "Shield Bubble",
-                "dur": "10s Duration",
-                "stats": "+15 Overcharge Shield (Max 35)  |  Regen Rate: 2.0s -> 1.0s (2x)",
-                "desc": "Instantly expands shield barrier beyond normal max and accelerates recovery.",
-                "color": COLOR_TEXT_GREEN,
-            },
-            {
-                "tier": "COMMON TIER (70% Roll Chance)",
-                "tier_color": COLOR_TEXT_GREEN,
-                "name": "Thruster Overdrive",
-                "dur": "10s Duration",
-                "stats": "Max Speed: 7.0 -> 11.0 (+57%)  |  Accel: 0.15 -> 0.25  |  Turn: 3° -> 4.5°",
-                "desc": "Injects thrusters with hyper-fuel for superior dogfighting maneuverability.",
-                "color": COLOR_TEXT_GREEN,
-            },
-            {
-                "tier": "RARE TIER (20% Roll Chance)",
-                "tier_color": COLOR_TEXT_BLUE,
-                "name": "Chrono Slip (Time Slow)",
-                "dur": "8s Duration",
-                "stats": "Enemy Speed: 50% (x0.5)  |  Hostile Bullet Velocity: 50% (x0.5)",
-                "desc": "Dilates localized space-time; enemies and bullets crawl while you move at normal speed.",
-                "color": COLOR_TEXT_BLUE,
-            },
-            {
-                "tier": "RARE TIER (20% Roll Chance)",
-                "tier_color": COLOR_TEXT_BLUE,
-                "name": "Cryo Frostbite (Freeze Blast)",
-                "dur": "10s Duration",
-                "stats": "Frost Slow: 60% (x0.4 speed)  |  3 Hits = 1.5s Complete Solid Freeze",
-                "desc": "Rounds coat enemy hulls in liquid sub-zero cryogen. 3 hits completely freeze enemy.",
-                "color": COLOR_TEXT_BLUE,
-            },
-        ]
-
-        col2_items = [
-            {
-                "tier": "RARE TIER (20% Roll Chance)",
-                "tier_color": COLOR_TEXT_BLUE,
-                "name": "Damage Multiplier",
-                "dur": "10s Duration",
-                "stats": "Cannon Damage: 1 -> 2 DMG per bullet  (4 -> 8 DMG per quad-volley)",
-                "desc": "Empowers autocannon munitions with high-yield depleted uranium charges.",
-                "color": COLOR_TEXT_BLUE,
-            },
-            {
-                "tier": "EPIC TIER (10% Roll Chance)",
-                "tier_color": COLOR_TEXT_PURPLE,
-                "name": "Vanguard Drone Companion",
-                "dur": "20s Duration",
-                "stats": "Orbiting Radius: 85 px  |  Laser Damage: 1.0 DMG (350 px range, 0.6s CD)",
-                "desc": "Deploys an autonomous escort drone that intercepts enemy bullets and fires lasers.",
-                "color": COLOR_TEXT_PURPLE,
-            },
-            {
-                "tier": "EPIC TIER (10% Roll Chance)",
-                "tier_color": COLOR_TEXT_PURPLE,
-                "name": "Swarm Homing Pods",
-                "dur": "12s Duration",
-                "stats": "Damage: 2.0 DMG / missile  |  Salvo: Every 0.8s  |  Tracking Range: 900 px",
-                "desc": "Mounts micro-missile pods launching continuous high-agility self-guided rockets.",
-                "color": COLOR_TEXT_PURPLE,
-            },
-            {
-                "tier": "PASSIVE SHIP DEFENSES",
-                "tier_color": (255, 200, 80),
-                "name": "Deflector Shield & Hull Armor",
-                "dur": "Permanent Passive",
-                "stats": "Shield: 20 (+1 / 2.0s regen)  |  Hull: 5 HP (No passive recovery!)",
-                "desc": "Shield absorbs hits before hull. Taking damage gives 1.0s immunity. Boundary: 0.1 DMG/tick.",
-                "color": (100, 200, 255),
-            },
-            {
-                "tier": "ANTI-RETREAT & LOW HP SURVIVAL",
-                "tier_color": (50, 255, 120),
-                "name": "Kill-to-Heal Nanites & Overdrive",
-                "dur": "Active when HP <= 2",
-                "stats": "+1 HP Nanite drop guaranteed on kill  |  +50% Score  |  -25% Cooldowns",
-                "desc": "Fleeing at low HP is fatal! Defeat enemies to spawn green nanites and trigger Overdrive.",
-                "color": (50, 255, 120),
-            },
-        ]
-
-        # Draw Column 1
-        curr_y = start_y
-        for item in col1_items:
-            self._draw_ability_card(surface, rect.x + 5, curr_y, col_w, card_h, item)
-            curr_y += card_h + spacing_y
-
-        # Draw Column 2
-        curr_y = start_y
-        for item in col2_items:
-            self._draw_ability_card(surface, rect.x + 15 + col_w, curr_y, col_w, card_h, item)
-            curr_y += card_h + spacing_y
+        for col_x, items in ((rect.x + 5, ABILITY_COLUMN_1), (rect.x + 15 + col_w, ABILITY_COLUMN_2)):
+            curr_y = start_y
+            for item in items:
+                self._draw_ability_card(surface, col_x, curr_y, col_w, card_h, item)
+                curr_y += card_h + spacing_y
 
     def _draw_ability_card(self, surface, x, y, w, h, item):
         """Renders an individual ability card."""
         c_rect = pygame.Rect(x, y, w, h)
-        pygame.draw.rect(surface, COLOR_PANEL_BG, c_rect, border_radius=6)
-        pygame.draw.rect(surface, (35, 50, 75), c_rect, width=1, border_radius=6)
+        widgets.draw_panel(surface, c_rect, theme.PANEL_RAISED, theme.BORDER, brackets=False)
+        pygame.draw.rect(surface, item["color"], (x, y, 3, h))
 
-        # Left accent stripe
-        pygame.draw.rect(surface, item["color"], (x, y, 4, h), border_top_left_radius=6, border_bottom_left_radius=6)
-
-        # Header: Name + Tier + Duration
-        name_txt = self.font_heading.render(item["name"], True, item["color"])
-        surface.blit(name_txt, (x + 14, y + 5))
-
-        dur_txt = self.font_small.render(f"[{item['dur']}]", True, COLOR_TEXT_WHITE)
-        surface.blit(dur_txt, (x + w - dur_txt.get_width() - 10, y + 7))
-
-        tier_txt = self.font_tag.render(item["tier"], True, item["tier_color"])
-        surface.blit(tier_txt, (x + 14 + name_txt.get_width() + 10, y + 8))
-
-        # Stats
-        stats_txt = self.font_body_bold.render(item["stats"], True, (255, 235, 160))
-        surface.blit(stats_txt, (x + 14, y + 27))
-
-        # Desc
-        desc_txt = self.font_small.render(item["desc"], True, COLOR_TEXT_MUTED)
-        surface.blit(desc_txt, (x + 14, y + 49))
+        dur = self._cache.render(self.font_tag, f"[{item['dur']}]", COLOR_TEXT_WHITE)
+        surface.blit(dur, (x + w - dur.get_width() - 10, y + 8))
+        self._text(surface, self.font_heading, item["name"].upper(), item["color"], (x + 14, y + 5), w - dur.get_width() - 40)
+        self._text(surface, self.font_tag, item["tier"], item["tier_color"], (x + 14, y + 25), w - 28)
+        self._text(surface, self.font_heading, item["stats"], VALUE_TEXT, (x + 14, y + 41), w - 28)
+        for i, line in enumerate(widgets.wrap_text_px(self.font_body, item["desc"], w - 28, max_lines=2)):
+            self._text(surface, self.font_body, line, COLOR_TEXT_MUTED, (x + 14, y + 62 + i * 17))
 
     # =========================================================================
     # TAB 3: RADAR MODES (CONE vs OMNI)
@@ -545,54 +653,27 @@ class HelpMenu:
 
     def _draw_tab_radar(self, surface, rect):
         """Renders thorough breakdown and visual diagrams of CONE vs OMNI radar modes."""
-        title = self.font_title.render("DUAL RADAR TARGETING MODES: CONE vs OMNI", True, (50, 255, 170))
-        surface.blit(title, (rect.x + 10, rect.y + 4))
-
-        toggle_banner = self.font_heading.render(
-            "HOTKEY: Press [ Q ] during flight to instantly toggle between CONE and OMNI radar modes",
-            True,
-            COLOR_TEXT_GOLD
+        self._draw_title(surface, rect, "DUAL RADAR TARGETING MODES: CONE vs OMNI", theme.SUCCESS)
+        self._text(
+            surface, self.font_heading,
+            "HOTKEY: Press [Q] during flight to instantly toggle between CONE and OMNI radar modes",
+            COLOR_TEXT_GOLD, (rect.x + 12, rect.y + 34), rect.width - 24,
         )
-        surface.blit(toggle_banner, (rect.x + 12, rect.y + 34))
-
         col_w = (rect.width - 24) // 2
         card_h = rect.height - 76
         start_y = rect.y + 60
-
-        # Left Column: CONE MODE
-        self._draw_radar_mode_panel(
-            surface,
-            x=rect.x + 5,
-            y=start_y,
-            w=col_w,
-            h=card_h,
-            is_cone=True
-        )
-
-        # Right Column: OMNI MODE
-        self._draw_radar_mode_panel(
-            surface,
-            x=rect.x + 15 + col_w,
-            y=start_y,
-            w=col_w,
-            h=card_h,
-            is_cone=False
-        )
+        self._draw_radar_mode_panel(surface, rect.x + 5, start_y, col_w, card_h, True)
+        self._draw_radar_mode_panel(surface, rect.x + 15 + col_w, start_y, col_w, card_h, False)
 
     def _draw_radar_mode_panel(self, surface, x, y, w, h, is_cone):
-        """Draws radar mode details along with a live diagram illustrating the detection area."""
+        """Draws radar mode details along with a diagram illustrating the detection area."""
         p_rect = pygame.Rect(x, y, w, h)
-        accent_color = (0, 220, 255) if is_cone else (255, 150, 50)
+        accent_color = theme.INFO if is_cone else theme.WARNING
+        widgets.draw_panel(surface, p_rect, theme.PANEL_RAISED, accent_color, accent_color)
 
-        pygame.draw.rect(surface, COLOR_PANEL_BG, p_rect, border_radius=8)
-        pygame.draw.rect(surface, accent_color, p_rect, width=2, border_radius=8)
-
-        # Top Title
         mode_title = "MODE 1: CONE (Long-Range Forward Sector)" if is_cone else "MODE 2: OMNI (360° Close-Quarters Sphere)"
-        title_surf = self.font_subtitle.render(mode_title, True, accent_color)
-        surface.blit(title_surf, (x + 16, y + 12))
+        self._text(surface, self.font_subtitle, mode_title.upper(), accent_color, (x + 16, y + 12), w - 32)
 
-        # Specifications & Parameters
         if is_cone:
             specs = [
                 ("Search Geometry:", "50° Forward Arc (±25° aligned with ship nose)"),
@@ -614,29 +695,23 @@ class HelpMenu:
                 ("Limitation:", "Cannot acquire distant targets (>420 pixels)"),
             ]
 
-        curr_y = y + 42
+        curr_y = y + 44
         for label, val in specs:
-            l_surf = self.font_body_bold.render(label, True, COLOR_TEXT_WHITE)
-            v_surf = self.font_body.render(val, True, COLOR_TEXT_MUTED)
-            surface.blit(l_surf, (x + 16, curr_y))
-            surface.blit(v_surf, (x + 16 + l_surf.get_width() + 6, curr_y))
-            curr_y += 22
+            curr_y += self._draw_flow(surface, x + 16, curr_y, w - 32, label, val) + 4
 
-        # Visual Diagram Area
-        diagram_rect = pygame.Rect(x + 20, curr_y + 10, w - 40, h - (curr_y - y) - 22)
-        pygame.draw.rect(surface, (12, 16, 26), diagram_rect, border_radius=6)
-        pygame.draw.rect(surface, (30, 45, 70), diagram_rect, width=1, border_radius=6)
+        diagram_rect = pygame.Rect(x + 20, curr_y + 6, w - 40, h - (curr_y - y) - 18)
+        widgets.draw_panel(surface, diagram_rect, theme.PANEL, theme.BORDER, brackets=False)
 
         diag_cx = diagram_rect.centerx
         diag_cy = diagram_rect.y + int(diagram_rect.height * (0.75 if is_cone else 0.52))
 
+        # One-time overlay surface for the translucent detection area (page is cached).
+        area = pygame.Surface(diagram_rect.size, pygame.SRCALPHA)
+        local_cx = diagram_rect.width // 2
         if is_cone:
             cone_angle = 50
             r_max = int(diagram_rect.height * 0.70)
             r_min = int(r_max * (300 / 1050))
-
-            cone_surf = pygame.Surface((w - 40, diagram_rect.height), pygame.SRCALPHA)
-            local_cx = (w - 40) // 2
             local_cy = int(diagram_rect.height * 0.75)
 
             points = [(local_cx, local_cy)]
@@ -645,326 +720,156 @@ class HelpMenu:
             steps = 20
             for s in range(steps + 1):
                 ang = math.radians(start_deg + (end_deg - start_deg) * (s / steps))
-                px = local_cx + math.cos(ang) * r_max
-                py = local_cy + math.sin(ang) * r_max
-                points.append((px, py))
-            pygame.draw.polygon(cone_surf, (0, 200, 255, 45), points)
-            pygame.draw.lines(cone_surf, (0, 220, 255, 180), False, points, 2)
-
-            pygame.draw.arc(cone_surf, (255, 80, 80, 180),
+                points.append((local_cx + math.cos(ang) * r_max, local_cy + math.sin(ang) * r_max))
+            pygame.draw.polygon(area, (0, 200, 255, 45), points)
+            pygame.draw.lines(area, (0, 220, 255, 180), False, points, 2)
+            pygame.draw.arc(area, (255, 80, 80, 180),
                             (local_cx - r_min, local_cy - r_min, r_min * 2, r_min * 2),
                             math.radians(180 - end_deg), math.radians(180 - start_deg), 2)
-
-            surface.blit(cone_surf, (diagram_rect.x, diagram_rect.y))
-            self._draw_mini_ship(surface, diag_cx, diag_cy, heading_deg=0)
-
-            lbl1 = self.font_tag.render("LOCK ZONE: 300px - 1050px (50° Arc)", True, (0, 220, 255))
-            lbl2 = self.font_tag.render("BLIND ZONE (<300px)", True, (255, 100, 100))
-            surface.blit(lbl1, (diagram_rect.x + 12, diagram_rect.y + 8))
-            surface.blit(lbl2, (diagram_rect.x + 12, diagram_rect.y + 24))
-
+            labels = (("LOCK ZONE: 300px - 1050px (50° Arc)", theme.INFO), ("BLIND ZONE (<300px)", theme.DANGER))
         else:
             r_omni = int(diagram_rect.height * 0.38)
-            circle_surf = pygame.Surface((w - 40, diagram_rect.height), pygame.SRCALPHA)
-            local_cx = (w - 40) // 2
             local_cy = int(diagram_rect.height * 0.52)
+            pygame.draw.circle(area, (255, 160, 50, 45), (local_cx, local_cy), r_omni)
+            pygame.draw.circle(area, (255, 180, 50, 200), (local_cx, local_cy), r_omni, 2)
+            pygame.draw.circle(area, (255, 180, 50, 80), (local_cx, local_cy), int(r_omni * 0.6), 1)
+            labels = (
+                ("LOCK ZONE: 0px - 420px (Full 360° Sphere)", theme.WARNING),
+                ("BLIND ZONE (>420px: Enemies out of range)", theme.DANGER),
+            )
+        surface.blit(area, diagram_rect.topleft)
+        self._draw_mini_ship(surface, diag_cx, diag_cy)
+        for i, (text, color) in enumerate(labels):
+            self._text(surface, self.font_tag, text, color, (diagram_rect.x + 12, diagram_rect.bottom - 40 + i * 16), diagram_rect.width - 24)
 
-            pygame.draw.circle(circle_surf, (255, 160, 50, 45), (local_cx, local_cy), r_omni)
-            pygame.draw.circle(circle_surf, (255, 180, 50, 200), (local_cx, local_cy), r_omni, 2)
-            pygame.draw.circle(circle_surf, (255, 180, 50, 80), (local_cx, local_cy), int(r_omni * 0.6), 1)
-
-            surface.blit(circle_surf, (diagram_rect.x, diagram_rect.y))
-            self._draw_mini_ship(surface, diag_cx, diag_cy, heading_deg=0)
-
-            lbl1 = self.font_tag.render("LOCK ZONE: 0px - 420px (Full 360° Sphere)", True, (255, 180, 50))
-            lbl2 = self.font_tag.render("BLIND ZONE (>420px: Enemies out of range)", True, (255, 100, 100))
-            surface.blit(lbl1, (diagram_rect.x + 12, diagram_rect.y + 8))
-            surface.blit(lbl2, (diagram_rect.x + 12, diagram_rect.y + 24))
-
-    def _draw_mini_ship(self, surface, x, y, heading_deg=0):
+    def _draw_mini_ship(self, surface, x, y):
         """Draws a crisp triangular starship vector icon."""
         nose = (x, y - 14)
         left_wing = (x - 9, y + 10)
         right_wing = (x + 9, y + 10)
         center_aft = (x, y + 6)
 
-        pygame.draw.polygon(surface, (0, 255, 150), [nose, left_wing, center_aft, right_wing])
+        pygame.draw.polygon(surface, theme.SUCCESS, [nose, left_wing, center_aft, right_wing])
         pygame.draw.polygon(surface, COLOR_TEXT_WHITE, [nose, left_wing, center_aft, right_wing], 1)
-        pygame.draw.circle(surface, (255, 200, 0), (x, y + 8), 2)
+        pygame.draw.circle(surface, theme.ACCENT, (x, y + 8), 2)
 
     # =========================================================================
     # TAB 4: FLIGHT CONTROLS & MANUAL
     # =========================================================================
 
+    def _controls_columns(self) -> List[List[str]]:
+        """Category groups per column (declaration order of the shared controls reference)."""
+        return [[CATEGORY_ORDER[0], CATEGORY_ORDER[1]], [CATEGORY_ORDER[2], CATEGORY_ORDER[3]]]
+
     def _draw_tab_controls(self, surface, rect):
-        """Renders comprehensive keybinding and flight mechanics guide."""
-        title = self.font_title.render("FLIGHT MANUAL & SYSTEM KEYBINDINGS", True, COLOR_TEXT_WHITE)
-        surface.blit(title, (rect.x + 10, rect.y + 4))
-
-        sub = self.font_small.render("Full control layout for flight maneuvering, weapon systems, radar management, and menu navigation.", True, COLOR_TEXT_MUTED)
-        surface.blit(sub, (rect.x + 12, rect.y + 36))
-
-        controls = [
-            ("FLIGHT & PROPULSION", [
-                ("W / UP ARROW", "Accelerate / Increase Throttle (Min: 2.0 -> Max: 7.0 px/frame)"),
-                ("S / DOWN ARROW", "Decelerate / Airbrake (Down to minimum speed 2.0)"),
-                ("A / LEFT ARROW", "Rotate Left / Bank Port (Turn rate: 3.0° per frame)"),
-                ("D / RIGHT ARROW", "Rotate Right / Bank Starboard (Turn rate: 3.0° per frame)"),
-                ("SPEEDOMETER HUD", "Bottom-left gauge monitors current vs maximum velocity"),
-            ]),
-            ("WEAPONS & COMBAT", [
-                ("SPACEBAR / LEFT CLICK", "Fire equipped weapon (Autocannon on Slot 1; Hold & Release on Slots 2-5)"),
-                ("SCROLL WHEEL / [1-5]", "Cycle between Quad Autocannon (Slot 1) and 4 equipped Stratagems (Slots 2-5)"),
-                ("R KEY", "Super Destroyer Rearm: Eagle-1 returns to orbit for 15s rearm; combat simulation freezes"),
-                ("ARROWS / WASD", "Stratagem Hero: play the arcade terminal on the Super Destroyer during rearm for bonus score"),
-                ("SLOW-MOTION AIMING", "Hold fire button with a stratagem equipped to slow down time (3s max) and aim"),
-                ("RIGHT CLICK / E / F", "Launch Homing Rocket at locked aerial enemies, bombers, or ground forces"),
-            ]),
-            ("SYSTEMS & NAVIGATION", [
-                ("Q KEY", "Toggle Radar Mode (CONE: 300-1050px forward  <->  OMNI: 360° 0-420px)"),
-                ("CMD+Q / ESC", "Cmd+Q quits cleanly (Mac) | ESC closes menus or returns to Lobby"),
-                ("CMD+F / F11", "Toggle Fullscreen mode with automatic aspect ratio preservation"),
-                ("P KEY", "Pause Game / Open In-Game Pause Menu"),
-                ("H KEY", "Open Help & Tactical Guide (Accessible in Pause, Respawn, & Main Menu)"),
-                ("1 - 6 KEYS", "Quick-switch tabs in Help Guide  |  TAB / Arrows cycle tabs"),
-                ("MISSION DEBRIEFING", "Post-mission AAR rank & stats. [R] Replay, [SPACE] Missions, [ESC] Menu"),
-                ("RESPAWN", "Press R to Respawn after K.I.A. or return to Lobby"),
-            ]),
-        ]
-
-        section_w = (rect.width - 24) // 3
+        """Renders keybindings from the shared controls reference plus system notes."""
+        self._draw_title(
+            surface, rect, "FLIGHT MANUAL & SYSTEM KEYBINDINGS", COLOR_TEXT_WHITE,
+            "Control layout for flight, weapons, stratagems and menus. The same list is shown in Settings.",
+        )
+        col_w = (rect.width - 24) // 3
+        key_w = 172
+        row_h = 40
+        top = rect.y + 60
+        height = rect.height - 76
         curr_x = rect.x + 6
 
-        for sec_title, bindings in controls:
-            sec_rect = pygame.Rect(curr_x, rect.y + 60, section_w, rect.height - 76)
-            pygame.draw.rect(surface, COLOR_PANEL_BG, sec_rect, border_radius=8)
-            pygame.draw.rect(surface, (35, 50, 75), sec_rect, width=1, border_radius=8)
+        for categories in self._controls_columns():
+            sec_rect = pygame.Rect(curr_x, top, col_w, height)
+            widgets.draw_panel(surface, sec_rect, theme.PANEL_RAISED, theme.BORDER, brackets=False)
+            ry = top + 12
+            for category in categories:
+                self._text(surface, self.font_subtitle, category, COLOR_TEXT_ACCENT, (curr_x + 14, ry))
+                ry += 28
+                for binding in bindings_by_category(category):
+                    self._text(surface, self.font_mono, binding.keys, COLOR_TEXT_GOLD, (curr_x + 14, ry + 2), key_w)
+                    lines = widgets.wrap_text_px(self.font_body, binding.action, col_w - key_w - 28, max_lines=2)
+                    for i, line in enumerate(lines):
+                        self._text(surface, self.font_body, line, COLOR_TEXT_MUTED, (curr_x + 14 + key_w, ry + i * 17))
+                    ry += row_h
+                ry += 6
+            curr_x += col_w + 9
 
-            # Section Header
-            hdr = self.font_subtitle.render(sec_title, True, COLOR_TEXT_ACCENT)
-            surface.blit(hdr, (curr_x + 14, rect.y + 72))
-            pygame.draw.line(surface, (45, 65, 95), (curr_x + 14, rect.y + 100), (curr_x + section_w - 14, rect.y + 100), 1)
+        sec_rect = pygame.Rect(curr_x, top, col_w, height)
+        widgets.draw_panel(surface, sec_rect, theme.PANEL_RAISED, theme.BORDER, brackets=False)
+        self._text(surface, self.font_subtitle, "SYSTEM NOTES", COLOR_TEXT_ACCENT, (curr_x + 14, top + 12))
+        ny = top + 40
+        for label, desc in SYSTEM_NOTES:
+            ny += self._draw_flow(surface, curr_x + 14, ny, col_w - 28, label, desc, COLOR_TEXT_GOLD) + 6
 
-            entry_y = rect.y + 112
-            for key_str, desc_str in bindings:
-                badge_surf = self.font_heading.render(key_str, True, COLOR_TEXT_GOLD)
-                badge_bg = pygame.Rect(curr_x + 14, entry_y, section_w - 28, 22)
-                pygame.draw.rect(surface, (25, 34, 52), badge_bg, border_radius=4)
-                pygame.draw.rect(surface, (50, 70, 105), badge_bg, width=1, border_radius=4)
-                surface.blit(badge_surf, (curr_x + 20, entry_y + 2))
+    def controls_page_height_needed(self) -> int:
+        """Height the tallest controls column needs (used by layout tests)."""
+        row_h, tallest = 40, 0
+        for categories in self._controls_columns():
+            h = 12
+            for category in categories:
+                h += 28 + row_h * len(bindings_by_category(category)) + 6
+            tallest = max(tallest, h)
+        return tallest
 
-                desc_surf = self.font_body.render(desc_str, True, COLOR_TEXT_MUTED)
-                surface.blit(desc_surf, (curr_x + 16, entry_y + 28))
-
-                entry_y += 54
-
-            curr_x += section_w + 9
+    def system_notes_height_needed(self) -> int:
+        col_w = (self.content_rect.width - 24) // 3
+        return 40 + sum(self._flow_height(label, desc, col_w - 28) + 6 for label, desc in SYSTEM_NOTES)
 
     # =========================================================================
-    # TAB 5: ENEMY INTEL & WAVE SYSTEM
+    # TAB 5 / 6: INTEL CARDS (ENEMIES, SQUAD)
     # =========================================================================
+
+    def measure_intel_card(self, card, w) -> int:
+        """Height needed to show ``card`` at width ``w`` without clipping."""
+        text_w = w - 32 - 14
+        body = sum(self._flow_height(label, desc, text_w) + 4 for label, desc in card["bullets"])
+        return 40 + body + 8 + 28
 
     def _draw_tab_waves(self, surface, rect):
-        """Renders comprehensive intelligence on wave progression, squadron flight, agro radius, and combat AI."""
-        title = self.font_title.render("ENEMY COMBAT INTEL, WAVE FORMATIONS & SURVIVAL TACTICS", True, (255, 90, 90))
-        surface.blit(title, (rect.x + 10, rect.y + 4))
-
-        sub = self.font_small.render(
-            "Tactical intelligence on hostile squadron formations, 1000px agro awareness, alignment-gated ballistics, and anti-retreat nanite drops.",
-            True,
-            COLOR_TEXT_MUTED
+        """Renders intelligence on wave progression, squadron flight, agro radius, and combat AI."""
+        self._draw_title(
+            surface, rect, "ENEMY COMBAT INTEL, WAVE FORMATIONS & SURVIVAL TACTICS", theme.DANGER,
+            "Hostile formations, 1000px agro awareness, alignment-gated ballistics, and anti-retreat nanite drops.",
         )
-        surface.blit(sub, (rect.x + 12, rect.y + 34))
-
-        col_w = (rect.width - 24) // 2
-        card_h = (rect.height - 76) // 2
-        start_y = rect.y + 54
-        spacing_y = 12
-
-        card1 = {
-            "title": "1. Mission Selector & Wave Scaling",
-            "tag": "TACTICAL OPERATIONS [1-5]",
-            "accent": COLOR_TEXT_GOLD,
-            "bullets": [
-                ("Tactical Mission Selector:", "Select from 5 focused operation modes: Air Superiority, Base Defense, Boss Raid, Demolition, Endless."),
-                ("Focused Operational Modes:", "Play pure aerial dogfights, ground boss raids, or orbital defense without overwhelming chaos."),
-                ("Tactical Squadron Formations:", "Enemies deploy in coordinated flights of 2-4 starfighters in V-formation rather than solo."),
-                ("Boids Flocking Separation:", "Units maintain spatial separation (70px repulsion radius) to eliminate clipping or stacking."),
-            ],
-            "footer": "Wave Clear Bonus: +250 x Wave Level awarded during the 3-second intermission banner.",
-        }
-
-        card2 = {
-            "title": "2. 1000px Agro Perimeter & Map Circling",
-            "tag": "AGRO: 1000px | DE-AGRO: 1500px",
-            "accent": COLOR_TEXT_ACCENT,
-            "bullets": [
-                ("Patrol State (Holding Fire):", "Outside 1000px, squadrons orbit the map center at 2.0 px/frame without shooting."),
-                ("Squadron Alert Network:", "Breaching 1000px or damaging any plane immediately alerts the ENTIRE squadron."),
-                ("Pursuit Acceleration:", "Alerted hostiles enter AGRO state and accelerate to 3.2 px/frame (60% speed increase)."),
-                ("Minimap Tactical Blips:", "Minimap radar displays patrolling squadrons as ORANGE dots and alerted pursuers as RED dots."),
-            ],
-            "footer": "Tactical Note: Attacking an orbiting formation triggers immediate pursuit from all wingmen!",
-        }
-
-        card3 = {
-            "title": "3. Smart Combat AI & Directional Ballistics",
-            "tag": "AIM GATE: ±15° | TURN: 2.0°/F",
-            "accent": (255, 130, 60),
-            "bullets": [
-                ("Line-of-Sight Tracking:", "Calculates true angle to player via atan2 math, turning smoothly at 2.0° per frame."),
-                ("Alignment-Gated Firing:", "Hostiles hold fire until nose is aligned within ±15° of line of sight (no blind spam)."),
-                ("True 2D Vector Ballistics:", "Enemy bullets fire from the nose carrying directional velocity (dx, dy) towards player."),
-                ("Debuff Susceptibility:", "Enemy turn rate, thrust, and bullets are realistically impaired by Time Slow & Cryo Freeze."),
-            ],
-            "footer": "Evasion Tip: Banking sharply 90° across the enemy's nose breaks their ±15° firing alignment!",
-        }
-
-        card4 = {
-            "title": "4. Anti-Retreat Dynamics & Adrenaline Overdrive",
-            "tag": "CRITICAL HP <= 2 | HEAL ON KILL",
-            "accent": (50, 255, 120),
-            "bullets": [
-                ("The Low-HP Dilemma:", "Shields passively recover, but Hull HP NEVER regenerates. Running at low HP is fatal."),
-                ("High-Speed Pursuit:", "Enemies hunt at 3.2 px/frame in AGRO; you cannot easily outrun alerted squadrons."),
-                ("Kill-to-Heal Nanites:", "When at critical hull (<= 2 HP), every defeated enemy drops a guaranteed +1 HP Nanite!"),
-                ("Adrenaline Overdrive:", "Operating at <= 2 HP grants +50% score bonus and 25% faster weapon cyclic fire & reload."),
-            ],
-            "footer": "Tactical Doctrine: Never flee when damaged! Turn into hostiles, kill, and harvest health nanites.",
-        }
-
-        # Row 1
-        self._draw_intel_card(surface, rect.x + 5, start_y, col_w, card_h, card1)
-        self._draw_intel_card(surface, rect.x + 15 + col_w, start_y, col_w, card_h, card2)
-
-        # Row 2
-        self._draw_intel_card(surface, rect.x + 5, start_y + card_h + spacing_y, col_w, card_h, card3)
-        self._draw_intel_card(surface, rect.x + 15 + col_w, start_y + card_h + spacing_y, col_w, card_h, card4)
-
-    def _draw_intel_card(self, surface, x, y, w, h, card):
-        """Renders an intel briefing card with a header badge, bullet points, and an accent bar."""
-        c_rect = pygame.Rect(x, y, w, h)
-        pygame.draw.rect(surface, COLOR_PANEL_BG, c_rect, border_radius=8)
-        pygame.draw.rect(surface, (35, 50, 75), c_rect, width=1, border_radius=8)
-
-        # Left accent stripe
-        pygame.draw.rect(surface, card["accent"], (x, y, 5, h), border_top_left_radius=8, border_bottom_left_radius=8)
-
-        # Header: Title & Tag
-        title_surf = self.font_heading.render(card["title"], True, card["accent"])
-        surface.blit(title_surf, (x + 16, y + 9))
-
-        tag_surf = self.font_tag.render(card["tag"], True, COLOR_TEXT_WHITE)
-        tag_bg = tag_surf.get_rect(topright=(x + w - 14, y + 10))
-        tag_box = tag_bg.inflate(10, 4)
-        pygame.draw.rect(surface, (25, 34, 52), tag_box, border_radius=4)
-        pygame.draw.rect(surface, card["accent"], tag_box, width=1, border_radius=4)
-        surface.blit(tag_surf, tag_bg.topleft)
-
-        # Separator line
-        pygame.draw.line(surface, (40, 55, 85), (x + 14, y + 33), (x + w - 14, y + 33), 1)
-
-        # Bullets
-        curr_y = y + 40
-        line_spacing = 40
-        for label, desc in card["bullets"]:
-            pygame.draw.circle(surface, card["accent"], (x + 22, curr_y + 7), 3)
-
-            lbl_surf = self.font_body_bold.render(label, True, COLOR_TEXT_WHITE)
-            surface.blit(lbl_surf, (x + 32, curr_y))
-
-            desc_surf = self.font_small.render(desc, True, COLOR_TEXT_MUTED)
-            surface.blit(desc_surf, (x + 32, curr_y + 17))
-
-            curr_y += line_spacing
-
-        # Footer note / tip
-        if "footer" in card and card["footer"]:
-            foot_bg = pygame.Rect(x + 14, y + h - 28, w - 28, 20)
-            pygame.draw.rect(surface, (14, 20, 32), foot_bg, border_radius=4)
-            pygame.draw.rect(surface, (40, 60, 90), foot_bg, width=1, border_radius=4)
-            foot_surf = self.font_small.render(card["footer"], True, (255, 230, 140))
-            surface.blit(foot_surf, (x + 20, y + h - 26))
-
-    # =========================================================================
-    # TAB 6: HELLDIVERS & AIR STRIKES
-    # =========================================================================
+        self._draw_intel_grid(surface, rect, WAVE_CARDS, rect.y + 56)
 
     def _draw_tab_helldivers(self, surface, rect):
-        """Renders tactical guide for ground Helldivers, Air Strike Arsenal, and CAS objectives."""
-        title = self.font_title.render("HELLDIVERS GROUND SUPPORT & CLOSE AIR SUPPORT (CAS)", True, (0, 220, 255))
-        surface.blit(title, (rect.x + 10, rect.y + 4))
-
-        sub = self.font_small.render(
-            "Protect allied Helldiver ground forces, call in powerful stratagems, provide close air support, and secure extraction.",
-            True,
-            COLOR_TEXT_MUTED
+        """Renders guide for ground Helldivers, Air Strike Arsenal, and CAS objectives."""
+        self._draw_title(
+            surface, rect, "HELLDIVERS GROUND SUPPORT & CLOSE AIR SUPPORT", theme.INFO,
+            "Protect allied Helldiver ground forces, call in stratagems, provide close air support, and secure extraction.",
         )
-        surface.blit(sub, (rect.x + 12, rect.y + 36))
+        self._draw_intel_grid(surface, rect, SQUAD_CARDS, rect.y + 56)
 
-        start_y = rect.y + 60
-        card_h = 220
-        col_w = (rect.width - 20) // 2
-        spacing_y = 12
+    def _draw_intel_grid(self, surface, rect, cards, start_y):
+        col_w = (rect.width - 24) // 2
+        spacing_y = 10
+        card_h = (rect.height - (start_y - rect.y) - 14 - spacing_y) // 2
+        positions = [
+            (rect.x + 5, start_y), (rect.x + 15 + col_w, start_y),
+            (rect.x + 5, start_y + card_h + spacing_y), (rect.x + 15 + col_w, start_y + card_h + spacing_y),
+        ]
+        for card, (cx, cy) in zip(cards, positions):
+            self._draw_intel_card(surface, cx, cy, col_w, card_h, card)
 
-        card1 = {
-            "title": "Allied Helldiver Squad",
-            "tag": "ALLIED GROUND UNITS",
-            "accent": (46, 204, 113),
-            "bullets": [
-                ("Tactical 4-Man Squad:", "Viper 1-4 (Lead, Heavy, Scout, Medic) guarding the outpost with individual shields & HP."),
-                ("Tactical AI & Cover Fire:", "Helldivers navigate around obstacles and actively fire upward anti-air tracer rounds at hostiles."),
-                ("Minimap Tracking:", "Represented as bright cyan blips with an active tactical defense perimeter circle on the radar."),
-                ("Status Indicators:", "Overhead health/shield bars and real-time state tags: DEFENDING, ENGAGING, SUPPLYING, K.I.A."),
-            ],
-            "footer": "TIP: Stay near the squad when danger alerts fire to intercept hostile strafing runs.",
-        }
+    def _draw_intel_card(self, surface, x, y, w, h, card):
+        """Renders an intel briefing card with a header badge, flowing bullet points, and an accent bar."""
+        c_rect = pygame.Rect(x, y, w, h)
+        widgets.draw_panel(surface, c_rect, theme.PANEL_RAISED, theme.BORDER, brackets=False)
+        pygame.draw.rect(surface, card["accent"], (x, y, 3, h))
 
-        card2 = {
-            "title": "Air Strike Stratagem Arsenal",
-            "tag": "TACTICAL 5-SLOT DOCK",
-            "accent": (255, 200, 50),
-            "bullets": [
-                ("Charges & Operational Delay:", "Stratagems have discrete stocks (e.g. 500kg x1, Strafe x3) and fast operational delays."),
-                ("Eagle Rearm [R]:", "Eagle-1 blasts into orbit aboard the Super Destroyer (15s); ground combat freezes and Helldivers are safe."),
-                ("Stratagem Hero:", "Input arrow/WASD codes on the hangar arcade terminal to score bonus points and climb the Hero leaderboard!"),
-                ("Atmospheric Re-entry:", "Eagle-1 catapults back with atmospheric plasma burn, full charges, and 1.0s invulnerability."),
-                ("Buffed 500kg Bomb:", "Massive 480px blast radius with 38.0 Heavy DMG demolishes fabricators and heavy bosses."),
-            ],
-            "footer": "TACTICAL DOCK: Quickbar displays live charges, operational cooldowns, and rearm status.",
-        }
+        tag_surf = self._cache.render(self.font_tag, card["tag"], COLOR_TEXT_WHITE)
+        tag_rect = tag_surf.get_rect(topright=(x + w - 14, y + 10))
+        tag_box = tag_rect.inflate(10, 4)
+        widgets.draw_panel(surface, tag_box, theme.PANEL, card["accent"], brackets=False)
+        surface.blit(tag_surf, tag_rect.topleft)
+        self._text(surface, self.font_heading, card["title"].upper(), card["accent"], (x + 16, y + 9), tag_box.x - x - 28)
 
-        card3 = {
-            "title": "Tactical Supply Drops & Alerts",
-            "tag": "[X] RESUPPLY POD",
-            "accent": (0, 200, 255),
-            "bullets": [
-                ("Supply Drop [X]:", "Calls down an orbital pod delivering medical nanites, full ammo reload, and rockets (30s CD)."),
-                ("Ground Resupply:", "Allied Helldivers move to nearby landed supply pods when wounded to restore shields and health."),
-                ("Danger Zone Alerts:", "Audible and visual flashing alert banner appears when enemy aircraft close in within 680px."),
-                ("Off-Screen Compass:", "Cyan directional pointer at screen borders indicates distance and bearing to the squad."),
-            ],
-            "footer": "CRITICAL: Drop supply pods near the squad before heavy wave engagements to keep them alive.",
-        }
+        pygame.draw.line(surface, theme.BORDER, (x + 14, y + 33), (x + w - 14, y + 33), 1)
 
-        card4 = {
-            "title": "Objectives & Boss Encounters",
-            "tag": "OBJECTIVES & REWARDS",
-            "accent": (255, 120, 50),
-            "bullets": [
-                ("Factory Strider Boss (300 HP):", "Colossal walker firing heavy plasma bolts (red laser telegraph) and chin lasers."),
-                ("Base Defense (5 Waves):", "Protect orbital base against 75 HP Automaton Bombers. Repel all 5 waves to extract."),
-                ("Outpost Demolition (6 Waves):", "Destroy 3 Automaton Fabricator foundries; auto-triggers Pelican extraction."),
-                ("Pelican-1 Evacuation (+2.5k):", "Hold perimeter until Pelican-1 lands. Surviving squad boards to secure victory!"),
-            ],
-            "footer": "VICTORY: Complete primary mission objectives to summon Pelican-1 and extract surviving squad!",
-        }
+        curr_y = y + 40
+        text_w = w - 32 - 14
+        for label, desc in card["bullets"]:
+            pygame.draw.rect(surface, card["accent"], (x + 16, curr_y + 6, 5, 5))
+            curr_y += self._draw_flow(surface, x + 30, curr_y, text_w, label, desc) + 4
 
-        # Row 1
-        self._draw_intel_card(surface, rect.x + 5, start_y, col_w, card_h, card1)
-        self._draw_intel_card(surface, rect.x + 15 + col_w, start_y, col_w, card_h, card2)
-
-        # Row 2
-        self._draw_intel_card(surface, rect.x + 5, start_y + card_h + spacing_y, col_w, card_h, card3)
-        self._draw_intel_card(surface, rect.x + 15 + col_w, start_y + card_h + spacing_y, col_w, card_h, card4)
-
+        if card.get("footer"):
+            foot_bg = pygame.Rect(x + 14, y + h - 28, w - 28, 20)
+            widgets.draw_panel(surface, foot_bg, theme.PANEL, theme.BORDER, brackets=False)
+            self._text(surface, self.font_body, card["footer"], VALUE_TEXT, (x + 20, y + h - 27), w - 40)

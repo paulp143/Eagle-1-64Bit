@@ -31,8 +31,9 @@ def test_get_base_dir_frozen_pyinstaller(monkeypatch, tmp_path):
     assert base == fake_meipass
 
 
-def test_get_user_data_dir_development():
+def test_get_user_data_dir_development(monkeypatch):
     """In development mode with existing data directory, get_user_data_dir returns local data directory."""
+    monkeypatch.delenv("EAGLE1_USER_DATA_DIR", raising=False)
     user_data = get_user_data_dir()
     assert user_data.exists()
     assert user_data.name == "data"
@@ -40,6 +41,7 @@ def test_get_user_data_dir_development():
 
 def test_get_user_data_dir_frozen_linux(monkeypatch, tmp_path):
     """Simulate frozen application on Linux, asserting XDG standard directory is used."""
+    monkeypatch.delenv("EAGLE1_USER_DATA_DIR", raising=False)
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setattr(sys, "platform", "linux")
     fake_xdg = tmp_path / "xdg_share"
@@ -52,6 +54,7 @@ def test_get_user_data_dir_frozen_linux(monkeypatch, tmp_path):
 
 def test_get_user_data_dir_frozen_macos(monkeypatch, tmp_path):
     """Simulate frozen application on macOS, asserting Library/Application Support is used."""
+    monkeypatch.delenv("EAGLE1_USER_DATA_DIR", raising=False)
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setattr(sys, "platform", "darwin")
     fake_home = tmp_path / "fake_mac_home"
@@ -65,6 +68,7 @@ def test_get_user_data_dir_frozen_macos(monkeypatch, tmp_path):
 
 def test_get_user_data_dir_frozen_windows(monkeypatch, tmp_path):
     """Simulate frozen application on Windows, asserting %APPDATA% directory is used."""
+    monkeypatch.delenv("EAGLE1_USER_DATA_DIR", raising=False)
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setattr(sys, "platform", "win32")
     fake_appdata = tmp_path / "fake_appdata"
@@ -92,3 +96,10 @@ def test_get_user_data_dir_env_override(monkeypatch, tmp_path):
     user_data = get_user_data_dir()
     assert user_data == custom_dir
     assert user_data.is_dir()
+
+
+def test_suite_user_data_dir_is_isolated_from_repository():
+    """Guard: conftest redirects user data so no test can touch the repository's data/ files."""
+    from eagle1.paths import PROJECT_ROOT
+
+    assert get_user_data_dir().resolve() != (PROJECT_ROOT / "data").resolve()

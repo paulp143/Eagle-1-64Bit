@@ -22,7 +22,11 @@ from eagle1.systems.powerups import (
     SHIELD_BUBBLE_BONUS,
     PowerUpManager,
 )
+from eagle1.ui import hud_layout, theme, widgets
+from eagle1.ui.hud import HudRenderer
 from eagle1.ui.help_menu import HelpMenu
+from eagle1.ui.mission_select_menu import MissionSelectMenu
+from eagle1.ui.menu_nav import MenuButton, MenuNavigator, VARIANT_DANGER, VARIANT_PRIMARY
 from eagle1.ui.settings_menu import SettingsMenu
 from eagle1.ui.debriefing_screen import DebriefingScreen
 from eagle1.ui.enlistment_screen import EnlistmentScreen
@@ -511,10 +515,12 @@ def safe_font(name, size, bold=False):
     except Exception:
         return pygame.font.Font(None, size)
 
-font = safe_font("arial", 24, bold=True)
-title_font = safe_font("arial", 48, bold=True)
-speed_font = safe_font("arial", 18, bold=True)
-hud_small_font = safe_font("arial", 13, bold=True)
+font = theme.get_font("title") or safe_font("arial", 24, bold=True)
+title_font = theme.get_font("display_xl") or safe_font("arial", 48, bold=True)
+speed_font = theme.get_font("heading") or safe_font("arial", 18, bold=True)
+hud_small_font = theme.get_font("label") or safe_font("arial", 13, bold=True)
+ui_text_cache = widgets.TextCache(1024)
+hud_renderer = HudRenderer(GAME_WIDTH, GAME_HEIGHT)
 profile_manager = PlayerProfileManager()
 clock = pygame.time.Clock()
 window = _set_display_mode((GAME_WIDTH, GAME_HEIGHT), pygame.RESIZABLE)
@@ -562,7 +568,7 @@ powerup_manager = PowerUpManager()
 ground_support_manager = GroundSupportManager()
 help_menu = HelpMenu(GAME_WIDTH, GAME_HEIGHT)
 settings_menu = SettingsMenu(GAME_WIDTH, GAME_HEIGHT)
-debriefing_screen = DebriefingScreen(GAME_WIDTH, GAME_HEIGHT)
+debriefing_screen = DebriefingScreen(GAME_WIDTH, GAME_HEIGHT, audio_manager=audio_manager)
 enlistment_screen = EnlistmentScreen(GAME_WIDTH, GAME_HEIGHT)
 academy_manager = AcademyTutorialManager()
 previous_game_state = "main_menu"
@@ -781,100 +787,19 @@ class OrbitalBase(pygame.Rect):
                 pygame.draw.rect(surface, (0, 220, 255), (bx, by - 4, sh_w, 3))
 
 
-class MissionSelectMenu:
-    """Tactical Operational Mission Selection Interface."""
-    def __init__(self):
-        self.card_rects = {}
-
-    def handle_event(self, event, mouse_pos=None):
-        if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_1:
-                return MISSION_CONFIGS[MissionType.AIR_SUPERIORITY]
-            elif event.key == pygame.K_2:
-                return MISSION_CONFIGS[MissionType.BASE_DEFENSE]
-            elif event.key == pygame.K_3:
-                return MISSION_CONFIGS[MissionType.STRIDER_RAID]
-            elif event.key == pygame.K_4:
-                return MISSION_CONFIGS[MissionType.OUTPOST_DEMOLITION]
-            elif event.key == pygame.K_5:
-                return MISSION_CONFIGS[MissionType.ENDLESS_WAR]
-            elif event.key == pygame.K_ESCAPE:
-                return "back_to_menu"
-
-        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and mouse_pos:
-            for m_id, rect in self.card_rects.items():
-                if rect.collidepoint(mouse_pos):
-                    return MISSION_CONFIGS[m_id]
-
-        return None
-
-    def draw(self, surface, mouse_pos=None):
-        bg_surf = pygame.Surface((GAME_WIDTH, GAME_HEIGHT), pygame.SRCALPHA)
-        bg_surf.fill((10, 14, 22, 245))
-        surface.blit(bg_surf, (0, 0))
-
-        title_font_lg = pygame.font.SysFont("arial", 28, bold=True)
-        sub_font = pygame.font.SysFont("arial", 13)
-        title_txt = title_font_lg.render("TACTICAL OPERATION SELECTOR", True, (0, 220, 255))
-        surface.blit(title_txt, (GAME_WIDTH // 2 - title_txt.get_width() // 2, 25))
-
-        sub_txt = sub_font.render("SELECT A FOCUSED OPERATION TO DEPLOY (HOTKEYS 1-5 OR CLICK CARD)", True, (160, 185, 210))
-        surface.blit(sub_txt, (GAME_WIDTH // 2 - sub_txt.get_width() // 2, 58))
-
-        card_w = 360
-        card_h = 160
-        card_positions = [
-            (240, 95, MissionType.AIR_SUPERIORITY),
-            (680, 95, MissionType.BASE_DEFENSE),
-            (240, 275, MissionType.STRIDER_RAID),
-            (680, 275, MissionType.OUTPOST_DEMOLITION),
-            (460, 455, MissionType.ENDLESS_WAR),
-        ]
-
-        self.card_rects.clear()
-
-        for idx, (cx, cy, m_id) in enumerate(card_positions):
-            config = MISSION_CONFIGS[m_id]
-            rect = pygame.Rect(cx, cy, card_w, card_h)
-            self.card_rects[m_id] = rect
-
-            is_hover = mouse_pos and rect.collidepoint(mouse_pos)
-            bg_col = (25, 34, 48) if not is_hover else (38, 52, 75)
-            border_col = config["icon_color"] if is_hover else (70, 95, 130)
-
-            pygame.draw.rect(surface, bg_col, rect, border_radius=8)
-            pygame.draw.rect(surface, border_col, rect, 2 if not is_hover else 3, border_radius=8)
-
-            key_txt = hud_small_font.render(f"[{idx+1}]", True, (255, 215, 0))
-            surface.blit(key_txt, (cx + 12, cy + 10))
-
-            cat_txt = hud_small_font.render(config["category"], True, config["icon_color"])
-            surface.blit(cat_txt, (cx + 42, cy + 10))
-
-            name_txt = font.render(config["name"], True, (255, 255, 255))
-            surface.blit(name_txt, (cx + 12, cy + 28))
-
-            diff_col = (46, 204, 113) if config["difficulty"] == "MEDIUM" else (241, 196, 15) if config["difficulty"] == "HARD" else (231, 76, 60)
-            diff_txt = hud_small_font.render(f"DIFFICULTY: {config['difficulty']}", True, diff_col)
-            surface.blit(diff_txt, (cx + card_w - diff_txt.get_width() - 12, cy + 10))
-
-            words = config["desc"].split(" ")
-            line1 = " ".join(words[:len(words)//2 + 1])
-            line2 = " ".join(words[len(words)//2 + 1:])
-            l1_surf = hud_small_font.render(line1, True, (190, 210, 230))
-            l2_surf = hud_small_font.render(line2, True, (190, 210, 230))
-            surface.blit(l1_surf, (cx + 12, cy + 65))
-            surface.blit(l2_surf, (cx + 12, cy + 82))
-
-            btn_col = (0, 220, 255) if is_hover else (120, 150, 180)
-            btn_txt = hud_small_font.render("CLICK TO DEPLOY MISSION ▶", True, btn_col)
-            surface.blit(btn_txt, (cx + card_w // 2 - btn_txt.get_width() // 2, cy + card_h - 22))
-
-        esc_txt = sub_font.render("PRESS ESC TO RETURN TO MAIN MENU", True, (140, 160, 180))
-        surface.blit(esc_txt, (GAME_WIDTH // 2 - esc_txt.get_width() // 2, GAME_HEIGHT - 30))
-
-
-mission_select_menu = MissionSelectMenu()
+mission_select_menu = MissionSelectMenu(
+    MISSION_CONFIGS,
+    [
+        MissionType.AIR_SUPERIORITY,
+        MissionType.BASE_DEFENSE,
+        MissionType.STRIDER_RAID,
+        MissionType.OUTPOST_DEMOLITION,
+        MissionType.ENDLESS_WAR,
+    ],
+    GAME_WIDTH,
+    GAME_HEIGHT,
+    on_sfx=audio_manager.play_sfx,
+)
 stratagem_select_menu = StratagemSelectMenu()
 pending_mission_config = None
 bomber_enemies = []
@@ -906,221 +831,126 @@ def get_canvas_mouse_pos():
     return (canvas_x, canvas_y)
 
 
-# UI TextBoxes & Buttons vorbereiten
-title_box = TextBox(
-    "EAGLE 1: 64-BIT",
-    title_font,
-    text_color=(0, 230, 255),
-    bg_color=(10, 15, 25),
-    border_color=(0, 180, 240),
-    border_width=2,
-    padding=(50, 14),
-    border_radius=10,
-    centerx=GAME_WIDTH / 2,
-    centery=120,
+# --- Main menu (Military Terminal) ---
+_MAIN_MENU_BTN_X = 96
+_MAIN_MENU_BTN_W = 368
+_MAIN_MENU_BTN_Y0 = 228
+_MAIN_MENU_BTN_GAP = 12
+
+
+def _main_menu_button(index, text, hotkey, variant=None, **kwargs):
+    rect = pygame.Rect(
+        _MAIN_MENU_BTN_X,
+        _MAIN_MENU_BTN_Y0 + index * (48 + _MAIN_MENU_BTN_GAP),
+        _MAIN_MENU_BTN_W,
+        48,
+    )
+    return MenuButton(
+        text,
+        rect,
+        hotkey=hotkey,
+        variant=variant or "secondary",
+        on_sfx=audio_manager.play_sfx,
+        text_cache=ui_text_cache,
+        **kwargs,
+    )
+
+
+menu_new_game_box = _main_menu_button(0, "NEW GAME", "N", VARIANT_PRIMARY)
+menu_continue_box = _main_menu_button(1, "CONTINUE", "C")
+menu_settings_box = _main_menu_button(2, "SETTINGS", "O")
+menu_help_box = _main_menu_button(3, "TACTICAL MANUAL", "H")
+menu_quit_box = _main_menu_button(4, "QUIT TO DESKTOP", "ESC", VARIANT_DANGER)
+
+MAIN_MENU_ACTIONS = ("new_game", "continue", "settings", "help", "quit")
+MAIN_MENU_QUIT_INDEX = 4
+main_menu_nav = MenuNavigator(
+    [menu_new_game_box, menu_continue_box, menu_settings_box, menu_help_box, menu_quit_box],
+    wrap=True,
+    on_sfx=audio_manager.play_sfx,
 )
 
-subtitle_box = TextBox(
-    "SUPER EARTH NAVAL AIR DIVISION — STORY CAMPAIGN",
-    hud_small_font,
-    text_color=(255, 215, 0),
-    bg_color=(15, 20, 30),
-    border_color=(100, 85, 30),
-    padding=(24, 6),
-    border_radius=6,
-    centerx=GAME_WIDTH / 2,
-    centery=185,
+main_menu_side_overlay = widgets.make_overlay((560, GAME_HEIGHT), theme.OVERLAY_RGBA)
+_mono_small_font = theme.get_font("mono_small") or hud_small_font
+_mono_tiny_font = theme.get_font("mono_tiny") or hud_small_font
+main_menu_title_surf = title_font.render("EAGLE-1", True, theme.ACCENT)
+main_menu_subtitle_surf = _mono_small_font.render(
+    "SUPER EARTH NAVAL AIR DIVISION // STORY CAMPAIGN", True, theme.TEXT_MUTED
+)
+main_menu_footer_surf = _mono_tiny_font.render("UP/DOWN NAVIGATE   ENTER SELECT", True, theme.TEXT_MUTED)
+main_menu_hint_surf = _mono_small_font.render(
+    "NO ACTIVE SERVICE RECORD — SELECT NEW GAME TO ENLIST", True, theme.WARNING
+)
+menu_toast_text = ""
+menu_toast_until = 0
+
+_menu_profile_state = {"key": None, "has_profile": False, "callsign": ""}
+
+
+def invalidate_main_menu_profile_state():
+    """Force the next main-menu frame to re-check the profile (e.g. when returning to the menu)."""
+    _menu_profile_state["key"] = None
+
+
+def _refresh_main_menu_profile_state():
+    """Re-read the player profile only after it was saved or cleared (or the state was invalidated).
+
+    Keyed on ``PlayerProfileManager.revision`` so the render loop does no per-frame file system access.
+    """
+    key = PlayerProfileManager.revision
+    if key == _menu_profile_state["key"]:
+        return
+    has_profile = profile_manager.has_active_profile()
+    _menu_profile_state["key"] = key
+    _menu_profile_state["has_profile"] = has_profile
+    _menu_profile_state["callsign"] = profile_manager.load_profile().username.upper() if has_profile else ""
+
+
+# --- Pause menu & game-over screen (Military Terminal) ---
+pause_panel_rect = pygame.Rect(GAME_WIDTH // 2 - 220, 170, 440, 380)
+gameover_panel_rect = pygame.Rect(GAME_WIDTH // 2 - 220, 170, 440, 360)
+
+
+def _panel_button(panel, y, text, hotkey, variant="secondary"):
+    return MenuButton(
+        text,
+        pygame.Rect(panel.x + 36, y, panel.w - 72, 48),
+        hotkey=hotkey,
+        variant=variant,
+        on_sfx=audio_manager.play_sfx,
+        text_cache=ui_text_cache,
+    )
+
+
+pause_continue_box = _panel_button(pause_panel_rect, 260, "RESUME", "P", VARIANT_PRIMARY)
+pause_help_box = _panel_button(pause_panel_rect, 320, "TACTICAL MANUAL", "H")
+pause_settings_box = _panel_button(pause_panel_rect, 380, "SETTINGS", "O")
+pause_menu_box = _panel_button(pause_panel_rect, 440, "ABORT TO MAIN MENU", "ESC", VARIANT_DANGER)
+PAUSE_ACTIONS = ("resume", "help", "settings", "main_menu")
+pause_nav = MenuNavigator(
+    [pause_continue_box, pause_help_box, pause_settings_box, pause_menu_box],
+    wrap=True,
+    on_sfx=audio_manager.play_sfx,
 )
 
-menu_new_game_box = TextBox(
-    "NEW GAME",
-    font,
-    text_color=(255, 255, 255),
-    bg_color=(20, 30, 45),
-    hover_bg_color=(35, 75, 120),
-    border_color=(0, 180, 240),
-    hover_border_color=(0, 240, 255),
-    padding=(60, 14),
-    border_radius=8,
-    centerx=GAME_WIDTH / 2,
-    centery=280,
+gameover_respawn_box = _panel_button(gameover_panel_rect, 280, "RESPAWN", "R", VARIANT_PRIMARY)
+gameover_help_box = _panel_button(gameover_panel_rect, 340, "TACTICAL MANUAL", "H")
+gameover_lobby_box = _panel_button(gameover_panel_rect, 400, "MAIN MENU", "SPACE", VARIANT_DANGER)
+GAMEOVER_ACTIONS = ("respawn", "help", "main_menu")
+gameover_nav = MenuNavigator(
+    [gameover_respawn_box, gameover_help_box, gameover_lobby_box],
+    wrap=True,
+    on_sfx=audio_manager.play_sfx,
 )
 
-menu_continue_box = TextBox(
-    "CONTINUE",
-    font,
-    text_color=(255, 255, 255),
-    bg_color=(20, 30, 45),
-    hover_bg_color=(30, 70, 100),
-    border_color=(80, 120, 160),
-    hover_border_color=(0, 220, 255),
-    disabled_text_color=(100, 110, 125),
-    disabled_bg_color=(18, 22, 28),
-    disabled_border_color=(45, 50, 60),
-    padding=(60, 14),
-    border_radius=8,
-    centerx=GAME_WIDTH / 2,
-    centery=350,
-)
+pause_dim_overlay = widgets.make_overlay((GAME_WIDTH, GAME_HEIGHT), theme.OVERLAY_LIGHT_RGBA)
+# Frozen gameplay frame shown behind the pause menu (same RGBX format as the canvas).
+pause_snapshot_surf = pygame.Surface((GAME_WIDTH, GAME_HEIGHT), 0, 32, (0x00FF0000, 0x0000FF00, 0x000000FF, 0))
+_pause_snapshot_valid = False
+pause_title_surf = (theme.get_font("title") or font).render("OPERATION PAUSED", True, theme.ACCENT)
+gameover_title_surf = (theme.get_font("display") or title_font).render("SIGNAL LOST", True, theme.DANGER)
+gameover_sub_surf = _mono_small_font.render("EAGLE-1 HAS GONE DOWN", True, theme.TEXT_MUTED)
 
-menu_settings_box = TextBox(
-    "SETTINGS",
-    font,
-    text_color=(255, 255, 255),
-    bg_color=(20, 25, 35),
-    hover_bg_color=(25, 55, 85),
-    border_color=(80, 100, 140),
-    hover_border_color=(0, 200, 255),
-    padding=(60, 14),
-    border_radius=8,
-    centerx=GAME_WIDTH / 2,
-    centery=420,
-)
-
-menu_help_box = TextBox(
-    "TACTICAL MANUAL",
-    font,
-    text_color=(255, 255, 255),
-    bg_color=(20, 25, 35),
-    hover_bg_color=(25, 55, 85),
-    border_color=(80, 100, 140),
-    hover_border_color=(0, 200, 255),
-    padding=(60, 14),
-    border_radius=8,
-    centerx=GAME_WIDTH / 2,
-    centery=490,
-)
-
-menu_quit_box = TextBox(
-    "QUIT TO DESKTOP",
-    font,
-    text_color=(255, 255, 255),
-    bg_color=(25, 20, 25),
-    hover_bg_color=(80, 30, 35),
-    border_color=(120, 70, 80),
-    hover_border_color=(255, 70, 70),
-    padding=(60, 14),
-    border_radius=8,
-    centerx=GAME_WIDTH / 2,
-    centery=560,
-)
-
-menu_status_hint_box = TextBox(
-    "NO ACTIVE SERVICE RECORD — SELECT 'NEW GAME' TO ENLIST",
-    hud_small_font,
-    text_color=(220, 160, 50),
-    bg_color=(20, 20, 25),
-    border_color=(70, 50, 20),
-    padding=(18, 6),
-    border_radius=6,
-    centerx=GAME_WIDTH / 2,
-    centery=635,
-)
-
-pause_title_box = TextBox(
-    "Pause",
-    font,
-    bg_color=(30, 35, 50),
-    padding=(30, 14),
-    border_radius=8,
-    centerx=GAME_WIDTH/2,
-    bottom=GAME_HEIGHT*0.2
-)
-
-pause_continue_box = TextBox(
-    "To continue press P",
-    font,
-    bg_color=(20, 25, 35),
-    hover_bg_color=(40, 60, 100),
-    border_color=(80, 100, 140),
-    hover_border_color=(0, 200, 255),
-    padding=(30, 16),
-    border_radius=8,
-    centerx=GAME_WIDTH/2,
-    bottom=GAME_HEIGHT*0.48
-)
-
-pause_help_box = TextBox(
-    "Help & Weapons Guide: Press H",
-    font,
-    bg_color=(20, 25, 35),
-    hover_bg_color=(20, 70, 110),
-    border_color=(80, 100, 140),
-    hover_border_color=(0, 220, 255),
-    padding=(28, 14),
-    border_radius=8,
-    centerx=GAME_WIDTH/2,
-    bottom=GAME_HEIGHT*0.48+60
-)
-
-pause_settings_box = TextBox(
-    "Settings & Audio: Press O",
-    font,
-    bg_color=(20, 25, 35),
-    hover_bg_color=(20, 70, 110),
-    border_color=(80, 100, 140),
-    hover_border_color=(0, 220, 255),
-    padding=(28, 14),
-    border_radius=8,
-    centerx=GAME_WIDTH/2,
-    bottom=GAME_HEIGHT*0.48+120
-)
-
-pause_menu_box = TextBox(
-    "To return to main menu press ESC",
-    font,
-    bg_color=(20, 25, 35),
-    hover_bg_color=(40, 60, 100),
-    border_color=(80, 100, 140),
-    hover_border_color=(0, 200, 255),
-    padding=(30, 16),
-    border_radius=8,
-    centerx=GAME_WIDTH/2,
-    bottom=GAME_HEIGHT*0.48+180
-)
-
-gameover_respawn_box = TextBox(
-    "Press R to Respawn",
-    font,
-    bg_color=(20, 25, 35),
-    hover_bg_color=(30, 80, 45),
-    border_color=(80, 100, 140),
-    hover_border_color=(0, 255, 120),
-    padding=(30, 16),
-    border_radius=8,
-    centerx=GAME_WIDTH/2,
-    bottom=GAME_HEIGHT/2 - 25
-)
-
-gameover_help_box = TextBox(
-    "Press H for Help & Weapons Guide",
-    font,
-    bg_color=(20, 25, 35),
-    hover_bg_color=(20, 70, 110),
-    border_color=(80, 100, 140),
-    hover_border_color=(0, 220, 255),
-    padding=(26, 14),
-    border_radius=8,
-    centerx=GAME_WIDTH/2,
-    bottom=GAME_HEIGHT/2 + 35
-)
-
-gameover_lobby_box = TextBox(
-    "Press SPACE to go back to the Main Menu",
-    font,
-    bg_color=(20, 25, 35),
-    hover_bg_color=(40, 60, 100),
-    border_color=(80, 100, 140),
-    hover_border_color=(0, 200, 255),
-    padding=(30, 16),
-    border_radius=8,
-    centerx=GAME_WIDTH/2,
-    bottom=GAME_HEIGHT/2 + 95
-)
-
-score_box = TextBox("Score: 0", font, centerx=GAME_WIDTH//2, bottom=GAME_HEIGHT-10)
-highscore_box = TextBox("highscore: 0", font, centerx=GAME_WIDTH//2, bottom=GAME_HEIGHT-30)
-speed_box = TextBox("Speed: 0.0 / 0.0", speed_font, topleft=(20, GAME_HEIGHT - MINIMAP_SIZE - 50))
 
 # Pre-allocated transparent surfaces for HUD vignettes to eliminate 60 FPS allocations
 vignette_health_surf = pygame.Surface((GAME_WIDTH, GAME_HEIGHT), pygame.SRCALPHA)
@@ -2425,41 +2255,64 @@ def respawn(mission_config=None, selected_stratagems=None):
 def main_menu(mouse_pos=None):
     canvas.fill((0, 0, 0))
     canvas.blit(main_menu_image, (0, 0))
+    canvas.blit(main_menu_side_overlay, (0, 0))
+    pygame.draw.rect(canvas, theme.ACCENT_DIM, (560, 0, 2, GAME_HEIGHT))
 
-    has_active_save = profile_manager.has_active_profile()
+    _refresh_main_menu_profile_state()
+    has_active_save = bool(_menu_profile_state["has_profile"])
     if has_active_save:
-        active_prof = profile_manager.load_profile()
-        callsign = active_prof.username.upper()
-        menu_continue_box.set_text(f"CONTINUE : CADET {callsign}")
+        menu_continue_box.set_text(f"CONTINUE : CADET {_menu_profile_state['callsign']}")
         menu_continue_box.set_enabled(True)
     else:
         menu_continue_box.set_text("CONTINUE (NO SERVICE RECORD)")
         menu_continue_box.set_enabled(False)
+        if main_menu_nav.focus_index == 1:
+            main_menu_nav.move_focus(1)
 
-    title_box.draw(canvas, mouse_pos)
-    subtitle_box.draw(canvas, mouse_pos)
-    menu_new_game_box.draw(canvas, mouse_pos)
-    menu_continue_box.draw(canvas, mouse_pos)
-    menu_settings_box.draw(canvas, mouse_pos)
-    menu_help_box.draw(canvas, mouse_pos)
-    menu_quit_box.draw(canvas, mouse_pos)
+    canvas.blit(main_menu_title_surf, (96, 96))
+    canvas.blit(main_menu_subtitle_surf, (98, 160))
+    pygame.draw.rect(canvas, theme.ACCENT, (96, 186, 368, 1))
+    main_menu_nav.draw(canvas, mouse_pos)
 
     if not has_active_save:
-        menu_status_hint_box.draw(canvas, mouse_pos)
+        canvas.blit(main_menu_hint_surf, (96, GAME_HEIGHT - 56))
+    canvas.blit(main_menu_footer_surf, (96, GAME_HEIGHT - 24 - main_menu_footer_surf.get_height()))
+
+    _draw_menu_toast()
+
+
+def _draw_menu_toast():
+    """Bottom-right status toast (e.g. AUDIO MUTED) shared by the main menu and game-over screen."""
+    if menu_toast_text and pygame.time.get_ticks() < menu_toast_until:
+        toast = ui_text_cache.render(_mono_small_font, menu_toast_text, theme.INFO)
+        canvas.blit(toast, (GAME_WIDTH - 24 - toast.get_width(), GAME_HEIGHT - 24 - toast.get_height()))
+
+
+def resume_from_pause():
+    """Leave the pause menu and drop the frozen backdrop so the next pause captures a fresh frame.
+
+    ``draw()`` also invalidates the snapshot, but the hangar cinematic renders without it.
+    """
+    global game_state, _pause_snapshot_valid
+    _pause_snapshot_valid = False
+    game_state = ""
 
 
 def pause_menu(mouse_pos=None):
-    canvas.fill((0, 0, 0))
-    canvas.blit(backround_image, (0, 0))
-
-    pause_title_box.draw(canvas, mouse_pos)
-    pause_continue_box.draw(canvas, mouse_pos)
-    pause_help_box.draw(canvas, mouse_pos)
-    pause_settings_box.draw(canvas, mouse_pos)
-    pause_menu_box.draw(canvas, mouse_pos)
+    global _pause_snapshot_valid
+    if not _pause_snapshot_valid:
+        pause_snapshot_surf.blit(canvas, (0, 0))
+        _pause_snapshot_valid = True
+    canvas.blit(pause_snapshot_surf, (0, 0))
+    canvas.blit(pause_dim_overlay, (0, 0))
+    widgets.draw_panel(canvas, pause_panel_rect)
+    canvas.blit(pause_title_surf, (pause_panel_rect.centerx - pause_title_surf.get_width() // 2, 196))
+    pause_nav.draw(canvas, mouse_pos)
 
 
 def draw(mouse_pos=None):
+    global _pause_snapshot_valid
+    _pause_snapshot_valid = False
     canvas.fill((0, 0, 0))
 
     # Calculate camera offset bounded to map dimensions
@@ -2500,10 +2353,13 @@ def draw(mouse_pos=None):
     pygame.draw.rect(canvas, (255, 60, 60), border_rect, 4)
 
     if player.health <= 0:
-        gameover_respawn_box.draw(canvas, mouse_pos)
-        gameover_help_box.draw(canvas, mouse_pos)
-        gameover_lobby_box.draw(canvas, mouse_pos)
-        
+        canvas.blit(pause_dim_overlay, (0, 0))
+        widgets.draw_panel(canvas, gameover_panel_rect, accent=theme.DANGER)
+        canvas.blit(gameover_title_surf, (gameover_panel_rect.centerx - gameover_title_surf.get_width() // 2, 196))
+        canvas.blit(gameover_sub_surf, (gameover_panel_rect.centerx - gameover_sub_surf.get_width() // 2, 244))
+        gameover_nav.draw(canvas, mouse_pos)
+        _draw_menu_toast()
+
     else:
         # Draw ground support world entities (Helldivers, obstacles, beacon, airstrikes, supply pods)
         ground_support_manager.draw_world_entities(canvas, camera_x, camera_y, hud_small_font)
@@ -2609,10 +2465,7 @@ def draw(mouse_pos=None):
 
                 # Frost / Freeze visual overlay
                 if powerup_manager.is_enemy_frozen() and enemy == primary_enemy:
-                    ice_surf = pygame.Surface((LIGHT_ENEMY_WIDTH, LIGHT_ENEMY_HEIGHT), pygame.SRCALPHA)
-                    ice_surf.fill((100, 210, 255, 130))
-                    pygame.draw.rect(ice_surf, (220, 245, 255), (0, 0, LIGHT_ENEMY_WIDTH, LIGHT_ENEMY_HEIGHT), 2)
-                    canvas.blit(ice_surf, (enemy_screen_x, enemy_screen_y))
+                    canvas.blit(hud_renderer.get_frost_overlay((LIGHT_ENEMY_WIDTH, LIGHT_ENEMY_HEIGHT)), (enemy_screen_x, enemy_screen_y))
                 elif powerup_manager.is_enemy_frosted() and enemy == primary_enemy:
                     frost_rect = pygame.Rect(enemy_screen_x, enemy_screen_y, LIGHT_ENEMY_WIDTH, LIGHT_ENEMY_HEIGHT)
                     pygame.draw.rect(canvas, (120, 220, 255), frost_rect, 2)
@@ -2638,8 +2491,9 @@ def draw(mouse_pos=None):
                         pygame.draw.line(canvas, ret_color, (ret_x + ret_w, ret_y + ret_h), (ret_x + ret_w, ret_y + ret_h - ret_len), 2)
 
                         mode_tag = "CONE LOCK" if player.radar_mode == "CONE" else "OMNI LOCK"
-                        lock_text = hud_small_font.render(mode_tag, True, (255, 80, 80))
-                        canvas.blit(lock_text, (ret_x + ret_w // 2 - lock_text.get_width() // 2, ret_y - 14))
+                        lock_text = hud_renderer.get_lock_label(mode_tag)
+                        if lock_text is not None:
+                            canvas.blit(lock_text, (ret_x + ret_w // 2 - lock_text.get_width() // 2, ret_y - 14))
 
         # Draw explosions with camera offset
         explosion_group.update()
@@ -2654,188 +2508,59 @@ def draw(mouse_pos=None):
             ground_support_manager.draw_reticle(canvas, camera_x, camera_y, player, extra_targets=extra_tgts)
 
         # UI elements (Screen space, fixed overlay)
-        score_box.set_text(f"Score: {player.score}")
-        score_box.draw(canvas)
+        campaign_objective_surf = get_campaign_objective_surface()
+        hud_renderer.draw_score(canvas, player.score, player.highscore)
 
-        highscore_box.set_text(f"highscore: {player.highscore}")
-        highscore_box.draw(canvas)
-
-        # Wave Counter HUD Box
-        # Modern Prominent Health & Shield Gauges (Upper Left, x=24)
-        gauge_x = 24
-        gauge_y = 18
-        gauge_w = 210
-        gauge_h = 13
-
-        # Shield Gauge
-        pygame.draw.rect(canvas, (14, 20, 32), (gauge_x, gauge_y, gauge_w, gauge_h), border_radius=4)
-        pygame.draw.rect(canvas, (50, 75, 110), (gauge_x, gauge_y, gauge_w, gauge_h), 1, border_radius=4)
-        sh_pct = max(0.0, min(1.0, player.shield / PLAYER_MAX_SHIELD))
-        sh_col = (255, 180, 0) if player.shield > PLAYER_MAX_SHIELD else (0, 220, 255)
-        pygame.draw.rect(canvas, sh_col, (gauge_x + 1, gauge_y + 1, int((gauge_w - 2) * sh_pct), gauge_h - 2), border_radius=3)
-        sh_lbl = hud_small_font.render(f"SHIELD: {int(player.shield)}/{PLAYER_MAX_SHIELD}", True, (255, 255, 255))
-        canvas.blit(sh_lbl, (gauge_x + gauge_w // 2 - sh_lbl.get_width() // 2, gauge_y - 1))
-
-        # Hull Armor Gauge
-        hull_y = gauge_y + gauge_h + 5
-        pygame.draw.rect(canvas, (14, 20, 32), (gauge_x, hull_y, gauge_w, gauge_h), border_radius=4)
-        pygame.draw.rect(canvas, (50, 75, 110), (gauge_x, hull_y, gauge_w, gauge_h), 1, border_radius=4)
-        hp_pct = max(0.0, min(1.0, player.health / player.max_health))
-        hp_col = (46, 204, 113) if player.health > 2 else (255, 60, 60)
-        pygame.draw.rect(canvas, hp_col, (gauge_x + 1, hull_y + 1, int((gauge_w - 2) * hp_pct), gauge_h - 2), border_radius=3)
-        hp_lbl = hud_small_font.render(f"HULL ARMOR: {int(player.health)}/{player.max_health}", True, (255, 255, 255))
-        canvas.blit(hp_lbl, (gauge_x + gauge_w // 2 - hp_lbl.get_width() // 2, hull_y - 1))
-
-        # Wave Counter HUD Box (Adjacent to Gauges at x=248)
-        if active_mission_config.get("id") != MissionType.ACADEMY_TUTORIAL:
-            living_count = len([e for e in wave_manager.enemies if not getattr(e, 'exploding', False)])
-            wave_box_w = 165
-            wave_box_h = 42
-            wave_box_x = 248
-            wave_box_y = 16
-            pygame.draw.rect(canvas, (18, 24, 36), (wave_box_x, wave_box_y, wave_box_w, wave_box_h), border_radius=6)
-            pygame.draw.rect(canvas, (60, 90, 130), (wave_box_x, wave_box_y, wave_box_w, wave_box_h), 1, border_radius=6)
-
-            wave_label = font.render(f"WAVE {wave_manager.wave}/{MAX_WAVE_LEVEL}", True, (255, 215, 0))
-            canvas.blit(wave_label, (wave_box_x + 8, wave_box_y + 3))
-
-            hostiles_label = hud_small_font.render(f"HOSTILES: {living_count}", True, (255, 100, 100) if living_count > 0 else (100, 255, 100))
-            canvas.blit(hostiles_label, (wave_box_x + 8, wave_box_y + 24))
+        is_academy = active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL
+        hud_renderer.draw_status_panel(
+            canvas,
+            player.shield, PLAYER_MAX_SHIELD, player.shield > PLAYER_MAX_SHIELD,
+            player.health, player.max_health, ADRENALINE_HEALTH_THRESHOLD,
+            None if is_academy else wave_manager.wave,
+            active_mission_config.get("max_waves", MAX_WAVE_LEVEL),
+            None if is_academy else len([e for e in wave_manager.enemies if not getattr(e, 'exploding', False)]),
+        )
 
         # Adrenaline Overdrive HUD indicator (displayed when player is at critical HP)
         if 0 < player.health <= ADRENALINE_HEALTH_THRESHOLD:
-            adren_pulse = int(180 + 75 * math.sin(pygame.time.get_ticks() * 0.01))
-            adren_surf = hud_small_font.render("! ADRENALINE OVERDRIVE !", True, (255, adren_pulse, 50))
-            if active_mission_config.get("id") != MissionType.ACADEMY_TUTORIAL:
-                adren_x = 248
-                adren_y = 16 + 42 + 6
-                adren_w = 165
-            else:
-                adren_x = gauge_x
-                adren_y = hull_y + gauge_h + 6
-                adren_w = gauge_w
-            adren_bg = pygame.Rect(adren_x, adren_y, adren_w, 20)
-            pygame.draw.rect(canvas, (60, 15, 15), adren_bg, border_radius=4)
-            pygame.draw.rect(canvas, (255, 80, 50), adren_bg, 1, border_radius=4)
-            canvas.blit(adren_surf, (adren_x + adren_w // 2 - adren_surf.get_width() // 2, adren_y + 3))
+            hud_renderer.draw_adrenaline(canvas, pygame.time.get_ticks())
 
         # Wave announcement banner (centered in upper third of canvas)
-        if wave_manager.announcement_timer > 0 and active_mission_config.get("id") != MissionType.ACADEMY_TUTORIAL:
-            banner_surf = title_font.render(wave_manager.wave_announcement, True, (255, 230, 80))
-            banner_bg = banner_surf.get_rect(center=(GAME_WIDTH // 2, GAME_HEIGHT // 3))
-            pad_x, pad_y = 30, 15
-            bg_rect = banner_bg.inflate(pad_x * 2, pad_y * 2)
-            banner_surface = pygame.Surface((bg_rect.width, bg_rect.height), pygame.SRCALPHA)
-            banner_surface.fill((10, 15, 25, 210))
-            pygame.draw.rect(banner_surface, (255, 200, 50), (0, 0, bg_rect.width, bg_rect.height), 2, border_radius=10)
-            canvas.blit(banner_surface, bg_rect.topleft)
-            canvas.blit(banner_surf, banner_bg.topleft)
+        if wave_manager.announcement_timer > 0 and not is_academy:
+            hud_renderer.draw_wave_banner(canvas, wave_manager.wave_announcement)
 
-        # Warning Feedback: Vignettes (Zero per-frame allocations) & Heartbeat Audio
+        # Warning Feedback: Vignettes (Zero per-frame allocations) & Heartbeat Audio.
+        # The settings toggle only hides the visual vignette; the alarm audio always plays.
+        show_warnings = settings_menu.toggle_warnings.state
         if player.health <= 2 and player.health > 0:
-            pulse = int(140 + 80 * math.sin(pygame.time.get_ticks() * 0.008))
-            vignette_health_surf.fill((0, 0, 0, 0))
-            pygame.draw.rect(vignette_health_surf, (220, 20, 20, max(25, min(90, pulse // 3))), (0, 0, GAME_WIDTH, GAME_HEIGHT), width=20)
-            canvas.blit(vignette_health_surf, (0, 0))
+            if show_warnings:
+                pulse = int(140 + 80 * math.sin(pygame.time.get_ticks() * 0.008))
+                vignette_health_surf.fill((0, 0, 0, 0))
+                pygame.draw.rect(vignette_health_surf, (220, 20, 20, max(25, min(90, pulse // 3))), (0, 0, GAME_WIDTH, GAME_HEIGHT), width=20)
+                canvas.blit(vignette_health_surf, (0, 0))
             audio_manager.play_sfx("low_health")
         elif player.shield <= 5 and player.shield > 0:
-            vignette_shield_surf.fill((0, 0, 0, 0))
-            pygame.draw.rect(vignette_shield_surf, (0, 200, 255, 30), (0, 0, GAME_WIDTH, GAME_HEIGHT), width=12)
-            canvas.blit(vignette_shield_surf, (0, 0))
+            if show_warnings:
+                vignette_shield_surf.fill((0, 0, 0, 0))
+                pygame.draw.rect(vignette_shield_surf, (0, 200, 255, 30), (0, 0, GAME_WIDTH, GAME_HEIGHT), width=12)
+                canvas.blit(vignette_shield_surf, (0, 0))
             audio_manager.play_sfx("low_shield")
 
-        # Bullet Ammo UI (Rechte Seite)
-        bg_height = int(BULLET_UI_HEIGHT * (player.max_bullets / 10))
-        pygame.draw.rect(
-            canvas, "black", (GAME_WIDTH - 32, 32, BULLET_UI_WIDTH, bg_height)
-        )
-        remaining_icons = int((player.max_bullets - player.used_bullets) // 10)
-        for i in range(remaining_icons):
-            canvas.blit(bullet_ui_image, (GAME_WIDTH - 32, 32 + i * BULLET_UI_HEIGHT))
-
-        # Controls & Radar Mode Hint
-        mode_str = "CONE [FAR]" if player.radar_mode == "CONE" else "360° OMNI [CLOSE]"
-        controls_hint = hud_small_font.render(f"[SPACE] Gun  [E/RMB] Missile  [Q] Radar: {mode_str}  [1-5] Weapons  [R] Rearm  [X] Supply", True, (210, 230, 255))
-        campaign_objective_surf = get_campaign_objective_surface()
-        hint_y = 58 if campaign_objective_surf is not None else 38
-        canvas.blit(controls_hint, (int(GAME_WIDTH / 2 - controls_hint.get_width() / 2), hint_y))
-
-        # --- ROCKET HUD UI ---
-        rocket_ui_x = GAME_WIDTH - 190
-        rocket_ui_y = 32
-        rocket_box_w = 145
-        rocket_box_h = 56
-
-        pygame.draw.rect(canvas, (18, 24, 36), (rocket_ui_x, rocket_ui_y, rocket_box_w, rocket_box_h), border_radius=6)
-        pygame.draw.rect(canvas, (60, 90, 130), (rocket_ui_x, rocket_ui_y, rocket_box_w, rocket_box_h), 1, border_radius=6)
-
-        rem_rockets = max(0, player.max_rockets - player.used_rockets)
+        # Weapons panel (cannon ammo, rockets, radar), speed gauge and controls hint
+        rocket_ratio = None
         if player.rocket_reloading:
-            now = pygame.time.get_ticks()
-            elapsed = now - player.rocket_reload_start_time
-            progress = min(1.0, elapsed / player.rocket_reloading_time)
-            reload_surf = hud_small_font.render("RELOADING...", True, (255, 160, 50))
-            canvas.blit(reload_surf, (rocket_ui_x + 8, rocket_ui_y + 5))
-            
-            bar_w = rocket_box_w - 16
-            pygame.draw.rect(canvas, (40, 45, 60), (rocket_ui_x + 8, rocket_ui_y + 22, bar_w, 10), border_radius=3)
-            pygame.draw.rect(canvas, (255, 140, 0), (rocket_ui_x + 8, rocket_ui_y + 22, int(bar_w * progress), 10), border_radius=3)
-        else:
-            label_surf = hud_small_font.render(f"ROCKETS: {rem_rockets}/{player.max_rockets}", True, (200, 225, 255))
-            canvas.blit(label_surf, (rocket_ui_x + 8, rocket_ui_y + 5))
-            
-            pip_w = 9
-            pip_h = 12
-            spacing = 13
-            for r_idx in range(player.max_rockets):
-                pip_x = rocket_ui_x + 8 + r_idx * spacing
-                pip_y = rocket_ui_y + 21
-                if r_idx < rem_rockets:
-                    pygame.draw.rect(canvas, (255, 90, 30), (pip_x, pip_y, pip_w, pip_h), border_radius=2)
-                    pygame.draw.polygon(canvas, (255, 210, 50), [(pip_x, pip_y + 3), (pip_x + pip_w // 2, pip_y), (pip_x + pip_w, pip_y + 3)])
-                else:
-                    pygame.draw.rect(canvas, (50, 60, 80), (pip_x, pip_y, pip_w, pip_h), 1, border_radius=2)
-
-        mode_col = (0, 220, 200) if player.radar_mode == "CONE" else (255, 170, 40)
-        mode_label = hud_small_font.render(f"RADAR: {player.radar_mode}", True, mode_col)
-        canvas.blit(mode_label, (rocket_ui_x + 8, rocket_ui_y + 38))
-
-        # --- SPEEDOMETER UI ---
-        mm_size = MINIMAP_SIZE
-        speed_x = 20
-        speed_y = GAME_HEIGHT - mm_size - 50
-        
-        bar_width = mm_size
-        bar_height = 10
-        fill_width = max(0, min(bar_width, int((player.velocity_x / player.max_speed) * bar_width)))
-        
-        speed_box.set_text(f"Speed: {player.velocity_x:.1f} / {player.max_speed:.1f}")
-        speed_box.draw(canvas)
-
-        pygame.draw.rect(canvas, (0, 0, 0), (speed_x, speed_y + 22, bar_width, bar_height))
-        pygame.draw.rect(canvas, (255, 180, 0), (speed_x, speed_y + 22, fill_width, bar_height))
-        pygame.draw.rect(canvas, (100, 120, 160), (speed_x, speed_y + 22, bar_width, bar_height), 1)
+            rocket_ratio = min(1.0, (pygame.time.get_ticks() - player.rocket_reload_start_time) / player.rocket_reloading_time)
+        hud_renderer.draw_weapon_panel(
+            canvas, int(player.max_bullets - player.used_bullets), player.max_bullets, player.reloading,
+            max(0, player.max_rockets - player.used_rockets), player.max_rockets, rocket_ratio, player.radar_mode,
+        )
+        if settings_menu.toggle_speedometer.state:
+            hud_renderer.draw_speed(canvas, player.velocity_x, player.max_speed)
+        hud_renderer.draw_controls_hint(canvas)
 
         # --- MINIMAP UI ---
-        mm_x = 20
-        mm_y = GAME_HEIGHT - mm_size - 20
-        
-        minimap_surface = pygame.Surface((mm_size, mm_size), pygame.SRCALPHA)
-
-        start_col = 0
-        end_col = int(math.ceil(MAP_WIDTH / bg_w))
-        start_row = 0
-        end_row = int(math.ceil(MAP_HEIGHT / bg_h))
-        for col in range(start_col, end_col):
-            for row in range(start_row, end_row):
-                bx = col * MINIMAP_BG_WIDTH
-                by = row * MINIMAP_BG_HEIGHT
-                if bx < mm_size and by < mm_size:
-                    minimap_surface.blit(minimap_bg_image, (bx, by))
-
-        dim_overlay = pygame.Surface((mm_size, mm_size), pygame.SRCALPHA)
-        dim_overlay.fill((0, 0, 0, 90))
-        minimap_surface.blit(dim_overlay, (0, 0))
+        mm_x, mm_y = hud_layout.MINIMAP_RECT.topleft
+        minimap_surface = hud_renderer.get_minimap_surface(minimap_bg_image)
 
         # Viewport rectangle on minimap
         view_x = camera_x * MINIMAP_SCALE
@@ -2904,10 +2629,8 @@ def draw(mouse_pos=None):
             oby = (orbital_base.pos_y + 60) * MINIMAP_SCALE
             pygame.draw.circle(minimap_surface, (0, 220, 255), (int(obx), int(oby)), 5, 2)
 
-        # Minimap frame border
-        pygame.draw.rect(minimap_surface, (100, 120, 160), (0, 0, mm_size, mm_size), 2)
-        
         canvas.blit(minimap_surface, (mm_x, mm_y))
+        hud_renderer.draw_minimap_frame(canvas)
 
         # --- POWER-UP HUD OVERLAY ---
         powerup_manager.draw_hud(canvas, GAME_WIDTH, GAME_HEIGHT)
@@ -2950,31 +2673,15 @@ def draw(mouse_pos=None):
             else:
                 obj_text = f"OBJECTIVE: AIR SUPERIORITY [WAVE {wave_manager.wave}/{active_mission_config.get('max_waves', 5)}]"
 
-        obj_surf = hud_small_font.render(obj_text, True, active_mission_config.get("icon_color", (255, 220, 80)))
-        obj_bg = pygame.Rect(GAME_WIDTH // 2 - obj_surf.get_width() // 2 - 12, 8, obj_surf.get_width() + 24, 22)
-        pygame.draw.rect(canvas, (14, 20, 32), obj_bg, border_radius=6)
-        pygame.draw.rect(canvas, active_mission_config.get("icon_color", (0, 220, 255)), obj_bg, 1, border_radius=6)
-        canvas.blit(obj_surf, (GAME_WIDTH // 2 - obj_surf.get_width() // 2, 12))
+        hud_renderer.draw_objective_banner(canvas, obj_text, active_mission_config.get("icon_color", theme.ACCENT))
 
         # --- CAMPAIGN NARRATIVE OBJECTIVE (campaign sorties only) ---
-        campaign_objective_surf = get_campaign_objective_surface()
         if campaign_objective_surf is not None:
-            camp_bg = pygame.Rect(
-                GAME_WIDTH // 2 - campaign_objective_surf.get_width() // 2 - 10,
-                33,
-                campaign_objective_surf.get_width() + 20,
-                20,
-            )
-            pygame.draw.rect(canvas, (12, 18, 28), camp_bg, border_radius=4)
-            pygame.draw.rect(canvas, (70, 115, 160), camp_bg, 1, border_radius=4)
-            canvas.blit(campaign_objective_surf, (GAME_WIDTH // 2 - campaign_objective_surf.get_width() // 2, 35))
+            hud_renderer.draw_campaign_objective(canvas, campaign_objective_surf)
 
         # --- SLOW-MOTION VIGNETTE OVERLAY ---
         if ground_support_manager.is_slow_mo:
-            vignette_surf = pygame.Surface((GAME_WIDTH, GAME_HEIGHT), pygame.SRCALPHA)
-            pygame.draw.rect(vignette_surf, (0, 200, 255, 35), (0, 0, GAME_WIDTH, GAME_HEIGHT), 8)
-            pygame.draw.rect(vignette_surf, (0, 150, 220, 20), (8, 8, GAME_WIDTH - 16, GAME_HEIGHT - 16), 8)
-            canvas.blit(vignette_surf, (0, 0))
+            canvas.blit(hud_renderer.get_slowmo_overlay(), (0, 0))
 
         # In-Flight Radio Transceiver Overlay
         if comms_hud.is_active:
@@ -3035,6 +2742,7 @@ def get_campaign_objective_surface():
 def return_to_main_menu():
     """Transition cleanly into the main menu state, aborting any active campaign flight."""
     global game_state
+    invalidate_main_menu_profile_state()
     session = get_campaign_session()
     if session.is_flight_active:
         session.abort_flight()
@@ -3102,8 +2810,122 @@ def handle_super_destroyer_action(action):
     return action
 
 
+def activate_main_menu_action(action):
+    """Run a main-menu action. Returns True if the game should quit."""
+    global game_state, previous_game_state
+    if action == "new_game":
+        enlistment_screen.reset()
+        game_state = "enlistment"
+    elif action == "continue":
+        if profile_manager.has_active_profile():
+            active_prof = profile_manager.load_profile()
+            if not active_prof.academy_completed:
+                config = MISSION_CONFIGS.get(MissionType.ACADEMY_TUTORIAL, MISSION_CONFIGS[MissionType.ACADEMY_TUTORIAL])
+                respawn(mission_config=config)
+                game_state = ""
+            else:
+                enter_super_destroyer()
+    elif action == "settings":
+        previous_game_state = "main_menu"
+        settings_menu.sync_from_manager()
+        game_state = "settings_menu"
+    elif action == "help":
+        previous_game_state = "main_menu"
+        game_state = "help_menu"
+    elif action == "quit":
+        return True
+    return False
+
+
+def handle_main_menu_keydown(event, mouse_pos=None):
+    """Handle one KEYDOWN on the main menu. Returns True when the game should quit.
+
+    ESC / Q first moves focus to QUIT TO DESKTOP; a second press quits.
+    """
+    idx = main_menu_nav.handle_event(event, mouse_pos)
+    if idx is not None:
+        return bool(activate_main_menu_action(MAIN_MENU_ACTIONS[idx]))
+    if event.key == pygame.K_n:
+        activate_main_menu_action("new_game")
+    elif event.key == pygame.K_c and profile_manager.has_active_profile():
+        activate_main_menu_action("continue")
+    elif event.key == pygame.K_s:
+        enter_super_destroyer()
+    elif event.key == pygame.K_h:
+        activate_main_menu_action("help")
+    elif event.key == pygame.K_o:
+        activate_main_menu_action("settings")
+    elif event.key in (pygame.K_ESCAPE, pygame.K_q):
+        if main_menu_nav.focus_index != MAIN_MENU_QUIT_INDEX:
+            main_menu_nav.focus(MAIN_MENU_QUIT_INDEX)
+            audio_manager.play_sfx("ui_hover")
+        else:
+            return True
+    elif event.key == pygame.K_m:
+        is_muted = audio_manager.toggle_mute()
+        show_menu_toast("AUDIO MUTED" if is_muted else "AUDIO UNMUTED")
+    return False
+
+
+def handle_gameover_keydown(event, mouse_pos=None):
+    """Handle one KEYDOWN on the game-over screen (player destroyed, game_state == "")."""
+    global game_state, previous_game_state
+    go_idx = gameover_nav.handle_event(event, mouse_pos)
+    if go_idx is not None:
+        activate_gameover_action(GAMEOVER_ACTIONS[go_idx])
+    elif event.key == pygame.K_m:
+        is_muted = audio_manager.toggle_mute()
+        show_menu_toast("AUDIO MUTED" if is_muted else "AUDIO UNMUTED")
+    elif event.key == pygame.K_r:
+        respawn()
+    elif event.key == pygame.K_h:
+        previous_game_state = ""
+        game_state = "help_menu"
+    elif event.key == pygame.K_o:
+        previous_game_state = ""
+        settings_menu.sync_from_manager()
+        game_state = "settings_menu"
+    elif event.key == pygame.K_SPACE:
+        return_to_main_menu()
+
+
+def activate_pause_action(action):
+    """Run a pause-menu action."""
+    global game_state, previous_game_state
+    if action == "resume":
+        resume_from_pause()
+    elif action == "help":
+        previous_game_state = "pause_menu"
+        game_state = "help_menu"
+    elif action == "settings":
+        previous_game_state = "pause_menu"
+        settings_menu.sync_from_manager()
+        game_state = "settings_menu"
+    elif action == "main_menu":
+        return_to_main_menu()
+
+
+def activate_gameover_action(action):
+    """Run a game-over screen action."""
+    global game_state, previous_game_state
+    if action == "respawn":
+        respawn()
+    elif action == "help":
+        previous_game_state = ""
+        game_state = "help_menu"
+    elif action == "main_menu":
+        return_to_main_menu()
+
+
+def show_menu_toast(text, duration_ms=1500):
+    """Show a short status message in the main menu (e.g. mute feedback)."""
+    global menu_toast_text, menu_toast_until
+    menu_toast_text = text
+    menu_toast_until = pygame.time.get_ticks() + duration_ms
+
+
 def run_game():
-    global window, game_state, light_enemy, wave_manager, health_drops, ground_support_manager, pending_mission_config
+    global window, game_state, previous_game_state, light_enemy, wave_manager, health_drops, ground_support_manager, pending_mission_config
     running = True
     last_wheel_time = 0
     while running:
@@ -3173,6 +2995,16 @@ def run_game():
                     settings_menu.handle_event(event, canvas_mouse_pos)
                 elif game_state == "enlistment":
                     enlistment_screen.handle_event(event, canvas_mouse_pos)
+                elif game_state == "main_menu":
+                    main_menu_nav.handle_event(event, canvas_mouse_pos)
+                elif game_state == "pause_menu":
+                    pause_nav.handle_event(event, canvas_mouse_pos)
+                elif game_state == "mission_select":
+                    mission_select_menu.handle_event(event, canvas_mouse_pos)
+                elif game_state == "stratagem_select":
+                    stratagem_select_menu.handle_event(event, canvas_mouse_pos)
+                elif game_state == "" and player.health <= 0:
+                    gameover_nav.handle_event(event, canvas_mouse_pos)
                 elif game_state == "super_destroyer":
                     super_destroyer_view.handle_event(event, canvas_mouse_pos)
 
@@ -3201,27 +3033,8 @@ def run_game():
                         game_state = "main_menu"
 
                 elif game_state == "main_menu":
-                    if menu_new_game_box.is_clicked(event, canvas_mouse_pos):
-                        enlistment_screen.reset()
-                        game_state = "enlistment"
-                    elif menu_continue_box.is_clicked(event, canvas_mouse_pos):
-                        if profile_manager.has_active_profile():
-                            active_prof = profile_manager.load_profile()
-                            if not active_prof.academy_completed:
-                                target_mission = MissionType.ACADEMY_TUTORIAL
-                                config = MISSION_CONFIGS.get(target_mission, MISSION_CONFIGS[MissionType.ACADEMY_TUTORIAL])
-                                respawn(mission_config=config)
-                                game_state = ""
-                            else:
-                                enter_super_destroyer()
-                    elif menu_settings_box.is_clicked(event, canvas_mouse_pos):
-                        previous_game_state = "main_menu"
-                        settings_menu.sync_from_manager()
-                        game_state = "settings_menu"
-                    elif menu_help_box.is_clicked(event, canvas_mouse_pos):
-                        previous_game_state = "main_menu"
-                        game_state = "help_menu"
-                    elif menu_quit_box.is_clicked(event, canvas_mouse_pos):
+                    idx = main_menu_nav.handle_event(event, canvas_mouse_pos)
+                    if idx is not None and activate_main_menu_action(MAIN_MENU_ACTIONS[idx]):
                         running = False
 
                 elif game_state == "mission_select":
@@ -3241,17 +3054,9 @@ def run_game():
                         game_state = ""
 
                 elif game_state == "pause_menu":
-                    if pause_continue_box.is_clicked(event, canvas_mouse_pos):
-                        game_state = ""
-                    elif pause_help_box.is_clicked(event, canvas_mouse_pos):
-                        previous_game_state = "pause_menu"
-                        game_state = "help_menu"
-                    elif pause_settings_box.is_clicked(event, canvas_mouse_pos):
-                        previous_game_state = "pause_menu"
-                        settings_menu.sync_from_manager()
-                        game_state = "settings_menu"
-                    elif pause_menu_box.is_clicked(event, canvas_mouse_pos):
-                        return_to_main_menu()
+                    idx = pause_nav.handle_event(event, canvas_mouse_pos)
+                    if idx is not None:
+                        activate_pause_action(PAUSE_ACTIONS[idx])
 
                 elif game_state == "mission_debriefing":
                     action = debriefing_screen.handle_event(event, canvas_mouse_pos)
@@ -3278,13 +3083,9 @@ def run_game():
 
                 elif game_state == "":
                     if player.health <= 0:
-                        if gameover_respawn_box.is_clicked(event, canvas_mouse_pos):
-                            respawn()
-                        elif gameover_help_box.is_clicked(event, canvas_mouse_pos):
-                            previous_game_state = ""
-                            game_state = "help_menu"
-                        elif gameover_lobby_box.is_clicked(event, canvas_mouse_pos):
-                            return_to_main_menu()
+                        idx = gameover_nav.handle_event(event, canvas_mouse_pos)
+                        if idx is not None:
+                            activate_gameover_action(GAMEOVER_ACTIONS[idx])
                     else:
                         if ground_support_manager.weapon_menu.is_open:
                             ground_support_manager.weapon_menu.handle_event(event, canvas_mouse_pos)
@@ -3338,33 +3139,8 @@ def run_game():
                         ground_support_manager.add_combat_popup(f"AUDIO {status_str}", player.pos_x, player.pos_y, (255, 80, 80) if is_muted else (80, 255, 120))
 
                 elif game_state == "main_menu":
-                    if event.key == pygame.K_n:
-                        enlistment_screen.reset()
-                        game_state = "enlistment"
-                    elif event.key == pygame.K_c and profile_manager.has_active_profile():
-                        active_prof = profile_manager.load_profile()
-                        if not active_prof.academy_completed:
-                            target_mission = MissionType.ACADEMY_TUTORIAL
-                            config = MISSION_CONFIGS.get(target_mission, MISSION_CONFIGS[MissionType.ACADEMY_TUTORIAL])
-                            respawn(mission_config=config)
-                            game_state = ""
-                        else:
-                            enter_super_destroyer()
-                    elif event.key == pygame.K_s:
-                        enter_super_destroyer()
-                    elif event.key == pygame.K_h:
-                        previous_game_state = "main_menu"
-                        game_state = "help_menu"
-                    elif event.key == pygame.K_o:
-                        previous_game_state = "main_menu"
-                        settings_menu.sync_from_manager()
-                        game_state = "settings_menu"
-                    elif event.key in (pygame.K_ESCAPE, pygame.K_q):
+                    if handle_main_menu_keydown(event, canvas_mouse_pos):
                         running = False
-                    elif event.key == pygame.K_m:
-                        is_muted = audio_manager.toggle_mute()
-                        status_str = "MUTED" if is_muted else "UNMUTED"
-                        ground_support_manager.add_combat_popup(f"AUDIO {status_str}", player.pos_x, player.pos_y, (255, 80, 80) if is_muted else (80, 255, 120))
 
                 elif game_state == "enlistment":
                     action = enlistment_screen.handle_event(event, canvas_mouse_pos)
@@ -3400,8 +3176,11 @@ def run_game():
                 
                 
                 elif game_state == "pause_menu":
-                    if event.key == pygame.K_p:
-                        game_state = ""
+                    pause_idx = pause_nav.handle_event(event, canvas_mouse_pos)
+                    if pause_idx is not None:
+                        activate_pause_action(PAUSE_ACTIONS[pause_idx])
+                    elif event.key == pygame.K_p:
+                        resume_from_pause()
                     elif event.key == pygame.K_h:
                         previous_game_state = "pause_menu"
                         game_state = "help_menu"
@@ -3445,17 +3224,7 @@ def run_game():
 
                 elif game_state == "":
                     if player.health <= 0:
-                        if event.key == pygame.K_r:
-                            respawn()
-                        elif event.key == pygame.K_h:
-                            previous_game_state = ""
-                            game_state = "help_menu"
-                        elif event.key == pygame.K_o:
-                            previous_game_state = ""
-                            settings_menu.sync_from_manager()
-                            game_state = "settings_menu"
-                        elif event.key == pygame.K_SPACE:
-                            return_to_main_menu()
+                        handle_gameover_keydown(event, canvas_mouse_pos)
                     else:
                         if ground_support_manager.objective_phase == "COMPLETE":
                             if event.key == pygame.K_r:
@@ -3661,10 +3430,6 @@ def run_game():
                         draw(canvas_mouse_pos)
             else:
                 draw(canvas_mouse_pos)
-                if (keys[pygame.K_m]):
-                    is_muted = audio_manager.toggle_mute()
-                    status_str = "MUTED" if is_muted else "UNMUTED"
-                    ground_support_manager.add_combat_popup(f"AUDIO {status_str}", player.pos_x, player.pos_y, (255, 80, 80) if is_muted else (80, 255, 120))
 
         # Background Music & Engine Audio Loop Updates
         if game_state in ("main_menu", "mission_select", "stratagem_select", "mission_debriefing", "super_destroyer"):

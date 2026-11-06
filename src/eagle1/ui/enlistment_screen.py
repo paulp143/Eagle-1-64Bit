@@ -9,25 +9,19 @@ import pygame
 from typing import List, Optional, Tuple
 
 from eagle1.data.player_profile import PlayerProfileManager
+from eagle1.ui import theme, widgets
+from eagle1.ui.menu_nav import MenuButton, VARIANT_DANGER, VARIANT_PRIMARY
 
 try:
     from eagle1.systems.audio_manager import get_audio_manager
-except Exception:
+except ImportError:
     get_audio_manager = None
 
-
-def _get_font(name: str, size: int, bold: bool = False) -> pygame.font.Font:
-    """Safe font loader with Fallback for headless environments."""
-    if not pygame.font.get_init():
-        try:
-            pygame.font.init()
-        except Exception:
-            pass
-    try:
-        return pygame.font.SysFont(name, size, bold=bold)
-    except Exception:
-        return pygame.font.Font(None, size)
-
+# Style flag for contract section headers. wrapped_lines stores (text, color); the draw code
+# picks the header font by comparing against this constant, so it must never equal a body color.
+CONTRACT_HEADER_COLOR = theme.ACCENT
+CONTRACT_BODY_COLOR = theme.TEXT
+CONTRACT_BREACH_COLOR = theme.lerp_color(theme.DANGER, theme.TEXT, 0.3)
 
 CONTRACT_TEXT = """CONTRACT OF EMPLOYMENT
 The following contract is made between and entered into by The Helldivers Division of the Super Earth Armed Forces (hereby referred to as "the Enlister") and the individual who has successfully completed their preliminary Helldiver training as set forth in Exhibit A of the Super Earth Armed Forces Recruitment and Retention Manual part 27/B-10264 (hereby referred to as "the Enlisted"). The following contract is entered into willingly, and the Enlisted confirms that they have authority to enter into such an agreement at this time, being of sound mind and body, of legal age, and of Citizenship Grade E or above.
@@ -66,7 +60,6 @@ This agreement will be governed by the laws of Super Earth, and shall be termina
 6.4 The Contract shall be considered binding upon being read, in whole or in part.
 (For the purpose of the elimination of doubt, the Enlisted spending 1 second within 15 meters of a copy of the contract shall be interpreted as the contract being read.)"""
 
-
 class EnlistmentScreen:
     """Interactive enlistment terminal handling username input, contract viewing, and signing."""
 
@@ -84,54 +77,98 @@ class EnlistmentScreen:
 
         self.profile_manager = PlayerProfileManager()
         self.audio = get_audio_manager() if get_audio_manager else None
+        sfx = self.audio.play_sfx if self.audio else None
 
         # Pre-calculated geometry
         self.panel_x = 110
         self.panel_w = self.screen_w - 220
+        self.outer_rect = pygame.Rect(self.panel_x - 10, 30, self.panel_w + 20, 650)
 
         # Input field rect
         self.input_rect = pygame.Rect(self.panel_x + 300, 110, 480, 46)
 
-        # Contract container rect
-        self.contract_rect = pygame.Rect(self.panel_x, 175, self.panel_w, 420)
-        self.text_area_rect = pygame.Rect(self.contract_rect.x + 24, self.contract_rect.y + 45, self.contract_rect.w - 60, 355)
+        # Contract container rect (starts below the validation message line)
+        self.contract_rect = pygame.Rect(self.panel_x, 190, self.panel_w, 405)
+        self.header_bar_rect = pygame.Rect(self.contract_rect.x, self.contract_rect.y, self.contract_rect.w, 36)
+        self.text_area_rect = pygame.Rect(
+            self.contract_rect.x + 24, self.contract_rect.y + 45, self.contract_rect.w - 60, 350
+        )
 
         # Scrollbar geometry
-        self.scrollbar_track = pygame.Rect(self.contract_rect.right - 26, self.text_area_rect.y, 14, self.text_area_rect.h)
+        self.scrollbar_track = pygame.Rect(
+            self.contract_rect.right - 26, self.text_area_rect.y, 14, self.text_area_rect.h
+        )
 
         # Buttons rects
         self.btn_back_rect = pygame.Rect(self.panel_x, 615, 260, 48)
         self.btn_sign_rect = pygame.Rect(self.panel_x + 290, 615, self.panel_w - 290, 48)
+        self._btn_back = MenuButton("CANCEL", self.btn_back_rect, hotkey="ESC", variant=VARIANT_DANGER, on_sfx=sfx)
+        self._btn_sign = MenuButton(
+            "SIGN CONTRACT", self.btn_sign_rect, hotkey="ENTER", variant=VARIANT_PRIMARY, on_sfx=sfx
+        )
 
         # Fonts
-        self.font_title = _get_font("arial", 28, bold=True)
-        self.font_sub = _get_font("arial", 16, bold=True)
-        self.font_body = _get_font("arial", 15)
-        self.font_header = _get_font("arial", 16, bold=True)
-        self.font_btn = _get_font("arial", 18, bold=True)
-        self.font_input = _get_font("courier,monospace", 22, bold=True)
+        self.font_title = theme.get_font("display")
+        self.font_sub = theme.get_font("mono_small")
+        self.font_body = theme.get_font("body")
+        self.font_header = theme.get_font("label")
+        self.font_btn = theme.get_font("heading")
+        self.font_input = theme.load_font(theme.ROLE_MONO, 22)
+        self._fonts_ready = None not in (
+            self.font_title, self.font_sub, self.font_body, self.font_header, self.font_btn, self.font_input
+        )
+
+        self._cache = widgets.TextCache(512)
+        self._overlay = widgets.make_overlay((self.screen_w, self.screen_h), theme.OVERLAY_RGBA)
+        self._error_rect: Optional[pygame.Rect] = None
 
         # Line wrap contract text
-        self.line_height = 22
-        self.wrapped_lines = self._wrap_contract_text(CONTRACT_TEXT, self.text_area_rect.w)
+        self.line_height = (self.font_body.get_linesize() + 2) if self._fonts_ready else 22
+        self.wrapped_lines = self._wrap_contract_text(CONTRACT_TEXT, self.text_area_rect.w) if self._fonts_ready else []
         self.visible_lines = self.text_area_rect.h // self.line_height
         self.max_scroll = max(0, len(self.wrapped_lines) - self.visible_lines)
+
+        self._static: List[Tuple[pygame.Surface, Tuple[int, int]]] = []
+        if self._fonts_ready:
+            self._build_static_text()
+
+    def _build_static_text(self) -> None:
+        """Pre-render all unchanging text once."""
+        cx = self.screen_w // 2
+        title = self.font_title.render(
+            widgets.fit_text(self.font_title, "SUPER EARTH ARMED FORCES — PILOT ENLISTMENT DIVISION", self.panel_w),
+            True, theme.INFO,
+        )
+        sub = self.font_sub.render("MINISTRY OF DEFENSE // RECRUITMENT AND RETENTION BRANCH", True, theme.ACCENT)
+        label = self.font_header.render("PILOT CALLSIGN:", True, theme.TEXT)
+        header = self.font_header.render("EXHIBIT A: CONTRACT OF EMPLOYMENT — SEAF CODE 27/B-10264", True, theme.ACCENT)
+        badge = self.font_sub.render("[CITIZENSHIP GRADE E REQUIRED]", True, theme.INFO)
+        oath = self.font_sub.render("I SWEAR FEALTY TO MANAGED DEMOCRACY", True, theme.TEXT_MUTED)
+        self._static = [
+            (title, title.get_rect(center=(cx, 58)).topleft),
+            (sub, sub.get_rect(center=(cx, 92)).topleft),
+            (label, (self.input_rect.x - label.get_width() - 16, self.input_rect.centery - label.get_height() // 2)),
+            (header, (self.header_bar_rect.x + 16, self.header_bar_rect.centery - header.get_height() // 2)),
+            (badge, (self.header_bar_rect.right - badge.get_width() - 16,
+                     self.header_bar_rect.centery - badge.get_height() // 2)),
+            (oath, oath.get_rect(midbottom=(cx, self.btn_sign_rect.y - 4)).topleft),
+        ]
 
     def _wrap_contract_text(self, text: str, max_w: int) -> List[Tuple[str, Tuple[int, int, int]]]:
         """Wrap contract text lines with styling colors for headers vs body."""
         wrapped = []
-        raw_paragraphs = text.split("\n")
+        header_prefixes = (
+            "CONTRACT", "1 SERVICES", "2 REMUNERATION", "3 CONFIDENTIALITY",
+            "4 INDEMNIFICATION", "5 TERMINATION", "6 GENERAL PROVISIONS",
+        )
 
-        for para in raw_paragraphs:
+        for para in text.split("\n"):
             if not para.strip():
-                wrapped.append(("", (200, 200, 200)))
+                wrapped.append(("", theme.TEXT_MUTED))
                 continue
 
-            # Section headers
-            if para.startswith("CONTRACT") or para.startswith("1 SERVICES") or para.startswith("2 REMUNERATION") or \
-               para.startswith("3 CONFIDENTIALITY") or para.startswith("4 INDEMNIFICATION") or \
-               para.startswith("5 TERMINATION") or para.startswith("6 GENERAL PROVISIONS"):
-                wrapped.append((para, (255, 215, 0)))  # Gold
+            if para.startswith(header_prefixes):
+                wrapped.append((para, CONTRACT_HEADER_COLOR))
                 continue
 
             words = para.split(" ")
@@ -142,14 +179,19 @@ class EnlistmentScreen:
                     current_line = test_line
                 else:
                     if current_line:
-                        color = (255, 120, 120) if "breach" in current_line.lower() or "binding upon" in current_line.lower() else (220, 225, 235)
-                        wrapped.append((current_line, color))
+                        wrapped.append((current_line, self._body_color(current_line)))
                     current_line = word
             if current_line:
-                color = (255, 120, 120) if "breach" in current_line.lower() or "1 second within 15 meters" in current_line.lower() else (220, 225, 235)
-                wrapped.append((current_line, color))
+                wrapped.append((current_line, self._body_color(current_line)))
 
         return wrapped
+
+    @staticmethod
+    def _body_color(line: str) -> Tuple[int, int, int]:
+        lowered = line.lower()
+        if "breach" in lowered or "binding upon" in lowered or "1 second within 15 meters" in lowered:
+            return CONTRACT_BREACH_COLOR
+        return CONTRACT_BODY_COLOR
 
     def reset(self):
         """Reset screen state when opening."""
@@ -177,11 +219,7 @@ class EnlistmentScreen:
 
         # Mouse button interactions
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            # Check input field focus
-            if self.input_rect.collidepoint(mouse_pos):
-                self.input_focused = True
-            else:
-                self.input_focused = False
+            self.input_focused = self.input_rect.collidepoint(mouse_pos)
 
             # Check scrollbar track click
             if self.scrollbar_track.collidepoint(mouse_pos):
@@ -222,6 +260,8 @@ class EnlistmentScreen:
             elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                 return self._attempt_sign()
 
+            elif event.key == pygame.K_TAB:
+                self.input_focused = not self.input_focused
             elif event.key == pygame.K_UP:
                 self.scroll_offset = max(0, self.scroll_offset - 2)
             elif event.key == pygame.K_DOWN:
@@ -230,22 +270,17 @@ class EnlistmentScreen:
                 self.scroll_offset = max(0, self.scroll_offset - self.visible_lines)
             elif event.key == pygame.K_PAGEDOWN:
                 self.scroll_offset = max(0, min(self.max_scroll, self.scroll_offset + self.visible_lines))
-
-            elif self.input_focused:
-                if event.key == pygame.K_BACKSPACE:
-                    if self.username:
-                        self.username = self.username[:-1]
-                        self.error_message = ""
-                        if self.audio:
-                            self.audio.play_sfx("ui_hover")
-                else:
-                    # Accept typing characters
-                    char = event.unicode
-                    if char and char.isprintable() and len(self.username) < self.MAX_USERNAME_LENGTH:
-                        self.username += char.upper()
-                        self.error_message = ""
-                        if self.audio:
-                            self.audio.play_sfx("ui_hover")
+            elif event.key == pygame.K_BACKSPACE:
+                if self.input_focused and self.username:
+                    self.username = self.username[:-1]
+                    self.error_message = ""
+            else:
+                # Accept typing characters; typing while unfocused re-focuses the field
+                char = event.unicode
+                if char and char.isprintable() and len(self.username) < self.MAX_USERNAME_LENGTH:
+                    self.input_focused = True
+                    self.username += char.upper()
+                    self.error_message = ""
 
         return None
 
@@ -280,102 +315,64 @@ class EnlistmentScreen:
         if mouse_pos is None:
             mouse_pos = pygame.mouse.get_pos()
 
-        # Dark tactical background overlay
-        overlay = pygame.Surface((self.screen_w, self.screen_h), pygame.SRCALPHA)
-        overlay.fill((8, 12, 18, 245))
-        surface.blit(overlay, (0, 0))
+        surface.blit(self._overlay, (0, 0))
+        if not self._fonts_ready:
+            return
 
-        # Main frame panel
-        outer_rect = pygame.Rect(self.panel_x - 10, 30, self.panel_w + 20, 650)
-        pygame.draw.rect(surface, (14, 20, 32), outer_rect, border_radius=12)
-        pygame.draw.rect(surface, (0, 180, 240), outer_rect, width=2, border_radius=12)
-
-        # Screen header
-        title_surf = self.font_title.render("SUPER EARTH ARMED FORCES — PILOT ENLISTMENT DIVISION", True, (0, 230, 255))
-        surface.blit(title_surf, title_surf.get_rect(center=(self.screen_w // 2, 60)))
-
-        sub_surf = self.font_sub.render("MINISTRY OF DEFENSE // RECRUITMENT AND RETENTION BRANCH", True, (255, 215, 0))
-        surface.blit(sub_surf, sub_surf.get_rect(center=(self.screen_w // 2, 92)))
-
-        # Callsign Label
-        label_surf = self.font_header.render("PILOT CALLSIGN:", True, (240, 245, 255))
-        surface.blit(label_surf, (self.panel_x + 120, 122))
+        widgets.draw_panel(surface, self.outer_rect, theme.PANEL, theme.BORDER_STRONG, theme.ACCENT)
+        for surf, pos in self._static[:3]:
+            surface.blit(surf, pos)
 
         # Callsign Input Field
-        input_border_color = (0, 240, 255) if self.input_focused else (80, 110, 150)
-        pygame.draw.rect(surface, (18, 26, 42), self.input_rect, border_radius=8)
-        pygame.draw.rect(surface, input_border_color, self.input_rect, width=2, border_radius=8)
-
-        # Callsign Text + Blinking Cursor
+        widgets.draw_panel(
+            surface, self.input_rect, theme.PANEL_RAISED,
+            theme.ACCENT if self.input_focused else theme.BORDER_STRONG, brackets=False,
+        )
         display_text = self.username
-        show_cursor = self.input_focused and ((pygame.time.get_ticks() // 450) % 2 == 0)
-        if show_cursor:
+        if self.input_focused and ((pygame.time.get_ticks() // 450) % 2 == 0):
             display_text += "_"
+        text_surf = self._cache.render(self.font_input, display_text, theme.TEXT)
+        surface.blit(text_surf, (self.input_rect.x + 14, self.input_rect.centery - text_surf.get_height() // 2))
 
-        text_surf = self.font_input.render(display_text, True, (255, 255, 255))
-        surface.blit(text_surf, (self.input_rect.x + 14, self.input_rect.y + 11))
-
-        # Error / Validation Warning
+        # Error / Validation Warning below the input field (always on screen)
+        self._error_rect = None
         if self.error_message:
-            err_surf = self.font_sub.render(self.error_message, True, (255, 75, 75))
-            surface.blit(err_surf, (self.input_rect.right + 20, 123))
+            msg = widgets.fit_text(self.font_sub, self.error_message, self.contract_rect.w)
+            err_surf = self._cache.render(self.font_sub, msg, theme.DANGER)
+            self._error_rect = err_surf.get_rect(midtop=(self.input_rect.centerx, self.input_rect.bottom + 6))
+            surface.blit(err_surf, self._error_rect)
 
-        # Contract Container
-        pygame.draw.rect(surface, (12, 16, 26), self.contract_rect, border_radius=8)
-        pygame.draw.rect(surface, (200, 160, 40), self.contract_rect, width=2, border_radius=8)
+        # Contract container with header bar
+        widgets.draw_panel(surface, self.contract_rect, theme.PANEL, theme.ACCENT_DIM, theme.ACCENT)
+        pygame.draw.rect(surface, theme.PANEL_RAISED, self.header_bar_rect)
+        pygame.draw.line(
+            surface, theme.ACCENT_DIM, (self.header_bar_rect.x, self.header_bar_rect.bottom),
+            (self.header_bar_rect.right, self.header_bar_rect.bottom), 2,
+        )
+        for surf, pos in self._static[3:5]:
+            surface.blit(surf, pos)
 
-        # Contract Header Banner
-        header_bar_rect = pygame.Rect(self.contract_rect.x, self.contract_rect.y, self.contract_rect.w, 36)
-        pygame.draw.rect(surface, (24, 32, 50), header_bar_rect, border_top_left_radius=8, border_top_right_radius=8)
-        pygame.draw.line(surface, (200, 160, 40), (header_bar_rect.x, header_bar_rect.bottom), (header_bar_rect.right, header_bar_rect.bottom), 2)
-
-        c_header_surf = self.font_header.render("EXHIBIT A: CONTRACT OF EMPLOYMENT — SEAF CODE 27/B-10264", True, (255, 225, 80))
-        surface.blit(c_header_surf, (header_bar_rect.x + 16, header_bar_rect.y + 8))
-
-        badge_surf = self.font_sub.render("[CITIZENSHIP GRADE E REQUIRED]", True, (0, 220, 255))
-        surface.blit(badge_surf, (header_bar_rect.right - badge_surf.get_width() - 16, header_bar_rect.y + 9))
-
-        # Render visible contract lines with clipping
-        clip_rect = self.text_area_rect
+        # Visible contract lines with clipping
         orig_clip = surface.get_clip()
-        surface.set_clip(clip_rect)
-
+        surface.set_clip(self.text_area_rect)
         y_pos = self.text_area_rect.y
-        start_idx = self.scroll_offset
-        end_idx = min(len(self.wrapped_lines), start_idx + self.visible_lines + 1)
-
-        for i in range(start_idx, end_idx):
+        end_idx = min(len(self.wrapped_lines), self.scroll_offset + self.visible_lines + 1)
+        for i in range(self.scroll_offset, end_idx):
             line_text, line_color = self.wrapped_lines[i]
             if line_text:
-                font = self.font_header if line_color == (255, 215, 0) else self.font_body
-                line_surf = font.render(line_text, True, line_color)
-                surface.blit(line_surf, (self.text_area_rect.x, y_pos))
+                font = self.font_header if line_color == CONTRACT_HEADER_COLOR else self.font_body
+                surface.blit(self._cache.render(font, line_text, line_color), (self.text_area_rect.x, y_pos))
             y_pos += self.line_height
-
         surface.set_clip(orig_clip)
 
-        # Scrollbar rendering
-        pygame.draw.rect(surface, (20, 28, 44), self.scrollbar_track, border_radius=6)
+        # Scrollbar
+        pygame.draw.rect(surface, theme.PANEL_RAISED, self.scrollbar_track)
         thumb_y, thumb_h = self._get_scrollbar_thumb()
         thumb_rect = pygame.Rect(self.scrollbar_track.x, thumb_y, self.scrollbar_track.w, thumb_h)
-        thumb_color = (0, 210, 255) if (self.is_dragging_scrollbar or thumb_rect.collidepoint(mouse_pos)) else (80, 110, 150)
-        pygame.draw.rect(surface, thumb_color, thumb_rect, border_radius=6)
+        active = self.is_dragging_scrollbar or thumb_rect.collidepoint(mouse_pos)
+        pygame.draw.rect(surface, theme.ACCENT if active else theme.BORDER_STRONG, thumb_rect)
 
-        # Back Button
-        back_hover = self.btn_back_rect.collidepoint(mouse_pos)
-        back_bg = (50, 25, 30) if back_hover else (30, 20, 25)
-        back_border = (255, 75, 75) if back_hover else (140, 70, 70)
-        pygame.draw.rect(surface, back_bg, self.btn_back_rect, border_radius=8)
-        pygame.draw.rect(surface, back_border, self.btn_back_rect, width=2, border_radius=8)
-        back_text = self.font_btn.render("CANCEL [ESC]", True, (255, 220, 220))
-        surface.blit(back_text, back_text.get_rect(center=self.btn_back_rect.center))
-
-        # Sign Button
-        sign_hover = self.btn_sign_rect.collidepoint(mouse_pos)
-        sign_bg = (30, 80, 130) if sign_hover else (18, 45, 75)
-        sign_border = (0, 240, 255) if sign_hover else (0, 170, 220)
-        pygame.draw.rect(surface, sign_bg, self.btn_sign_rect, border_radius=8)
-        pygame.draw.rect(surface, sign_border, self.btn_sign_rect, width=2, border_radius=8)
-
-        sign_text = self.font_btn.render("I SWEAR FEALTY TO MANAGED DEMOCRACY & SIGN CONTRACT [ENTER]", True, (255, 240, 160))
-        surface.blit(sign_text, sign_text.get_rect(center=self.btn_sign_rect.center))
+        # Oath line and buttons
+        surface.blit(*self._static[5])
+        self._btn_back.draw(surface, mouse_pos)
+        self._btn_sign.draw(surface, mouse_pos)

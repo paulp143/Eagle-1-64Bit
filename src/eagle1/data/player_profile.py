@@ -78,6 +78,10 @@ class PlayerProfile:
 class PlayerProfileManager:
     """Handles thread-safe, atomic disk persistence for PlayerProfile."""
 
+    # Incremented on every save/clear by any manager instance, so UIs can detect profile changes
+    # without touching the file system each frame.
+    revision: int = 0
+
     def __init__(self, filename: str = DEFAULT_PROFILE_FILE, data_dir: Optional[Path] = None):
         self.filename = filename
         self._custom_data_dir = data_dir
@@ -115,6 +119,7 @@ class PlayerProfileManager:
 
     def save_profile(self, profile: PlayerProfile) -> bool:
         """Save the player profile to disk using atomic rename for corruption resistance."""
+        PlayerProfileManager.revision += 1
         path = self.get_profile_path()
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -168,6 +173,7 @@ class PlayerProfileManager:
 
     def clear_profile(self) -> bool:
         """Remove the profile file from disk."""
+        PlayerProfileManager.revision += 1
         path = self.get_profile_path()
         try:
             if path.exists():

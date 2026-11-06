@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 import pygame
 
 from eagle1.paths import get_base_dir, verify_path_exact_casing
+from eagle1.ui import theme, widgets
 from eagle1.ui.layout import VerticalStackLayout, validate_rects_no_overlap
 from eagle1.story.dialogue_data import get_debrief_dialogue_node
 from eagle1.story.dialogue_db import (
@@ -39,9 +40,9 @@ ZONE_READY_ROOM: str = "ready_room"
 ZONE_HANGAR: str = "hangar"
 HUB_ZONES: Tuple[str, ...] = (ZONE_BRIDGE, ZONE_READY_ROOM, ZONE_HANGAR)
 
-PATRIOTISM_COLOR_ZEALOT: Tuple[int, int, int] = (255, 215, 50)  # Gold
-PATRIOTISM_COLOR_NOMINAL: Tuple[int, int, int] = (0, 220, 255)  # Cyan
-PATRIOTISM_COLOR_DISSIDENT: Tuple[int, int, int] = (231, 76, 60)  # Crimson Red
+PATRIOTISM_COLOR_ZEALOT: Tuple[int, int, int] = theme.ACCENT  # Gold
+PATRIOTISM_COLOR_NOMINAL: Tuple[int, int, int] = theme.INFO  # Cyan
+PATRIOTISM_COLOR_DISSIDENT: Tuple[int, int, int] = theme.DANGER  # Crimson Red
 
 PATRIOTISM_LABEL_ZEALOT: str = "EXEMPLARY ZEALOT"
 PATRIOTISM_LABEL_NOMINAL: str = "NOMINAL PATRIOTISM"
@@ -150,6 +151,7 @@ class SuperDestroyerView:
         self.hovered_stance: Optional[str] = None
         self.hovered_continue: bool = False
         self.hovered_launch: bool = False
+        self.npc_focus_index: int = 0
         self.launch_initiated: bool = False
         self._portrait_cache: Dict[Tuple[str, str, Tuple[int, int]], pygame.Surface] = {}
         self._modal_text_cache: Dict[str, Any] = {}
@@ -248,43 +250,25 @@ class SuperDestroyerView:
         self.modal_continue_rect = pygame.Rect(self.modal_rect.right - 240, self.modal_rect.bottom - 46, 212, 34)
 
     def _init_fonts(self) -> None:
-        """Initialize and cache fonts safely across desktop and headless environments."""
-        if not pygame.font.get_init():
-            try:
-                pygame.font.init()
-            except Exception:
-                pass
-
-        def _safe_sys_font(names: str, size: int, bold: bool = False) -> pygame.font.Font:
-            try:
-                f = pygame.font.SysFont(names, size, bold=bold)
-                if f:
-                    return f
-            except Exception:
-                pass
-            try:
-                return pygame.font.Font(None, size)
-            except Exception:
-                return None  # type: ignore
-
-        self.font_ship_name = _safe_sys_font("impact,arialblack,arial", 22, bold=True)
-        self.font_sector = _safe_sys_font("consolas,courier,monospace", 13, bold=True)
-        self.font_badge = _safe_sys_font("consolas,courier,monospace", 12, bold=True)
-        self.font_patriotism_title = _safe_sys_font("consolas,courier,monospace", 11, bold=True)
-        self.font_patriotism_status = _safe_sys_font("consolas,courier,monospace", 12, bold=True)
-        self.font_tab_title = _safe_sys_font("impact,arialblack,arial", 17, bold=True)
-        self.font_tab_sub = _safe_sys_font("consolas,courier,monospace", 10, bold=False)
-        self.font_deck_code = _safe_sys_font("consolas,courier,monospace", 14, bold=True)
-        self.font_deck_desc = _safe_sys_font("arial,sans-serif", 15)
-        self.font_footer = _safe_sys_font("consolas,courier,monospace", 12, bold=True)
+        """Fetch the cached theme fonts (any of them may be None if the font module is unavailable)."""
+        self.font_ship_name = theme.get_font("title")
+        self.font_sector = theme.get_font("mono_small")
+        self.font_badge = theme.get_font("mono_tiny")
+        self.font_patriotism_title = theme.get_font("mono_tiny")
+        self.font_patriotism_status = theme.get_font("mono_tiny")
+        self.font_tab_title = theme.get_font("heading")
+        self.font_tab_sub = theme.get_font("mono_tiny")
+        self.font_deck_code = theme.get_font("mono")
+        self.font_deck_desc = theme.get_font("body")
+        self.font_footer = theme.get_font("mono_tiny")
 
         # Modal Fonts
-        self.font_modal_title = _safe_sys_font("impact,arialblack,arial", 20, bold=True)
-        self.font_modal_role = _safe_sys_font("consolas,courier,monospace", 11, bold=True)
-        self.font_modal_prompt = _safe_sys_font("consolas,courier,monospace", 14)
-        self.font_modal_option = _safe_sys_font("consolas,courier,monospace", 13, bold=True)
-        self.font_modal_response = _safe_sys_font("consolas,courier,monospace", 13)
-        self.font_modal_btn = _safe_sys_font("consolas,courier,monospace", 12, bold=True)
+        self.font_modal_title = theme.get_font("heading")
+        self.font_modal_role = theme.get_font("mono_tiny")
+        self.font_modal_prompt = theme.get_font("mono")
+        self.font_modal_option = theme.get_font("mono_small")
+        self.font_modal_response = theme.get_font("mono_small")
+        self.font_modal_btn = theme.get_font("mono_tiny")
 
     def _init_cached_surfaces(self) -> None:
         """Pre-allocate all static background surfaces and panels to ensure 60 FPS."""
@@ -346,40 +330,40 @@ class SuperDestroyerView:
         # 2. Pre-rendered Top HUD Bar Background
         self.top_hud_bg_surface = pygame.Surface((self.top_hud_rect.width, self.top_hud_rect.height), pygame.SRCALPHA)
         self.top_hud_bg_surface.fill((10, 15, 24, 230))
-        pygame.draw.line(self.top_hud_bg_surface, (255, 215, 50), (0, self.top_hud_rect.height - 2), (self.top_hud_rect.width, self.top_hud_rect.height - 2), 2)
-        pygame.draw.line(self.top_hud_bg_surface, (50, 75, 105), (0, self.top_hud_rect.height - 1), (self.top_hud_rect.width, self.top_hud_rect.height - 1), 1)
+        pygame.draw.line(self.top_hud_bg_surface, theme.ACCENT, (0, self.top_hud_rect.height - 2), (self.top_hud_rect.width, self.top_hud_rect.height - 2), 2)
+        pygame.draw.line(self.top_hud_bg_surface, theme.BORDER, (0, self.top_hud_rect.height - 1), (self.top_hud_rect.width, self.top_hud_rect.height - 1), 1)
 
         # 3. Pre-rendered Content Panel Background
         self.content_panel_bg_surface = pygame.Surface((self.content_panel_rect.width, self.content_panel_rect.height), pygame.SRCALPHA)
         self.content_panel_bg_surface.fill((12, 18, 28, 205))
-        pygame.draw.rect(self.content_panel_bg_surface, (45, 75, 105), (0, 0, self.content_panel_rect.width, self.content_panel_rect.height), width=1)
+        pygame.draw.rect(self.content_panel_bg_surface, theme.BORDER, (0, 0, self.content_panel_rect.width, self.content_panel_rect.height), width=1)
         # Gold corner brackets
         cw = 18
         w, h = self.content_panel_rect.width, self.content_panel_rect.height
-        pygame.draw.lines(self.content_panel_bg_surface, (255, 215, 50), False, [(0, cw), (0, 0), (cw, 0)], 2)
-        pygame.draw.lines(self.content_panel_bg_surface, (255, 215, 50), False, [(w - cw, 0), (w - 1, 0), (w - 1, cw)], 2)
-        pygame.draw.lines(self.content_panel_bg_surface, (255, 215, 50), False, [(0, h - cw), (0, h - 1), (cw, h - 1)], 2)
-        pygame.draw.lines(self.content_panel_bg_surface, (255, 215, 50), False, [(w - cw, h - 1), (w - 1, h - 1), (w - 1, h - cw)], 2)
+        pygame.draw.lines(self.content_panel_bg_surface, theme.ACCENT, False, [(0, cw), (0, 0), (cw, 0)], 2)
+        pygame.draw.lines(self.content_panel_bg_surface, theme.ACCENT, False, [(w - cw, 0), (w - 1, 0), (w - 1, cw)], 2)
+        pygame.draw.lines(self.content_panel_bg_surface, theme.ACCENT, False, [(0, h - cw), (0, h - 1), (cw, h - 1)], 2)
+        pygame.draw.lines(self.content_panel_bg_surface, theme.ACCENT, False, [(w - cw, h - 1), (w - 1, h - 1), (w - 1, h - cw)], 2)
 
         # 4. Pre-rendered Footer Bar Background
         self.footer_bg_surface = pygame.Surface((self.footer_rect.width, self.footer_rect.height), pygame.SRCALPHA)
         self.footer_bg_surface.fill((10, 15, 24, 230))
-        pygame.draw.line(self.footer_bg_surface, (45, 75, 105), (0, 0), (self.footer_rect.width, 0), 1)
+        pygame.draw.line(self.footer_bg_surface, theme.BORDER, (0, 0), (self.footer_rect.width, 0), 1)
 
         # Pre-render static text surfaces
         self._cached_static_texts: Dict[str, pygame.Surface] = {}
         if self.font_ship_name:
-            self._cached_static_texts["ship_name"] = self.font_ship_name.render("SES LEVIATHAN OF TRUTH", True, (255, 215, 50))
+            self._cached_static_texts["ship_name"] = self.font_ship_name.render("SES LEVIATHAN OF TRUTH", True, theme.ACCENT)
         if self.font_sector:
-            self._cached_static_texts["sector"] = self.font_sector.render("SECTOR 7-C // VANDALON REACH", True, (150, 185, 210))
+            self._cached_static_texts["sector"] = self.font_sector.render("SECTOR 7-C // VANDALON REACH", True, theme.TEXT_MUTED)
         if self.font_patriotism_title:
-            self._cached_static_texts["patriotism_title"] = self.font_patriotism_title.render("SUPER EARTH PATRIOTISM INDEX", True, (170, 195, 220))
-            self._cached_static_texts["fleet_status_title"] = self.font_patriotism_title.render("SES LEVIATHAN // FLEET COMMAND ACTIVE", True, (140, 175, 205))
+            self._cached_static_texts["patriotism_title"] = self.font_patriotism_title.render("SUPER EARTH PATRIOTISM INDEX", True, theme.TEXT_MUTED)
+            self._cached_static_texts["fleet_status_title"] = self.font_patriotism_title.render("SES LEVIATHAN // FLEET COMMAND ACTIVE", True, theme.TEXT_MUTED)
         if self.font_footer:
             self._cached_static_texts["footer_hint"] = self.font_footer.render(
                 "[A / D / ARROWS] SWITCH ZONE   |   [1-3] DIRECT SELECT   |   [ESC] MAIN MENU",
                 True,
-                (140, 175, 205),
+                theme.TEXT_MUTED,
             )
 
         # Pre-render static NPC labels
@@ -390,7 +374,7 @@ class SuperDestroyerView:
                 )
             if self.font_tab_sub:
                 self._cached_static_texts[f"npc_role_{npc_id}"] = self.font_tab_sub.render(
-                    profile.role.upper(), True, (160, 190, 215)
+                    profile.role.upper(), True, theme.TEXT_MUTED
                 )
 
         # Hangar deck static labels (Issue #60)
@@ -400,10 +384,10 @@ class SuperDestroyerView:
             )
         if self.font_modal_role:
             self._cached_static_texts["hangar_comm_label"] = self.font_modal_role.render(
-                "CHIEF ENGINEER LOG & AIRFRAME COMMENTARY:", True, (140, 175, 205)
+                "CHIEF ENGINEER LOG & AIRFRAME COMMENTARY:", True, theme.TEXT_MUTED
             )
             self._cached_static_texts["hangar_obj_label"] = self.font_modal_role.render(
-                "MISSION PARAMETERS & PRIMARY OBJECTIVE:", True, (140, 175, 205)
+                "MISSION PARAMETERS & PRIMARY OBJECTIVE:", True, theme.TEXT_MUTED
             )
 
         # 5. Dialogue Modal Pre-rendered Surfaces (Issue #59)
@@ -412,14 +396,14 @@ class SuperDestroyerView:
 
         # Solid opaque modal window to prevent underlying deck text bleed-through
         self.modal_bg_surface = pygame.Surface((self.modal_rect.width, self.modal_rect.height))
-        self.modal_bg_surface.fill((10, 15, 24))
-        pygame.draw.rect(self.modal_bg_surface, (45, 75, 105), (0, 0, self.modal_rect.width, self.modal_rect.height), width=1)
+        self.modal_bg_surface.fill(theme.PANEL)
+        pygame.draw.rect(self.modal_bg_surface, theme.BORDER, (0, 0, self.modal_rect.width, self.modal_rect.height), width=1)
         mcw = 20
         mw, mh = self.modal_rect.width, self.modal_rect.height
-        pygame.draw.lines(self.modal_bg_surface, (255, 215, 50), False, [(0, mcw), (0, 0), (mcw, 0)], 2)
-        pygame.draw.lines(self.modal_bg_surface, (255, 215, 50), False, [(mw - mcw, 0), (mw - 1, 0), (mw - 1, mcw)], 2)
-        pygame.draw.lines(self.modal_bg_surface, (255, 215, 50), False, [(0, mh - mcw), (0, mh - 1), (mcw, mh - 1)], 2)
-        pygame.draw.lines(self.modal_bg_surface, (255, 215, 50), False, [(mw - mcw, mh - 1), (mw - 1, mh - 1), (mw - 1, mh - mcw)], 2)
+        pygame.draw.lines(self.modal_bg_surface, theme.ACCENT, False, [(0, mcw), (0, 0), (mcw, 0)], 2)
+        pygame.draw.lines(self.modal_bg_surface, theme.ACCENT, False, [(mw - mcw, 0), (mw - 1, 0), (mw - 1, mcw)], 2)
+        pygame.draw.lines(self.modal_bg_surface, theme.ACCENT, False, [(0, mh - mcw), (0, mh - 1), (mcw, mh - 1)], 2)
+        pygame.draw.lines(self.modal_bg_surface, theme.ACCENT, False, [(mw - mcw, mh - 1), (mw - 1, mh - 1), (mw - 1, mh - mcw)], 2)
 
         # Dynamic text caches (keyed by state)
         self._cached_dynamic_surfaces: Dict[str, Tuple[Any, pygame.Surface]] = {}
@@ -467,10 +451,10 @@ class SuperDestroyerView:
                 pygame.draw.line(surf, (22, 34, 52), (0, y), (size[0], y), 1)
 
             profile = get_ship_npc_profile(clean_npc) if clean_npc else None
-            theme_col = profile.theme_color if profile else (0, 210, 255)
+            theme_col = profile.theme_color if profile else theme.INFO
             pygame.draw.rect(surf, theme_col, (0, 0, size[0], size[1]), width=2)
 
-            f_badge = self.font_badge or (pygame.font.Font(None, 12) if pygame.font.get_init() else None)
+            f_badge = self.font_badge or theme.get_font("mono_tiny")
             cx, cy = size[0] // 2, size[1] // 2
 
             if clean_npc == "npc_reiner":
@@ -483,19 +467,19 @@ class SuperDestroyerView:
                     (cx - 30, cy - 20),
                 ]
                 pygame.draw.polygon(surf, (40, 30, 10), pts)
-                pygame.draw.polygon(surf, (255, 215, 50), pts, width=2)
-                pygame.draw.circle(surf, (255, 215, 50), (cx, cy), 8)
+                pygame.draw.polygon(surf, theme.ACCENT, pts, width=2)
+                pygame.draw.circle(surf, theme.ACCENT, (cx, cy), 8)
                 if f_badge:
-                    txt = f_badge.render("COMMISSAR", True, (255, 215, 50))
+                    txt = f_badge.render("COMMISSAR", True, theme.ACCENT)
                     surf.blit(txt, (cx - txt.get_width() // 2, size[1] - 20))
             elif clean_npc == "npc_vance":
                 pts = [(cx, cy - 32), (cx + 28, cy), (cx, cy + 32), (cx - 28, cy)]
                 pygame.draw.polygon(surf, (10, 30, 45), pts)
-                pygame.draw.polygon(surf, (0, 220, 255), pts, width=2)
-                pygame.draw.line(surf, (0, 220, 255), (cx, cy - 20), (cx, cy + 20), 2)
-                pygame.draw.line(surf, (0, 220, 255), (cx - 20, cy), (cx + 20, cy), 2)
+                pygame.draw.polygon(surf, theme.INFO, pts, width=2)
+                pygame.draw.line(surf, theme.INFO, (cx, cy - 20), (cx, cy + 20), 2)
+                pygame.draw.line(surf, theme.INFO, (cx - 20, cy), (cx + 20, cy), 2)
                 if f_badge:
-                    txt = f_badge.render("COMMAND", True, (0, 220, 255))
+                    txt = f_badge.render("COMMAND", True, theme.INFO)
                     surf.blit(txt, (cx - txt.get_width() // 2, size[1] - 20))
             elif clean_npc == "npc_ortiz":
                 pygame.draw.circle(surf, (40, 25, 10), (cx, cy), 30)
@@ -569,7 +553,7 @@ class SuperDestroyerView:
 
         node = self.active_dialogue_node
         prof = get_ship_npc_profile(self.active_npc_id)
-        theme_col = prof.theme_color if prof else (0, 220, 255)
+        theme_col = prof.theme_color if prof else theme.INFO
 
         # 1. Header Area: Speaker Name & Role/Location (rendered to the right of the 128x128 portrait)
         spk_name = (prof.name if prof else node.speaker).upper()
@@ -579,15 +563,15 @@ class SuperDestroyerView:
         loc_str = node.location.upper()
         role_str = f"{prof.role.upper()} // {loc_str}" if prof else loc_str
         if self.font_modal_role:
-            self._modal_text_cache["speaker_role"] = self.font_modal_role.render(role_str, True, (140, 175, 205))
+            self._modal_text_cache["speaker_role"] = self.font_modal_role.render(role_str, True, theme.TEXT_MUTED)
 
         # Mode status badge
         if self.dialogue_completed_mode:
             badge_text = "STATUS // ARCHIVED SORTIE DEBRIEF [READ-ONLY]"
-            b_col = (140, 175, 205)
+            b_col = theme.TEXT_MUTED
         else:
             badge_text = "STATUS // AWAITING PILOT IDEOLOGICAL DIRECTIVE"
-            b_col = (255, 215, 50)
+            b_col = theme.ACCENT
         if self.font_badge:
             self._modal_text_cache["mode_badge"] = self.font_badge.render(badge_text, True, b_col)
 
@@ -614,7 +598,7 @@ class SuperDestroyerView:
         )
         if self.font_modal_prompt:
             self._modal_prompt_full_lines = [
-                self.font_modal_prompt.render(line, True, (220, 235, 250))
+                self.font_modal_prompt.render(line, True, theme.TEXT)
                 for line in self._modal_prompt_lines
             ]
 
@@ -627,12 +611,12 @@ class SuperDestroyerView:
             self.modal_response_rect = stack.add_slot(height=resp_panel_h, gap=8)
             if self.font_modal_response:
                 self._modal_text_cache["response_lines"] = [
-                    self.font_modal_response.render(line, True, (240, 245, 255))
+                    self.font_modal_response.render(line, True, theme.TEXT)
                     for line in resp_lines
                 ]
             spk_hdr = f">> REACTION // {spk_name}"
             if self.font_modal_role:
-                self._modal_text_cache["response_header"] = self.font_modal_role.render(spk_hdr, True, (0, 220, 255))
+                self._modal_text_cache["response_header"] = self.font_modal_role.render(spk_hdr, True, theme.INFO)
         else:
             self.modal_response_rect = pygame.Rect(content_bounds.x, stack.cursor_y, 0, 0)
 
@@ -646,7 +630,7 @@ class SuperDestroyerView:
 
             opt = node.options.get(stance)
             if opt:
-                tag_col = (0, 220, 255)
+                tag_col = theme.INFO
                 tag_text = f"[{opt.key_name}]"
 
                 raw_label = opt.label
@@ -659,19 +643,20 @@ class SuperDestroyerView:
                 if self.font_modal_btn:
                     self._modal_text_cache[f"opt_tag_{stance}"] = self.font_modal_btn.render(tag_text, True, tag_col)
                 if self.font_modal_option:
-                    self._modal_text_cache[f"opt_body_{stance}"] = self.font_modal_option.render(body_text, True, (220, 235, 250))
+                    self._modal_text_cache[f"opt_body_{stance}"] = self.font_modal_option.render(body_text, True, theme.TEXT)
 
         # Continue / End Transmission Button (Bottom right)
-        self.modal_continue_rect = pygame.Rect(
-            self.modal_rect.right - 240,
-            self.modal_rect.bottom - 46,
-            212,
-            34,
-        )
         btn_label = (
-            "[SPACE / ENTER / ESC] END TRANSMISSION"
+            "END TRANSMISSION [ENTER]"
             if (self.dialogue_completed_mode or self.selected_option is not None)
-            else "[ESC] CANCEL"
+            else "CANCEL [ESC]"
+        )
+        btn_w = max(212, (self.font_modal_btn.size(btn_label)[0] + 32) if self.font_modal_btn else 212)
+        self.modal_continue_rect = pygame.Rect(
+            self.modal_rect.right - 28 - btn_w,
+            self.modal_rect.bottom - 46,
+            btn_w,
+            34,
         )
         if self.font_modal_btn:
             self._modal_text_cache["continue_btn"] = self.font_modal_btn.render(btn_label, True, (255, 255, 255))
@@ -734,14 +719,14 @@ class SuperDestroyerView:
             badge_surf = cached_badge[1]
         else:
             text = f"ACT {act} // SORTIE {sortie}"
-            badge_surf = self.font_badge.render(text, True, (0, 220, 255)) if self.font_badge else None
+            badge_surf = self.font_badge.render(text, True, theme.INFO) if self.font_badge else None
             if badge_surf:
                 self._cached_dynamic_surfaces["campaign_badge"] = (badge_key, badge_surf)
 
         if badge_surf:
             badge_box = pygame.Rect(460, 20, 160, 28)
             pygame.draw.rect(surface, (16, 26, 40), badge_box)
-            pygame.draw.rect(surface, (0, 180, 230), badge_box, width=1)
+            pygame.draw.rect(surface, theme.INFO, badge_box, width=1)
             bx = badge_box.centerx - badge_surf.get_width() // 2
             by = badge_box.centery - badge_surf.get_height() // 2
             surface.blit(badge_surf, (bx, by))
@@ -1169,6 +1154,7 @@ class SuperDestroyerView:
         if target_index is not None and target_index != self._zone_index:
             self.close_dialogue()
             self._zone_index = target_index
+            self.npc_focus_index = 0
             self.launch_initiated = False
             self._play_ui_sound("ui_click")
             return True
@@ -1182,10 +1168,30 @@ class SuperDestroyerView:
         if isinstance(direction, bool) or not isinstance(direction, int) or direction == 0:
             return self.active_zone
 
+        self.close_dialogue()
         self._zone_index = (self._zone_index + direction) % len(HUB_ZONES)
+        self.npc_focus_index = 0
         self.launch_initiated = False
         self._play_ui_sound("ui_click")
         return self.active_zone
+
+    def _available_stances(self) -> List[str]:
+        """Stances offered by the active dialogue node, in display order."""
+        node = self.active_dialogue_node
+        if node is None or not node.options:
+            return []
+        return [stance for stance in ("loyal", "neutral", "dissident") if stance in node.options]
+
+    def _draw_npc_focus(self, surface: pygame.Surface) -> None:
+        """Highlight the keyboard-focused NPC card (TAB cycles, E talks)."""
+        zone_npcs = self.get_zone_npcs()
+        if not zone_npcs:
+            return
+        npc = zone_npcs[self.npc_focus_index % len(zone_npcs)]
+        rect = self.npc_card_rects.get(npc.npc_id)
+        if rect is not None:
+            widgets.draw_brackets(surface, rect, theme.ACCENT)
+            widgets.draw_focus_bar(surface, rect, theme.ACCENT)
 
     def _play_ui_sound(self, sound_name: str) -> None:
         """Safely trigger UI sound effects through AudioManager if available."""
@@ -1225,6 +1231,15 @@ class SuperDestroyerView:
                 if event.key == pygame.K_ESCAPE:
                     self.close_dialogue()
                     return {"action": "close_dialogue"}
+                elif event.key in (pygame.K_UP, pygame.K_DOWN):
+                    stances = self._available_stances()
+                    if stances and not self.dialogue_completed_mode and self.selected_option is None:
+                        current = self.hovered_stance if self.hovered_stance in stances else None
+                        step = -1 if event.key == pygame.K_UP else 1
+                        index = (stances.index(current) + step) % len(stances) if current else (0 if step > 0 else len(stances) - 1)
+                        self.hovered_stance = stances[index]
+                        self._play_ui_sound("ui_hover")
+                    return None
                 elif event.key in (pygame.K_SPACE, pygame.K_RETURN, pygame.K_KP_ENTER):
                     if self.active_dialogue_node and self.typewriter_chars < len(self.active_dialogue_node.prompt):
                         self.typewriter_chars = float(len(self.active_dialogue_node.prompt))
@@ -1232,6 +1247,17 @@ class SuperDestroyerView:
                     elif self.dialogue_completed_mode or self.selected_option is not None:
                         self.close_dialogue()
                         return {"action": "close_dialogue"}
+                    elif event.key != pygame.K_SPACE and self.hovered_stance in self._available_stances():
+                        # ENTER confirms the keyboard-focused stance option
+                        opt = self.select_dialogue_stance(self.hovered_stance)
+                        if opt is not None and self.active_dialogue_node is not None:
+                            return {
+                                "action": "dialogue_choice",
+                                "node_id": self.active_dialogue_node.node_id,
+                                "stance": opt.stance,
+                                "loyalty_delta": opt.loyalty_delta,
+                                "option": opt,
+                            }
                     return None
                 elif event.key in (pygame.K_1, pygame.K_KP1, pygame.K_2, pygame.K_KP2, pygame.K_3, pygame.K_KP3):
                     if not self.dialogue_completed_mode and self.selected_option is None:
@@ -1365,14 +1391,21 @@ class SuperDestroyerView:
             elif event.key in (pygame.K_3, pygame.K_KP3):
                 self.select_zone(ZONE_HANGAR)
                 return {"action": "select_zone", "zone": self.active_zone}
+            elif event.key == pygame.K_TAB:
+                zone_npcs = self.get_zone_npcs()
+                if zone_npcs:
+                    step = -1 if (getattr(event, "mod", 0) & pygame.KMOD_SHIFT) else 1
+                    self.npc_focus_index = (self.npc_focus_index + step) % len(zone_npcs)
+                    self._play_ui_sound("ui_hover")
             elif event.key in (pygame.K_e,):
                 zone_npcs = self.get_zone_npcs()
                 if zone_npcs:
+                    focused = zone_npcs[self.npc_focus_index % len(zone_npcs)]
                     self._play_ui_sound("ui_click")
-                    node = self.open_npc_dialogue(zone_npcs[0].npc_id)
+                    node = self.open_npc_dialogue(focused.npc_id)
                     return {
                         "action": "interact_npc",
-                        "npc_id": zone_npcs[0].npc_id,
+                        "npc_id": focused.npc_id,
                         "node": node,
                     }
             elif event.key == pygame.K_ESCAPE:
@@ -1397,15 +1430,15 @@ class SuperDestroyerView:
 
             # Border
             if is_active:
-                border_col = (255, 215, 50)  # Gold
+                border_col = theme.ACCENT  # Gold
                 border_w = 2
                 # Highlight bar
-                pygame.draw.rect(surface, (255, 215, 50), (rect.x, rect.bottom - 4, rect.width, 4))
+                pygame.draw.rect(surface, theme.ACCENT, (rect.x, rect.bottom - 4, rect.width, 4))
             elif is_hovered:
-                border_col = (0, 210, 255)  # Cyan
+                border_col = theme.INFO  # Cyan
                 border_w = 1
             else:
-                border_col = (45, 68, 92)
+                border_col = theme.BORDER
                 border_w = 1
             pygame.draw.rect(surface, border_col, rect, width=border_w)
 
@@ -1416,9 +1449,9 @@ class SuperDestroyerView:
             if cached_tab and cached_tab[0] == tab_title_key:
                 tsurf, subsurf = cached_tab[1]  # type: ignore
             else:
-                title_col = (255, 225, 120) if is_active else ((220, 240, 255) if is_hovered else (160, 185, 210))
+                title_col = (255, 225, 120) if is_active else ((220, 240, 255) if is_hovered else theme.TEXT_MUTED)
                 tsurf = self.font_tab_title.render(f"[{hotkey}] {title}", True, title_col) if self.font_tab_title else None
-                subsurf = self.font_tab_sub.render(subtitle, True, (120, 150, 175)) if self.font_tab_sub else None
+                subsurf = self.font_tab_sub.render(subtitle, True, theme.TEXT_MUTED) if self.font_tab_sub else None
                 self._cached_dynamic_surfaces[cache_key] = (tab_title_key, (tsurf, subsurf))  # type: ignore
 
             if tsurf:
@@ -1440,8 +1473,8 @@ class SuperDestroyerView:
         if cached_deck and cached_deck[0] == deck_key:
             code_surf, desc_surf = cached_deck[1]  # type: ignore
         else:
-            code_surf = self.font_deck_code.render(deck_code, True, (0, 220, 255)) if self.font_deck_code else None
-            desc_surf = self.font_deck_desc.render(desc, True, (200, 220, 240)) if self.font_deck_desc else None
+            code_surf = self.font_deck_code.render(deck_code, True, theme.INFO) if self.font_deck_code else None
+            desc_surf = self.font_deck_desc.render(desc, True, theme.TEXT) if self.font_deck_desc else None
             self._cached_dynamic_surfaces["deck_banner"] = (deck_key, (code_surf, desc_surf))  # type: ignore
 
         rx = self.content_panel_rect.x + 24
@@ -1459,7 +1492,7 @@ class SuperDestroyerView:
             self.content_panel_rect.width - 40,
             self.content_panel_rect.height - 80,
         )
-        pygame.draw.rect(surface, (25, 40, 60), inner_rect, width=1)
+        pygame.draw.rect(surface, theme.BORDER, inner_rect, width=1)
 
         # Subtle zone-specific tactical markings & NPC personnel cards
         if self.active_zone == ZONE_BRIDGE:
@@ -1474,8 +1507,8 @@ class SuperDestroyerView:
             for npc_id in ("npc_reiner", "npc_vance"):
                 crect = self.npc_card_rects.get(npc_id)
                 if crect:
-                    pygame.draw.rect(surface, (16, 24, 38), crect)
-                    pygame.draw.rect(surface, (45, 75, 105), crect, width=1)
+                    pygame.draw.rect(surface, theme.PANEL_RAISED, crect)
+                    pygame.draw.rect(surface, theme.BORDER, crect, width=1)
                     card_y = crect.y + 12
                     nsurf = self._cached_static_texts.get(f"npc_name_{npc_id}")
                     rsurf = self._cached_static_texts.get(f"npc_role_{npc_id}")
@@ -1516,8 +1549,8 @@ class SuperDestroyerView:
                 vid = f"viper_{i+1}"
                 crect = self.npc_card_rects.get(vid)
                 if crect:
-                    pygame.draw.rect(surface, (18, 28, 44), crect)
-                    pygame.draw.rect(surface, (35, 55, 80), crect, width=1)
+                    pygame.draw.rect(surface, theme.PANEL_RAISED, crect)
+                    pygame.draw.rect(surface, theme.BORDER, crect, width=1)
                     card_y = crect.y + 14
                     nsurf = self._cached_static_texts.get(f"npc_name_{vid}")
                     rsurf = self._cached_static_texts.get(f"npc_role_{vid}")
@@ -1530,8 +1563,8 @@ class SuperDestroyerView:
         elif self.active_zone == ZONE_HANGAR:
             # Catapult rail guide stripes
             cy = inner_rect.centery
-            pygame.draw.line(surface, (255, 215, 50), (inner_rect.x + 40, cy - 20), (inner_rect.right - 40, cy - 20), 2)
-            pygame.draw.line(surface, (255, 215, 50), (inner_rect.x + 40, cy + 20), (inner_rect.right - 40, cy + 20), 2)
+            pygame.draw.line(surface, theme.ACCENT, (inner_rect.x + 40, cy - 20), (inner_rect.right - 40, cy - 20), 2)
+            pygame.draw.line(surface, theme.ACCENT, (inner_rect.x + 40, cy + 20), (inner_rect.right - 40, cy + 20), 2)
 
             self._draw_hangar_diagnostics(surface)
 
@@ -1540,7 +1573,7 @@ class SuperDestroyerView:
         # 1. Chief Ortiz station card
         crect = self.npc_card_rects.get("npc_ortiz")
         if crect:
-            pygame.draw.rect(surface, (16, 24, 38), crect)
+            pygame.draw.rect(surface, theme.PANEL_RAISED, crect)
             pygame.draw.rect(surface, (243, 156, 18), crect, width=1)
             # Corner brackets
             cw = 8
@@ -1562,8 +1595,8 @@ class SuperDestroyerView:
         # 2. Aircraft Diagnostics Panel
         drect = self.hangar_diagnostics_rect
         diag = self.get_aircraft_diagnostics_summary()
-        border_col = (231, 76, 60) if diag["warning"] else (45, 75, 105)
-        pygame.draw.rect(surface, (14, 22, 34), drect)
+        border_col = theme.DANGER if diag["warning"] else theme.BORDER
+        pygame.draw.rect(surface, theme.PANEL_RAISED, drect)
         pygame.draw.rect(surface, border_col, drect, width=1)
 
         diag_key = (round(float(diag["hull_ratio"]), 2), int(self.last_casualties_count))
@@ -1571,20 +1604,20 @@ class SuperDestroyerView:
         if cached_diag and cached_diag[0] == diag_key:
             header_surf, status_surf, lines_surfs, comm_surfs = cached_diag[1]
         else:
-            status_col = (231, 76, 60) if diag["warning"] else ((255, 215, 50) if diag["status_level"] == "CAUTION" else (0, 220, 255))
-            header_surf = self.font_deck_code.render("EAGLE-1 AIRFRAME DIAGNOSTICS", True, (255, 215, 50)) if self.font_deck_code else None
+            status_col = theme.DANGER if diag["warning"] else (theme.ACCENT if diag["status_level"] == "CAUTION" else theme.INFO)
+            header_surf = self.font_deck_code.render("EAGLE-1 AIRFRAME DIAGNOSTICS", True, theme.ACCENT) if self.font_deck_code else None
             status_surf = self.font_badge.render(f"STATUS // {diag['status_level']} [{diag['hull_percent']:0.1f}%]", True, status_col) if self.font_badge else None
 
             lines_surfs = []
             if self.font_modal_role:
                 lines_surfs.append(self.font_modal_role.render(f">> {diag['hull_status']}", True, status_col))
-                cannons_col = (231, 76, 60) if diag["warning"] else (0, 220, 255)
+                cannons_col = theme.DANGER if diag["warning"] else theme.INFO
                 lines_surfs.append(self.font_modal_role.render(f">> {diag['cannons_status']}", True, cannons_col))
-                turbines_col = (231, 76, 60) if diag["warning"] else (0, 220, 255)
+                turbines_col = theme.DANGER if diag["warning"] else theme.INFO
                 lines_surfs.append(self.font_modal_role.render(f">> {diag['turbines_status']}", True, turbines_col))
 
             comm_lines = self._wrap_text_to_width(str(diag["ortiz_commentary"]), self.font_deck_desc, drect.width - 28, max_lines=2)
-            comm_surfs = [self.font_deck_desc.render(cl, True, (200, 225, 245)) for cl in comm_lines] if self.font_deck_desc else []
+            comm_surfs = [self.font_deck_desc.render(cl, True, theme.TEXT) for cl in comm_lines] if self.font_deck_desc else []
             self._cached_dynamic_surfaces["hangar_diag"] = (diag_key, (header_surf, status_surf, lines_surfs, comm_surfs))
 
         if header_surf:
@@ -1597,18 +1630,18 @@ class SuperDestroyerView:
         pygame.draw.rect(surface, (18, 26, 38), bar_rect)
         fill_w = int(bar_rect.width * float(diag["hull_ratio"]))
         if fill_w > 0:
-            fill_col = (231, 76, 60) if diag["warning"] else ((255, 215, 50) if diag["status_level"] == "CAUTION" else (0, 220, 255))
+            fill_col = theme.DANGER if diag["warning"] else (theme.ACCENT if diag["status_level"] == "CAUTION" else theme.INFO)
             pygame.draw.rect(surface, fill_col, (bar_rect.x, bar_rect.y, fill_w, bar_rect.height))
-        pygame.draw.rect(surface, (45, 70, 95), bar_rect, width=1)
+        pygame.draw.rect(surface, theme.BORDER, bar_rect, width=1)
 
         # Subsystem lines
         sy = drect.y + 54
         for lsurf in lines_surfs:
             surface.blit(lsurf, (drect.x + 14, sy))
-            sy += 20
+            sy += max(20, lsurf.get_height() + 4)
 
         # Divider & Commentary
-        pygame.draw.line(surface, (30, 48, 70), (drect.x + 14, drect.y + 124), (drect.right - 14, drect.y + 124), 1)
+        pygame.draw.line(surface, theme.BORDER, (drect.x + 14, drect.y + 124), (drect.right - 14, drect.y + 124), 1)
         clabel_surf = self._cached_static_texts.get("hangar_comm_label")
         if clabel_surf:
             surface.blit(clabel_surf, (drect.x + 14, drect.y + 130))
@@ -1616,16 +1649,16 @@ class SuperDestroyerView:
         cy = drect.y + 150
         for csurf in comm_surfs:
             surface.blit(csurf, (drect.x + 14, cy))
-            cy += 18
+            cy += csurf.get_height() + 2
 
         # 3. Next Sortie Mission Briefing Card
         brect = self.hangar_briefing_rect
-        pygame.draw.rect(surface, (14, 22, 34), brect)
-        pygame.draw.rect(surface, (0, 180, 230), brect, width=1)
+        pygame.draw.rect(surface, theme.PANEL_RAISED, brect)
+        pygame.draw.rect(surface, theme.INFO, brect, width=1)
         # Cyan corner brackets on briefing
         bcw = 12
-        pygame.draw.lines(surface, (0, 220, 255), False, [(brect.x, brect.y + bcw), (brect.x, brect.y), (brect.x + bcw, brect.y)], 1)
-        pygame.draw.lines(surface, (0, 220, 255), False, [(brect.right - bcw, brect.y), (brect.right - 1, brect.y), (brect.right - 1, brect.y + bcw)], 1)
+        pygame.draw.lines(surface, theme.INFO, False, [(brect.x, brect.y + bcw), (brect.x, brect.y), (brect.x + bcw, brect.y)], 1)
+        pygame.draw.lines(surface, theme.INFO, False, [(brect.right - bcw, brect.y), (brect.right - 1, brect.y), (brect.right - 1, brect.y + bcw)], 1)
 
         brief_key = self._get_current_sortie_key()
         cached_brief = self._cached_dynamic_surfaces.get("hangar_briefing")
@@ -1633,24 +1666,24 @@ class SuperDestroyerView:
             b_hdr_surf, b_title_surf, b_mode_surf, b_threat_surf, b_obj_surfs = cached_brief[1]
         else:
             briefing = self.get_current_sortie_briefing()
-            b_hdr_surf = self.font_deck_code.render("NEXT SORTIE // TACTICAL BRIEFING", True, (0, 220, 255)) if self.font_deck_code else None
-            b_title_surf = self.font_tab_title.render(briefing.get("title", ""), True, (255, 215, 50)) if self.font_tab_title else None
-            b_mode_surf = self.font_modal_role.render(f"OPERATION // {briefing.get('operation', '')}", True, (0, 220, 255)) if self.font_modal_role else None
-            b_threat_surf = self.font_modal_role.render(f"THREAT LEVEL // {briefing.get('threat', '')}", True, (231, 76, 60)) if self.font_modal_role else None
+            b_hdr_surf = self.font_deck_code.render("NEXT SORTIE // TACTICAL BRIEFING", True, theme.INFO) if self.font_deck_code else None
+            b_title_surf = self.font_tab_title.render(briefing.get("title", ""), True, theme.ACCENT) if self.font_tab_title else None
+            b_mode_surf = self.font_modal_role.render(f"OPERATION // {briefing.get('operation', '')}", True, theme.INFO) if self.font_modal_role else None
+            b_threat_surf = self.font_modal_role.render(f"THREAT LEVEL // {briefing.get('threat', '')}", True, theme.DANGER) if self.font_modal_role else None
             obj_lines = self._wrap_text_to_width(briefing.get("objective", ""), self.font_deck_desc, brect.width - 28, max_lines=3)
-            b_obj_surfs = [self.font_deck_desc.render(ol, True, (220, 235, 250)) for ol in obj_lines] if self.font_deck_desc else []
+            b_obj_surfs = [self.font_deck_desc.render(ol, True, theme.TEXT) for ol in obj_lines] if self.font_deck_desc else []
             self._cached_dynamic_surfaces["hangar_briefing"] = (brief_key, (b_hdr_surf, b_title_surf, b_mode_surf, b_threat_surf, b_obj_surfs))
 
         if b_hdr_surf:
             surface.blit(b_hdr_surf, (brect.x + 14, brect.y + 12))
         if b_title_surf:
             surface.blit(b_title_surf, (brect.x + 14, brect.y + 36))
-        pygame.draw.line(surface, (30, 48, 70), (brect.x + 14, brect.y + 66), (brect.right - 14, brect.y + 66), 1)
+        pygame.draw.line(surface, theme.BORDER, (brect.x + 14, brect.y + 66), (brect.right - 14, brect.y + 66), 1)
         if b_mode_surf:
             surface.blit(b_mode_surf, (brect.x + 14, brect.y + 74))
         if b_threat_surf:
             surface.blit(b_threat_surf, (brect.x + 14, brect.y + 96))
-        pygame.draw.line(surface, (30, 48, 70), (brect.x + 14, brect.y + 122), (brect.right - 14, brect.y + 122), 1)
+        pygame.draw.line(surface, theme.BORDER, (brect.x + 14, brect.y + 122), (brect.right - 14, brect.y + 122), 1)
 
         olabel_surf = self._cached_static_texts.get("hangar_obj_label")
         if olabel_surf:
@@ -1659,7 +1692,7 @@ class SuperDestroyerView:
         boy = brect.y + 150
         for osurf in b_obj_surfs:
             surface.blit(osurf, (brect.x + 14, boy))
-            boy += 20
+            boy += osurf.get_height() + 2
 
         # 4. Catapult Launch Button
         lrect = self.btn_launch_rect
@@ -1669,7 +1702,7 @@ class SuperDestroyerView:
             border_col = (255, 245, 180)
         else:
             bg_col = (45, 32, 16) if is_hovered else (24, 18, 12)
-            border_col = (255, 235, 100) if is_hovered else (255, 215, 50)
+            border_col = (255, 235, 100) if is_hovered else theme.ACCENT
         pygame.draw.rect(surface, bg_col, lrect)
         pygame.draw.rect(surface, border_col, lrect, width=2)
         # Gold corner brackets
@@ -1688,7 +1721,7 @@ class SuperDestroyerView:
                 btn_txt = self.font_tab_title.render("CATAPULT LAUNCH SEQUENCE INITIATED...", True, (255, 255, 255)) if self.font_tab_title else None
                 sub_txt = self.font_modal_role.render("CLEARING MAGNETIC RAIL // TRANSITION TO COMBAT SORTIE", True, (255, 220, 100)) if self.font_modal_role else None
             else:
-                t_col = (255, 240, 150) if is_hovered else (255, 215, 50)
+                t_col = (255, 240, 150) if is_hovered else theme.ACCENT
                 btn_txt = self.font_tab_title.render("[L / CLICK] INITIATE MAGNETIC CATAPULT LAUNCH", True, t_col) if self.font_tab_title else None
                 sub_txt = self.font_modal_role.render("MAGNETIC RAIL ARMED // CLEAR FOR ORBITAL DROP", True, (200, 180, 120)) if self.font_modal_role else None
             self._cached_dynamic_surfaces["hangar_launch_btn"] = (launch_key, (btn_txt, sub_txt))
@@ -1731,9 +1764,9 @@ class SuperDestroyerView:
         # 2. Orbital Reticle animation (using ambient_timer, zero allocation)
         reticle_x = int(self.screen_width * 0.5 + math.sin(self.ambient_timer * 0.4) * 40)
         reticle_y = int(self.screen_height * 0.45 + math.cos(self.ambient_timer * 0.3) * 15)
-        pygame.draw.circle(surface, (0, 180, 230), (reticle_x, reticle_y), 18, width=1)
-        pygame.draw.line(surface, (0, 180, 230), (reticle_x - 24, reticle_y), (reticle_x + 24, reticle_y), 1)
-        pygame.draw.line(surface, (0, 180, 230), (reticle_x, reticle_y - 24), (reticle_x, reticle_y + 24), 1)
+        pygame.draw.circle(surface, theme.INFO, (reticle_x, reticle_y), 18, width=1)
+        pygame.draw.line(surface, theme.INFO, (reticle_x - 24, reticle_y), (reticle_x + 24, reticle_y), 1)
+        pygame.draw.line(surface, theme.INFO, (reticle_x, reticle_y - 24), (reticle_x, reticle_y + 24), 1)
 
         # 3. Top HUD Bar (Ship info, Sector, Act/Sortie, Patriotism Index)
         self._draw_top_hud_bar(surface)
@@ -1746,6 +1779,10 @@ class SuperDestroyerView:
 
         # 6. Bottom Footer Bar
         self._draw_footer_bar(surface)
+
+        # 6b. Keyboard focus marker on the selected NPC card (hidden while the modal is open)
+        if not self._dialogue_open:
+            self._draw_npc_focus(surface)
 
         # 7. Dialogue Modal Overlay (Issue #59)
         if self._dialogue_open and self.active_dialogue_node is not None:
@@ -1761,7 +1798,7 @@ class SuperDestroyerView:
         surface.blit(self.modal_bg_surface, self.modal_rect.topleft)
 
         prof = get_ship_npc_profile(self.active_npc_id)
-        theme_col = prof.theme_color if prof else (0, 220, 255)
+        theme_col = prof.theme_color if prof else theme.INFO
 
         # 2. Portrait
         portrait_surf = self._get_or_create_portrait_surface(
@@ -1790,15 +1827,15 @@ class SuperDestroyerView:
         divider_y = self.modal_rect.y + 160
         pygame.draw.line(
             surface,
-            (35, 55, 80),
+            theme.BORDER,
             (self.modal_rect.x + 24, divider_y),
             (self.modal_rect.right - 24, divider_y),
             1,
         )
 
         # 4. Prompt Text Box (Tech frame + bounded text)
-        pygame.draw.rect(surface, (14, 20, 30), self.modal_prompt_rect)
-        pygame.draw.rect(surface, (35, 55, 78), self.modal_prompt_rect, width=1)
+        pygame.draw.rect(surface, theme.PANEL_RAISED, self.modal_prompt_rect)
+        pygame.draw.rect(surface, theme.BORDER, self.modal_prompt_rect, width=1)
 
         lh_prompt = self.font_modal_prompt.get_linesize() if self.font_modal_prompt else 18
         vis_chars = int(self.typewriter_chars)
@@ -1820,13 +1857,13 @@ class SuperDestroyerView:
 
         # 5. Response Panel (if response is active)
         if self.response_text and self.modal_response_rect.height > 0:
-            pygame.draw.rect(surface, (16, 26, 38), self.modal_response_rect)
-            pygame.draw.rect(surface, (0, 180, 230), self.modal_response_rect, width=1)
+            pygame.draw.rect(surface, theme.PANEL_RAISED, self.modal_response_rect)
+            pygame.draw.rect(surface, theme.INFO, self.modal_response_rect, width=1)
             cw = 10
             rx, ry = self.modal_response_rect.x, self.modal_response_rect.y
             rw = self.modal_response_rect.width
-            pygame.draw.lines(surface, (0, 220, 255), False, [(rx, ry + cw), (rx, ry), (rx + cw, ry)], 1)
-            pygame.draw.lines(surface, (0, 220, 255), False, [(rx + rw - cw, ry), (rx + rw - 1, ry), (rx + rw - 1, ry + cw)], 1)
+            pygame.draw.lines(surface, theme.INFO, False, [(rx, ry + cw), (rx, ry), (rx + cw, ry)], 1)
+            pygame.draw.lines(surface, theme.INFO, False, [(rx + rw - cw, ry), (rx + rw - 1, ry), (rx + rw - 1, ry + cw)], 1)
 
             # Row 1: Reaction Header
             hdr_surf = self._modal_text_cache.get("response_header")
@@ -1846,12 +1883,12 @@ class SuperDestroyerView:
             if self.dialogue_completed_mode:
                 is_selected = (stance == self.selected_stance)
                 bg_col = (20, 32, 48) if is_selected else (10, 14, 22)
-                border_col = (0, 220, 255) if is_selected else (25, 38, 52)
+                border_col = theme.INFO if is_selected else theme.BORDER
                 bw = 2 if is_selected else 1
             else:
                 is_hovered = (stance == self.hovered_stance)
-                bg_col = (24, 38, 58) if is_hovered else (14, 22, 34)
-                border_col = (0, 220, 255) if is_hovered else (45, 75, 105)
+                bg_col = theme.PANEL_HOVER if is_hovered else theme.PANEL_RAISED
+                border_col = theme.INFO if is_hovered else theme.BORDER
                 bw = 2 if is_hovered else 1
 
             pygame.draw.rect(surface, bg_col, rect)
@@ -1870,8 +1907,8 @@ class SuperDestroyerView:
         # 7. Continue / End Transmission Button
         c_rect = self.modal_continue_rect
         c_hover = self.hovered_continue
-        c_bg = (24, 40, 62) if c_hover else (14, 22, 34)
-        c_border = (255, 215, 50) if c_hover else (0, 180, 230)
+        c_bg = (24, 40, 62) if c_hover else theme.PANEL_RAISED
+        c_border = theme.ACCENT if c_hover else theme.INFO
         pygame.draw.rect(surface, c_bg, c_rect)
         pygame.draw.rect(surface, c_border, c_rect, width=2 if c_hover else 1)
 

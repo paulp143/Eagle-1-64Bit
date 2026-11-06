@@ -29,6 +29,7 @@ from typing import Optional
 import pygame
 
 from eagle1.paths import get_user_data_dir
+from eagle1.ui import hud_layout, theme, widgets
 from eagle1.story.dialogue_data import (
     get_contextual_banter,
     get_debrief_dialogue_node,
@@ -1594,7 +1595,22 @@ class StratagemSelectMenu:
         self.card_rects = {}
         self.deploy_btn_rect = pygame.Rect(self.width // 2 - 180, self.height - 75, 360, 48)
         self.back_btn_rect = pygame.Rect(30, self.height - 75, 200, 48)
+        self.focus_index = 0
+        self._font_title = theme.get_font("title")
+        self._font_sub = theme.get_font("label")
+        self._font_body = theme.get_font("body_small")
+        self._font_small = theme.get_font("mono_small")
+        self._font_symbol = theme.get_font("heading")
+        self._cache = widgets.TextCache(512)
+        self._overlay = widgets.make_overlay((self.width, self.height), theme.OVERLAY_RGBA)
         self._init_layout()
+        self._desc_lines = {}
+        if self._font_body is not None:
+            card_w = self.card_rects[AirStrikeType.ORDER[0]].w
+            for st in AirStrikeType.ORDER:
+                self._desc_lines[st] = widgets.wrap_text_px(
+                    self._font_body, AirStrikeType.DATA[st]["desc"], card_w - 20, max_lines=2
+                )
 
     def _init_layout(self):
         card_w = 265
@@ -1619,31 +1635,52 @@ class StratagemSelectMenu:
             self.selected_stratagems.append(st)
 
     def handle_event(self, event, mouse_pos=None):
+        order = AirStrikeType.ORDER
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
                 return "back_to_missions"
 
             key_map = {
-                pygame.K_1: AirStrikeType.ORDER[0],
-                pygame.K_2: AirStrikeType.ORDER[1],
-                pygame.K_3: AirStrikeType.ORDER[2],
-                pygame.K_4: AirStrikeType.ORDER[3],
-                pygame.K_5: AirStrikeType.ORDER[4],
-                pygame.K_6: AirStrikeType.ORDER[5],
-                pygame.K_7: AirStrikeType.ORDER[6],
-                pygame.K_8: AirStrikeType.ORDER[7],
+                pygame.K_1: order[0],
+                pygame.K_2: order[1],
+                pygame.K_3: order[2],
+                pygame.K_4: order[3],
+                pygame.K_5: order[4],
+                pygame.K_6: order[5],
+                pygame.K_7: order[6],
+                pygame.K_8: order[7],
             }
             if event.key in key_map:
+                self.focus_index = order.index(key_map[event.key])
                 self.toggle_stratagem(key_map[event.key])
                 return None
 
-            if event.key in (pygame.K_RETURN, pygame.K_SPACE):
+            if event.key == pygame.K_LEFT:
+                self.focus_index = max(0, self.focus_index - 1)
+            elif event.key == pygame.K_RIGHT:
+                self.focus_index = min(len(order) - 1, self.focus_index + 1)
+            elif event.key == pygame.K_UP:
+                if self.focus_index - 4 >= 0:
+                    self.focus_index -= 4
+            elif event.key == pygame.K_DOWN:
+                if self.focus_index + 4 < len(order):
+                    self.focus_index += 4
+            elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                self.toggle_stratagem(order[self.focus_index])
+            elif event.key == pygame.K_SPACE:
                 if len(self.selected_stratagems) == 4:
                     return list(self.selected_stratagems)
+
+        elif event.type == pygame.MOUSEMOTION and mouse_pos:
+            for idx, st in enumerate(order):
+                if self.card_rects[st].collidepoint(mouse_pos):
+                    self.focus_index = idx
+                    break
 
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and mouse_pos:
             for st, rect in self.card_rects.items():
                 if rect.collidepoint(mouse_pos):
+                    self.focus_index = order.index(st)
                     self.toggle_stratagem(st)
                     return None
 
@@ -1657,23 +1694,22 @@ class StratagemSelectMenu:
         return None
 
     def draw(self, surface, mouse_pos=None, font_title=None, font_sub=None, font=None, font_small=None):
-        if font_title is None:
-            font_title = pygame.font.SysFont("arial", 28, bold=True)
-        if font_sub is None:
-            font_sub = pygame.font.SysFont("arial", 16, bold=True)
-        if font is None:
-            font = pygame.font.SysFont("arial", 14, bold=True)
-        if font_small is None:
-            font_small = pygame.font.SysFont("arial", 12)
+        font_title = font_title or self._font_title
+        font_sub = font_sub or self._font_sub
+        font_small = font_small or self._font_small
+        font_symbol = font or self._font_symbol
+        font_body = self._font_body
+        if None in (font_title, font_sub, font_small, font_symbol, font_body):
+            return
+        cache = self._cache
 
-        overlay = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
-        overlay.fill((10, 14, 24, 245))
-        surface.blit(overlay, (0, 0))
+        surface.blit(self._overlay, (0, 0))
 
-        title_txt = font_title.render("MISSION STRATAGEM LOADOUT", True, (0, 220, 255))
-        surface.blit(title_txt, (self.width // 2 - title_txt.get_width() // 2, 22))
-
-        sub_txt = font_small.render("SELECT EXACTLY 4 STRATAGEMS FOR THIS OPERATION (CLICK CARD OR PRESS 1-8)", True, (160, 190, 220))
+        title_txt = cache.render(font_title, "MISSION STRATAGEM LOADOUT", theme.ACCENT)
+        surface.blit(title_txt, (self.width // 2 - title_txt.get_width() // 2, 20))
+        sub_txt = cache.render(
+            font_small, "SELECT 4 — 1-8 OR ARROWS + ENTER · SPACE TO DEPLOY", theme.TEXT_MUTED
+        )
         surface.blit(sub_txt, (self.width // 2 - sub_txt.get_width() // 2, 58))
 
         # 4 Loadout Slot Indicators at Top
@@ -1690,99 +1726,97 @@ class StratagemSelectMenu:
             if s_idx < len(self.selected_stratagems):
                 st_id = self.selected_stratagems[s_idx]
                 st_data = AirStrikeType.DATA[st_id]
-                pygame.draw.rect(surface, (20, 28, 44), s_rect, border_radius=6)
-                pygame.draw.rect(surface, st_data["border_color"], s_rect, 2, border_radius=6)
-                
-                # Badge
+                widgets.draw_panel(surface, s_rect, theme.PANEL_RAISED, st_data["border_color"], brackets=False)
                 badge_rect = pygame.Rect(sx + 6, slot_y + 6, 32, 34)
-                pygame.draw.rect(surface, (30, 40, 60), badge_rect, border_radius=4)
-                sym_txt = font.render(st_data["symbol"], True, st_data["color"])
-                surface.blit(sym_txt, (badge_rect.centerx - sym_txt.get_width() // 2, badge_rect.centery - sym_txt.get_height() // 2))
-
-                slot_num_txt = font_small.render(f"SLOT {s_idx + 1}", True, (140, 160, 190))
-                surface.blit(slot_num_txt, (sx + 44, slot_y + 6))
-                name_txt = font.render(st_data["name"][:14], True, (255, 255, 255))
+                pygame.draw.rect(surface, theme.PANEL_HOVER, badge_rect)
+                sym_txt = cache.render(font_small, st_data["symbol"], st_data["color"])
+                surface.blit(sym_txt, sym_txt.get_rect(center=badge_rect.center))
+                slot_num_txt = cache.render(font_small, f"SLOT {s_idx + 1}", theme.TEXT_MUTED)
+                surface.blit(slot_num_txt, (sx + 44, slot_y + 4))
+                name = widgets.fit_text(font_sub, st_data["name"].upper(), slot_w - 50)
+                name_txt = cache.render(font_sub, name, theme.TEXT)
                 surface.blit(name_txt, (sx + 44, slot_y + 22))
             else:
-                pygame.draw.rect(surface, (15, 20, 30), s_rect, border_radius=6)
-                pygame.draw.rect(surface, (50, 70, 95), s_rect, 1, border_radius=6)
-                empty_txt = font_small.render(f"SLOT {s_idx + 1}: [EMPTY]", True, (100, 120, 145))
-                surface.blit(empty_txt, (s_rect.centerx - empty_txt.get_width() // 2, s_rect.centery - empty_txt.get_height() // 2))
+                widgets.draw_panel(surface, s_rect, theme.PANEL, theme.BORDER, brackets=False)
+                empty_txt = cache.render(font_small, f"SLOT {s_idx + 1}: [EMPTY]", theme.TEXT_DISABLED)
+                surface.blit(empty_txt, empty_txt.get_rect(center=s_rect.center))
 
         # 8 Cards Grid
         for idx, st in enumerate(AirStrikeType.ORDER):
             rect = self.card_rects[st]
             data = AirStrikeType.DATA[st]
             is_selected = st in self.selected_stratagems
-            is_hovered = mouse_pos and rect.collidepoint(mouse_pos)
+            is_hovered = bool(mouse_pos and rect.collidepoint(mouse_pos))
+            is_focused = idx == self.focus_index or is_hovered
 
-            bg_col = (26, 38, 56) if is_selected else ((22, 30, 44) if is_hovered else (16, 22, 34))
-            border_col = data["border_color"] if is_selected else ((120, 160, 200) if is_hovered else (45, 60, 80))
-            border_width = 3 if is_selected else (2 if is_hovered else 1)
+            if is_selected:
+                widgets.draw_panel(surface, rect, theme.PANEL_HOVER, data["border_color"], data["border_color"])
+            elif is_focused:
+                widgets.draw_panel(surface, rect, theme.PANEL_RAISED, theme.BORDER_STRONG, theme.ACCENT)
+            else:
+                widgets.draw_panel(surface, rect, theme.PANEL_RAISED, theme.BORDER, brackets=False)
+            if is_focused:
+                widgets.draw_focus_bar(surface, rect, theme.ACCENT)
 
-            pygame.draw.rect(surface, bg_col, rect, border_radius=8)
-            pygame.draw.rect(surface, border_col, rect, border_width, border_radius=8)
+            widgets.draw_key_badge(surface, cache, font_small, str(idx + 1), (rect.x + 12, rect.y + 8))
 
-            # Hotkey Badge
-            badge = pygame.Rect(rect.x + 8, rect.y + 8, 28, 24)
-            pygame.draw.rect(surface, (30, 42, 60), badge, border_radius=4)
-            pygame.draw.rect(surface, (70, 95, 125), badge, 1, border_radius=4)
-            key_txt = font_small.render(f"[{idx+1}]", True, (255, 220, 80))
-            surface.blit(key_txt, (badge.centerx - key_txt.get_width() // 2, badge.centery - key_txt.get_height() // 2))
-
-            # Selected Slot Badge
             if is_selected:
                 slot_pos = self.selected_stratagems.index(st) + 1
-                slot_tag = font_small.render(f"EQUIPPED (SLOT {slot_pos})", True, (0, 255, 180))
-                surface.blit(slot_tag, (rect.right - slot_tag.get_width() - 10, rect.y + 11))
+                slot_tag = cache.render(font_small, f"EQUIPPED (SLOT {slot_pos})", theme.SUCCESS)
             else:
-                cd_txt = font_small.render(f"CD: {data['cooldown']}s", True, (150, 170, 190))
-                surface.blit(cd_txt, (rect.right - cd_txt.get_width() - 10, rect.y + 11))
+                slot_tag = cache.render(font_small, f"CD: {data['cooldown']}s", theme.TEXT_MUTED)
+            surface.blit(slot_tag, (rect.right - slot_tag.get_width() - 10, rect.y + 11))
 
-            # Name & Subtitle
-            name_surf = font_sub.render(data["name"], True, (255, 255, 255) if is_selected else (200, 215, 230))
+            name = widgets.fit_text(font_sub, data["name"].upper(), rect.w - 20)
+            name_surf = cache.render(font_sub, name, theme.TEXT if is_selected else theme.TEXT_MUTED)
             surface.blit(name_surf, (rect.x + 10, rect.y + 36))
 
-            sub_surf = font_small.render(data["subtitle"], True, data["color"])
+            sub_surf = cache.render(font_small, widgets.fit_text(font_small, data["subtitle"], rect.w - 20), data["color"])
             surface.blit(sub_surf, (rect.x + 10, rect.y + 58))
 
-            # Type & Radius
-            type_txt = font_small.render(f"Type: {data['stats']['Type']} | Radius: {data['stats']['Radius']}", True, (140, 160, 185))
+            stats = widgets.fit_text(
+                font_small, f"Type: {data['stats']['Type']} | Radius: {data['stats']['Radius']}", rect.w - 20
+            )
+            type_txt = cache.render(font_small, stats, theme.TEXT_MUTED)
             surface.blit(type_txt, (rect.x + 10, rect.y + 78))
 
-            # Description (wrapped 2 lines)
-            words = data["desc"].split(" ")
-            mid = len(words) // 2
-            line1 = " ".join(words[:mid])
-            line2 = " ".join(words[mid:])
-            l1_surf = font_small.render(line1, True, (160, 180, 200))
-            l2_surf = font_small.render(line2, True, (160, 180, 200))
-            surface.blit(l1_surf, (rect.x + 10, rect.y + 100))
-            surface.blit(l2_surf, (rect.x + 10, rect.y + 118))
+            step = font_body.get_linesize()
+            for line_idx, line in enumerate(self._desc_lines.get(st, [])):
+                surf = cache.render(font_body, line, theme.TEXT_MUTED)
+                surface.blit(surf, (rect.x + 10, rect.y + 98 + line_idx * step))
 
-            # Action Hint
-            act_txt = font_small.render("CLICK TO UNEQUIP ✖" if is_selected else "CLICK TO EQUIP ✚", True, (255, 100, 100) if is_selected else (0, 220, 255))
-            surface.blit(act_txt, (rect.x + rect.width // 2 - act_txt.get_width() // 2, rect.bottom - 20))
+            hint = "ENTER: UNEQUIP" if is_selected else "ENTER: EQUIP"
+            act_txt = cache.render(font_small, hint, theme.DANGER if is_selected else theme.INFO)
+            surface.blit(act_txt, (rect.centerx - act_txt.get_width() // 2, rect.bottom - 22))
 
         # Bottom Buttons
-        can_deploy = (len(self.selected_stratagems) == 4)
-        hov_deploy = mouse_pos and self.deploy_btn_rect.collidepoint(mouse_pos)
-        dep_bg = (0, 140, 100) if (can_deploy and hov_deploy) else ((0, 100, 70) if can_deploy else (35, 40, 50))
-        dep_border = (0, 255, 180) if can_deploy else (70, 80, 95)
-        pygame.draw.rect(surface, dep_bg, self.deploy_btn_rect, border_radius=8)
-        pygame.draw.rect(surface, dep_border, self.deploy_btn_rect, 2, border_radius=8)
-        
-        dep_str = "CONFIRM LOADOUT & DEPLOY ▶ (SPACE / ENTER)" if can_deploy else f"SELECT 4 STRATAGEMS ({len(self.selected_stratagems)}/4)"
-        dep_col = (255, 255, 255) if can_deploy else (140, 150, 165)
-        dep_txt = font_sub.render(dep_str, True, dep_col)
-        surface.blit(dep_txt, (self.deploy_btn_rect.centerx - dep_txt.get_width() // 2, self.deploy_btn_rect.centery - dep_txt.get_height() // 2))
+        can_deploy = len(self.selected_stratagems) == 4
+        hov_deploy = bool(mouse_pos and self.deploy_btn_rect.collidepoint(mouse_pos))
+        if can_deploy:
+            widgets.draw_panel(
+                surface,
+                self.deploy_btn_rect,
+                theme.PANEL_HOVER if hov_deploy else theme.PANEL_RAISED,
+                theme.ACCENT,
+                theme.ACCENT,
+            )
+            dep_str, dep_col = "DEPLOY [SPACE] ▶", theme.TEXT
+        else:
+            widgets.draw_panel(surface, self.deploy_btn_rect, theme.PANEL, theme.BORDER, brackets=False)
+            dep_str, dep_col = f"SELECT 4 STRATAGEMS ({len(self.selected_stratagems)}/4)", theme.TEXT_DISABLED
+        dep_txt = cache.render(font_sub, dep_str, dep_col)
+        surface.blit(dep_txt, dep_txt.get_rect(center=self.deploy_btn_rect.center))
 
-        hov_back = mouse_pos and self.back_btn_rect.collidepoint(mouse_pos)
-        back_bg = (35, 45, 65) if hov_back else (22, 30, 44)
-        pygame.draw.rect(surface, back_bg, self.back_btn_rect, border_radius=8)
-        pygame.draw.rect(surface, (70, 95, 130), self.back_btn_rect, 1, border_radius=8)
-        back_txt = font_small.render("◀ BACK TO MISSIONS (ESC)", True, (180, 200, 225))
-        surface.blit(back_txt, (self.back_btn_rect.centerx - back_txt.get_width() // 2, self.back_btn_rect.centery - back_txt.get_height() // 2))
+        hov_back = bool(mouse_pos and self.back_btn_rect.collidepoint(mouse_pos))
+        widgets.draw_panel(
+            surface,
+            self.back_btn_rect,
+            theme.PANEL_HOVER if hov_back else theme.PANEL_RAISED,
+            theme.BORDER_STRONG,
+            brackets=False,
+        )
+        back_txt = cache.render(font_sub, "◀ BACK [ESC]", theme.TEXT)
+        surface.blit(back_txt, back_txt.get_rect(center=self.back_btn_rect.center))
 
 
 # =====================================================================
@@ -1803,6 +1837,12 @@ class AirStrikeWeaponMenu:
         self.rearm_timer = 0.0
 
         self.card_rects = {}
+        self._font_title = theme.get_font("title")
+        self._font_sub = theme.get_font("heading")
+        self._font_small = theme.get_font("mono_small")
+        self._font_label = theme.get_font("label")
+        self._cache = widgets.TextCache(256)
+        self._overlay = widgets.make_overlay((self.width, self.height), theme.OVERLAY_RGBA)
         self._init_layout()
 
     def _init_layout(self):
@@ -1901,19 +1941,24 @@ class AirStrikeWeaponMenu:
 
         return None
 
-    def draw(self, surface, mouse_pos, font_title, font_sub, font_body, font_small):
+    def draw(self, surface, mouse_pos, font_title=None, font_sub=None, font_body=None, font_small=None):
         if not self.is_open:
             return
+        fonts = (self._font_title, self._font_sub, self._font_small, self._font_label)
+        if None in fonts:
+            return
+        title_font, sub_font, small_font, label_font = fonts
+        cache = self._cache
 
-        overlay = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
-        overlay.fill((8, 12, 20, 220))
-        surface.blit(overlay, (0, 0))
+        surface.blit(self._overlay, (0, 0))
 
-        title_surf = font_title.render("EAGLE-1 CLOSE AIR SUPPORT ARSENAL", True, (255, 220, 80))
-        surface.blit(title_surf, (self.width // 2 - title_surf.get_width() // 2, 85))
+        title_surf = cache.render(title_font, "EAGLE-1 CLOSE AIR SUPPORT ARSENAL", theme.ACCENT)
+        surface.blit(title_surf, (self.width // 2 - title_surf.get_width() // 2, 82))
 
-        hint_surf = font_sub.render("Select Active Air Strike with [1-8] or Click. Fire with [C]. Close with [V] or [ESC].", True, (160, 190, 220))
-        surface.blit(hint_surf, (self.width // 2 - hint_surf.get_width() // 2, 125))
+        hint_surf = cache.render(
+            small_font, "CLICK A STRATAGEM TO SELECT · QUICKBAR [1-5] · FIRE [C] · CLOSE [V] / [ESC]", theme.TEXT_MUTED
+        )
+        surface.blit(hint_surf, (self.width // 2 - hint_surf.get_width() // 2, 122))
 
         for st, rect in self.card_rects.items():
             data = AirStrikeType.DATA[st]
@@ -1924,90 +1969,46 @@ class AirStrikeWeaponMenu:
             max_ch = data.get("max_charges", 1)
             is_ready = self.is_ready(st)
 
-            bg_col = (26, 36, 52) if is_sel else ((20, 28, 42) if is_hov else (14, 20, 32))
-            pygame.draw.rect(surface, bg_col, rect, border_radius=8)
+            if is_sel:
+                widgets.draw_panel(surface, rect, theme.PANEL_HOVER, data["border_color"], data["border_color"])
+            elif is_hov:
+                widgets.draw_panel(surface, rect, theme.PANEL_RAISED, theme.BORDER_STRONG, theme.ACCENT)
+            else:
+                widgets.draw_panel(surface, rect, theme.PANEL_RAISED, theme.BORDER, brackets=False)
 
-            border_col = data["border_color"] if is_sel else ((100, 140, 180) if is_hov else (40, 55, 75))
-            border_w = 3 if is_sel else 1
-            pygame.draw.rect(surface, border_col, rect, border_w, border_radius=8)
-
-            badge_rect = pygame.Rect(rect.x + 8, rect.y + 8, 26, 22)
-            pygame.draw.rect(surface, (30, 42, 60), badge_rect, border_radius=4)
-            pygame.draw.rect(surface, (80, 110, 145), badge_rect, 1, border_radius=4)
-            key_txt = font_small.render(f"[{data['key']}]", True, (255, 230, 100))
-            surface.blit(key_txt, (badge_rect.centerx - key_txt.get_width() // 2, badge_rect.centery - key_txt.get_height() // 2))
+            badge_rect = pygame.Rect(rect.x + 8, rect.y + 8, 40, 22)
+            pygame.draw.rect(surface, theme.PANEL, badge_rect)
+            pygame.draw.rect(surface, theme.BORDER_STRONG, badge_rect, 1)
+            sym_txt = cache.render(small_font, str(data["symbol"]), data["color"])
+            surface.blit(sym_txt, sym_txt.get_rect(center=badge_rect.center))
 
             if self.is_rearming:
-                status_txt = font_small.render(f"REARM {self.rearm_timer:.1f}s", True, (255, 140, 40))
+                status_txt = cache.render(small_font, f"REARM {self.rearm_timer:.1f}s", theme.WARNING)
             elif cd > 0:
-                status_txt = font_small.render(f"CD {cd:.1f}s", True, (255, 140, 40))
+                status_txt = cache.render(small_font, f"CD {cd:.1f}s", theme.WARNING)
             elif ch == 0:
-                status_txt = font_small.render("EMPTY (R)", True, (255, 80, 80))
+                status_txt = cache.render(small_font, "EMPTY (R)", theme.DANGER)
             else:
-                status_txt = font_small.render(f"{ch}/{max_ch} READY", True, (46, 204, 113))
+                status_txt = cache.render(small_font, f"{ch}/{max_ch} READY", theme.SUCCESS)
             surface.blit(status_txt, (rect.right - status_txt.get_width() - 10, rect.y + 11))
 
-            name_col = (255, 255, 255) if is_ready else (170, 180, 195)
-            name_txt = font_sub.render(data["name"], True, name_col)
+            name = widgets.fit_text(label_font, data["name"].upper(), rect.width - 20)
+            name_txt = cache.render(label_font, name, theme.TEXT if is_ready else theme.TEXT_MUTED)
             surface.blit(name_txt, (rect.x + 10, rect.y + 38))
 
-            sub_txt = font_small.render(data["subtitle"], True, data["color"])
-            surface.blit(sub_txt, (rect.x + 10, rect.y + 60))
+            sub = widgets.fit_text(small_font, data["subtitle"], rect.width - 20)
+            surface.blit(cache.render(small_font, sub, data["color"]), (rect.x + 10, rect.y + 62))
 
-            stat_str = f"Uses: {ch}/{max_ch} | Delay: {data.get('delay', 2.0):.1f}s"
-            stat_txt = font_small.render(stat_str, True, (140, 160, 185))
-            surface.blit(stat_txt, (rect.x + 10, rect.y + 82))
+            stat_str = widgets.fit_text(small_font, f"Uses: {ch}/{max_ch} | Delay: {data.get('delay', 2.0):.1f}s", rect.width - 20)
+            surface.blit(cache.render(small_font, stat_str, theme.TEXT_MUTED), (rect.x + 10, rect.y + 84))
 
-            bar_x = rect.x + 10
-            bar_y = rect.bottom - 16
-            bar_w = rect.width - 20
-            bar_h = 6
-            pygame.draw.rect(surface, (25, 32, 45), (bar_x, bar_y, bar_w, bar_h), border_radius=2)
+            bar_rect = pygame.Rect(rect.x + 10, rect.bottom - 18, rect.width - 20, 6)
             if self.is_rearming:
-                fill_w = int((1.0 - (self.rearm_timer / EAGLE_REARM_TIME)) * bar_w)
-                pygame.draw.rect(surface, (255, 140, 0), (bar_x, bar_y, fill_w, bar_h), border_radius=2)
+                widgets.draw_bar(surface, bar_rect, 1.0 - (self.rearm_timer / EAGLE_REARM_TIME), theme.WARNING, border=None)
             elif cd > 0:
-                max_cd = data.get("delay", 2.0)
-                fill_w = int((1.0 - (cd / max(0.1, max_cd))) * bar_w)
-                pygame.draw.rect(surface, (255, 140, 0), (bar_x, bar_y, fill_w, bar_h), border_radius=2)
-            elif ch > 0:
-                fill_w = int((ch / max_ch) * bar_w)
-                pygame.draw.rect(surface, (46, 204, 113), (bar_x, bar_y, fill_w, bar_h), border_radius=2)
-
-    def draw_hud_quickbar(self, surface, x, y, font_sub, font_small):
-        data = AirStrikeType.DATA[self.selected_type]
-        cd = self.cooldowns[self.selected_type]
-        ch = self.charges.get(self.selected_type, 0)
-        max_ch = data.get("max_charges", 1)
-        is_ready = self.is_ready(self.selected_type)
-
-        box_w = 260
-        box_h = 56
-        pygame.draw.rect(surface, (16, 22, 34), (x, y, box_w, box_h), border_radius=6)
-        pygame.draw.rect(surface, (60, 85, 120), (x, y, box_w, box_h), 1, border_radius=6)
-
-        title_col = data["color"] if is_ready else (180, 190, 205)
-        title_txt = font_sub.render(f"[C] {data['name']}", True, title_col)
-        surface.blit(title_txt, (x + 8, y + 6))
-
-        if self.is_rearming:
-            status_str = f"EAGLE REARMING: {self.rearm_timer:.1f}s"
-            status_col = (255, 140, 40)
-        elif cd > 0:
-            status_str = f"DELAY: {cd:.1f}s ({ch}/{max_ch})"
-            status_col = (255, 140, 40)
-        elif ch == 0:
-            status_str = "DEPLETED [R: REARM]"
-            status_col = (255, 75, 75)
-        else:
-            status_str = f"READY: {ch}/{max_ch} [FIRE: C]"
-            status_col = (46, 204, 113)
-
-        status_txt = font_small.render(status_str, True, status_col)
-        surface.blit(status_txt, (x + 8, y + 26))
-
-        menu_hint = font_small.render("[V] Arsenal Menu  [R] Eagle Rearm", True, (130, 150, 175))
-        surface.blit(menu_hint, (x + 8, y + 40))
+                widgets.draw_bar(surface, bar_rect, 1.0 - (cd / max(0.1, data.get("delay", 2.0))), theme.WARNING, border=None)
+            else:
+                widgets.draw_bar(surface, bar_rect, (ch / max_ch) if ch > 0 else 0.0, theme.SUCCESS, border=None)
 
 
 HERO_STRATAGEM_SEQUENCES = [
@@ -2031,6 +2032,14 @@ class GroundSupportManager:
     Fabricator Outposts, Air Strikes, Aiming Reticles, Supply Drops, and CAS Missions.
     """
     def __init__(self):
+        self._hud_font_tiny = theme.get_font("mono_tiny")
+        self._hud_font_small = theme.get_font("mono_small")
+        self._hud_font_label = theme.get_font("label")
+        self._hud_font_heading = theme.get_font("heading")
+        self._hud_ready = None not in (
+            self._hud_font_tiny, self._hud_font_small, self._hud_font_label, self._hud_font_heading
+        )
+        self._hud_cache = widgets.TextCache(768)
         self.units = []
         self.obstacles = []
         self.enemy_ground_units = []
@@ -2922,11 +2931,13 @@ class GroundSupportManager:
                     gauge_r = 44
                     pygame.draw.circle(surface, (30, 42, 60), (int(six), int(siy)), gauge_r, 2)
                     gauge_col = (0, 255, 200) if pct > 0.3 else (255, 80, 80)
-                    font_g = pygame.font.SysFont("arial", 11, bold=True)
-                    sm_txt = font_g.render(f"SLOW-MO: {self.slow_mo_energy:.1f}s", True, gauge_col)
-                    surface.blit(sm_txt, (int(six - sm_txt.get_width() // 2), int(siy + gauge_r + 4)))
-                    rel_txt = font_g.render("RELEASE TO DEPLOY", True, (255, 220, 80))
-                    surface.blit(rel_txt, (int(six - rel_txt.get_width() // 2), int(siy - gauge_r - 16)))
+                    if self._hud_ready:
+                        sm_txt = self._hud_cache.render(
+                            self._hud_font_tiny, f"SLOW-MO: {self.slow_mo_energy:.1f}s", gauge_col
+                        )
+                        surface.blit(sm_txt, (int(six - sm_txt.get_width() // 2), int(siy + gauge_r + 4)))
+                        rel_txt = self._hud_cache.render(self._hud_font_tiny, "RELEASE TO DEPLOY", theme.ACCENT)
+                        surface.blit(rel_txt, (int(six - rel_txt.get_width() // 2), int(siy - gauge_r - 16)))
 
     def draw_minimap(self, minimap_surface, scale):
         bx = int(self.beacon.x * scale)
@@ -2987,18 +2998,24 @@ class GroundSupportManager:
                 pygame.draw.circle(minimap_surface, (255, 40, 40), (cx, cy), pulse, 1)
 
     def draw_hud(self, surface, screen_w, screen_h, font, font_title, font_sub, font_small, player, mouse_pos=None):
+        # The font parameters are kept for call compatibility; the HUD uses the shared theme fonts.
+        if not self._hud_ready:
+            return
+        cache = self._hud_cache
+        tiny, label, heading = self._hud_font_tiny, self._hud_font_label, self._hud_font_heading
+
         # 0. Boss Health Bar (Factory Strider)
         if self.factory_strider and self.factory_strider.is_alive:
-            boss_w = 420
-            boss_h = 14
-            bx = (screen_w - boss_w) // 2
-            by = 48
-            pygame.draw.rect(surface, (18, 22, 32), (bx - 4, by - 4, boss_w + 8, boss_h + 8), border_radius=6)
-            pygame.draw.rect(surface, (255, 40, 40), (bx - 4, by - 4, boss_w + 8, boss_h + 8), 1, border_radius=6)
+            bar = hud_layout.BOSS_BAR_RECT
+            widgets.draw_panel(surface, bar.inflate(8, 8), theme.PANEL, theme.DANGER, brackets=False)
             hp_pct = max(0.0, self.factory_strider.health / self.factory_strider.max_health)
-            pygame.draw.rect(surface, (255, 40, 40), (bx, by, int(boss_w * hp_pct), boss_h), border_radius=4)
-            strider_lbl = font_small.render(f"FACTORY STRIDER (BOSS) - {int(self.factory_strider.health)} / {int(self.factory_strider.max_health)} HP", True, (255, 220, 220))
-            surface.blit(strider_lbl, (screen_w // 2 - strider_lbl.get_width() // 2, by - 16))
+            widgets.draw_bar(surface, bar, hp_pct, theme.DANGER, border=None)
+            strider_lbl = cache.render(
+                tiny,
+                f"FACTORY STRIDER (BOSS) {int(self.factory_strider.health)}/{int(self.factory_strider.max_health)} HP",
+                theme.TEXT,
+            )
+            surface.blit(strider_lbl, strider_lbl.get_rect(center=bar.center))
 
         # 1. Squad Status Panel (Only if mission features ground forces)
         has_ground = True
@@ -3006,107 +3023,93 @@ class GroundSupportManager:
             has_ground = False
 
         if has_ground:
-            panel_x = 24
-            panel_y = 66
-            panel_w = 210
-            panel_h = 74
-            pygame.draw.rect(surface, (14, 20, 32), (panel_x, panel_y, panel_w, panel_h), border_radius=6)
-            pygame.draw.rect(surface, (50, 75, 110), (panel_x, panel_y, panel_w, panel_h), 1, border_radius=6)
+            panel = hud_layout.SQUAD_PANEL
+            widgets.draw_panel(surface, panel, theme.PANEL, theme.BORDER, brackets=False)
 
             extracted_count = len([u for u in self.units if u.state == "EXTRACTED"])
             if extracted_count > 0:
-                header_str = f"HELLDIVERS: {self.survivors_count}/{HELLDIVER_COUNT} ({extracted_count} EXTRACTED)"
+                header_str = f"HELLDIVERS {self.survivors_count}/{HELLDIVER_COUNT} ({extracted_count} EXTRACTED)"
             else:
-                header_str = f"HELLDIVERS: {self.survivors_count}/{HELLDIVER_COUNT} ALIVE"
-            header_col = (0, 220, 255) if self.survivors_count > 0 else (255, 70, 70)
-            header_lbl = font_small.render(header_str, True, header_col)
-            surface.blit(header_lbl, (panel_x + 8, panel_y + 4))
+                header_str = f"HELLDIVERS {self.survivors_count}/{HELLDIVER_COUNT} ALIVE"
+            header_col = theme.INFO if self.survivors_count > 0 else theme.DANGER
+            surface.blit(cache.render(tiny, header_str, header_col), (panel.x + 8, panel.y + 5))
 
-            row_y = panel_y + 20
+            row_y = panel.y + 24
             for i, unit in enumerate(self.units):
-                ux = panel_x + 8 + (i % 2) * 96
+                ux = panel.x + 8 + (i % 2) * 118
                 uy = row_y + (i // 2) * 24
-                name_txt = font_small.render(f"V{i+1}:", True, (180, 200, 220))
-                surface.blit(name_txt, (ux, uy))
-
-                bar_w = 58
-                bar_h = 5
-                bx = ux + 24
-                by = uy + 4
-                pygame.draw.rect(surface, (20, 25, 38), (bx, by, bar_w, bar_h))
+                surface.blit(cache.render(tiny, f"V{i+1}", theme.TEXT_MUTED), (ux, uy))
+                bar_rect = pygame.Rect(ux + 24, uy + 4, 78, 6)
                 if unit.state == "EXTRACTED":
-                    ext_txt = font_small.render("EXTRACTED", True, (0, 255, 180))
-                    surface.blit(ext_txt, (bx, by - 3))
+                    surface.blit(cache.render(tiny, "EXTRACTED", theme.SUCCESS), (bar_rect.x, uy))
                 elif unit.is_alive:
-                    hp_w = max(0, int((unit.health / unit.max_health) * bar_w))
-                    hp_col = (46, 204, 113) if unit.health > 50 else (241, 196, 15)
-                    pygame.draw.rect(surface, hp_col, (bx, by, hp_w, bar_h))
+                    widgets.draw_bar(
+                        surface, bar_rect, unit.health / unit.max_health,
+                        theme.SUCCESS if unit.health > 50 else theme.WARNING, border=None,
+                    )
                 else:
-                    kia_txt = font_small.render("K.I.A.", True, (255, 75, 75))
-                    surface.blit(kia_txt, (bx, by - 3))
+                    surface.blit(cache.render(tiny, "K.I.A.", theme.DANGER), (bar_rect.x, uy))
 
         # Stratagem Hero Minigame Panel (Fallback when Super Destroyer cinematic is not active)
         if self.weapon_menu.is_rearming and not self.super_destroyer.is_active:
-            hero_w = 420
-            hero_h = 80
-            hx = screen_w // 2 - hero_w // 2
-            hy = 100
-            pygame.draw.rect(surface, (14, 18, 28), (hx, hy, hero_w, hero_h), border_radius=8)
-            pygame.draw.rect(surface, (255, 200, 40), (hx, hy, hero_w, hero_h), 2, border_radius=8)
+            hero = hud_layout.HERO_PANEL_RECT
+            widgets.draw_panel(surface, hero, theme.PANEL, theme.ACCENT_DIM, theme.ACCENT)
 
-            htitle_txt = font_sub.render(f"★ STRATAGEM HERO ★ [REARM: {self.weapon_menu.rearm_timer:.1f}s]", True, (255, 220, 50))
-            surface.blit(htitle_txt, (screen_w // 2 - htitle_txt.get_width() // 2, hy + 6))
+            htitle_txt = cache.render(
+                label, f"// STRATAGEM HERO //  REARM {self.weapon_menu.rearm_timer:.1f}s", theme.ACCENT
+            )
+            surface.blit(htitle_txt, (hero.centerx - htitle_txt.get_width() // 2, hero.y + 6))
 
-            hscore_txt = font_small.render(f"COMBO: {self.hero_score} PTS   |   BEST: {self.hero_highscore} PTS", True, (0, 220, 255))
-            surface.blit(hscore_txt, (screen_w // 2 - hscore_txt.get_width() // 2, hy + 26))
+            hscore_txt = cache.render(
+                tiny, f"COMBO: {self.hero_score} PTS   |   BEST: {self.hero_highscore} PTS", theme.INFO
+            )
+            surface.blit(hscore_txt, (hero.centerx - hscore_txt.get_width() // 2, hero.y + 28))
 
-            arrow_symbols = {"UP": "▲", "DOWN": "▼", "LEFT": "◄", "RIGHT": "►"}
             seq_len = len(self.hero_sequence)
             box_sz = 26
             gap = 8
-            start_ax = screen_w // 2 - (seq_len * box_sz + (seq_len - 1) * gap) // 2
-            ay = hy + 46
+            start_ax = hero.centerx - (seq_len * box_sz + (seq_len - 1) * gap) // 2
+            ay = hero.y + 46
 
             for s_idx, direction in enumerate(self.hero_sequence):
                 bx = start_ax + s_idx * (box_sz + gap)
                 b_rect = pygame.Rect(bx, ay, box_sz, box_sz)
                 if s_idx < self.hero_index:
-                    pygame.draw.rect(surface, (0, 160, 100), b_rect, border_radius=4)
-                    arrow_col = (255, 255, 255)
+                    widgets.draw_panel(surface, b_rect, theme.lerp_color(theme.PANEL, theme.SUCCESS, 0.5), theme.SUCCESS, brackets=False)
+                    arrow_col = theme.TEXT
                 elif s_idx == self.hero_index:
                     pulse = int(180 + 75 * math.sin(pygame.time.get_ticks() * 0.02))
-                    pygame.draw.rect(surface, (220, 140, 20), b_rect, border_radius=4)
-                    pygame.draw.rect(surface, (255, pulse, 50), b_rect, 2, border_radius=4)
-                    arrow_col = (255, 255, 200)
+                    widgets.draw_panel(surface, b_rect, theme.lerp_color(theme.PANEL, theme.WARNING, 0.5), (255, pulse, 50), brackets=False)
+                    arrow_col = theme.TEXT
                 else:
-                    pygame.draw.rect(surface, (25, 34, 48), b_rect, border_radius=4)
-                    pygame.draw.rect(surface, (60, 80, 105), b_rect, 1, border_radius=4)
-                    arrow_col = (130, 150, 175)
+                    widgets.draw_panel(surface, b_rect, theme.PANEL_RAISED, theme.BORDER, brackets=False)
+                    arrow_col = theme.TEXT_MUTED
 
-                sym = arrow_symbols.get(direction, "?")
-                sym_txt = font_sub.render(sym, True, arrow_col)
-                surface.blit(sym_txt, (bx + box_sz // 2 - sym_txt.get_width() // 2, ay + box_sz // 2 - sym_txt.get_height() // 2))
+                sym_txt = cache.render(heading, theme.ARROW_GLYPHS.get(direction, "?"), arrow_col)
+                surface.blit(sym_txt, sym_txt.get_rect(center=b_rect.center))
 
-        # 2. Objective Status Banner
-        obj_y = 66
+        # 2. Objective Status Banner (only for CAS requests, extraction and failure; the mission
+        # objective itself is shown by the main HUD banner)
+        obj_str = None
         if self.active_callout and self.active_callout.active:
             req_name = self.active_callout.data["name"].upper()
             rem = int(self.active_callout.lifetime)
             obj_str = f"SQUAD CAS REQUEST: {req_name} ({rem:02d}s) - DEPLOY [C]!"
-            obj_col = (255, 215, 0)
+            obj_col = theme.ACCENT
         elif self.beacon.active and not self.beacon.pelican_departed:
             rem = int(self.beacon.countdown)
             obj_str = f"EXTRACTION PELICAN INBOUND: {rem:02d}s" if rem > 0 else "PELICAN-1 LANDED - BOARD SHUTTLE!"
-            obj_col = (255, 200, 50) if rem > 0 else (0, 255, 180)
+            obj_col = theme.ACCENT if rem > 0 else theme.SUCCESS
         elif self.objective_phase == "FAILED":
             obj_str = "OBJECTIVE FAILED: ALL ALLIES ELIMINATED"
-            obj_col = (255, 70, 70)
-        else:
-            obj_str = "OBJECTIVE: DEFEND OUTPOST & ELIMINATE ENEMY GROUND FORCES"
-            obj_col = (0, 220, 255)
+            obj_col = theme.DANGER
 
-        obj_txt = font_small.render(obj_str, True, obj_col)
-        surface.blit(obj_txt, (screen_w // 2 - obj_txt.get_width() // 2, obj_y))
+        if obj_str:
+            obj_txt = cache.render(label, obj_str, obj_col)
+            obj_rect = pygame.Rect(0, hud_layout.GS_OBJECTIVE_Y, obj_txt.get_width() + 24, 20)
+            obj_rect.centerx = screen_w // 2
+            widgets.draw_panel(surface, obj_rect, theme.PANEL, obj_col, brackets=False)
+            surface.blit(obj_txt, obj_txt.get_rect(center=obj_rect.center))
 
         # 3. Off-Screen Compass Pointer to Active Callout or Squad
         target_point = None
@@ -3133,81 +3136,69 @@ class GroundSupportManager:
                 angle_to_tgt = math.atan2(scy - (player.pos_y + 18), scx - (player.pos_x + 18))
 
                 arrow_len = 16
-                arrow_col = (255, 215, 0) if target_tag == "CAS TARGET" else (0, 220, 255)
+                arrow_col = theme.ACCENT if target_tag == "CAS TARGET" else theme.INFO
                 p1 = (arrow_cx + math.cos(angle_to_tgt) * arrow_len, arrow_cy + math.sin(angle_to_tgt) * arrow_len)
                 p2 = (arrow_cx + math.cos(angle_to_tgt + 2.5) * (arrow_len * 0.6), arrow_cy + math.sin(angle_to_tgt + 2.5) * (arrow_len * 0.6))
                 p3 = (arrow_cx + math.cos(angle_to_tgt - 2.5) * (arrow_len * 0.6), arrow_cy + math.sin(angle_to_tgt - 2.5) * (arrow_len * 0.6))
                 pygame.draw.polygon(surface, arrow_col, [p1, p2, p3])
 
                 dist_m = int(math.hypot(scx - player.pos_x, scy - player.pos_y) / 10.0)
-                dist_txt = font_small.render(f"{target_tag} {dist_m}m", True, arrow_col)
+                dist_txt = cache.render(tiny, f"{target_tag} {dist_m}m", arrow_col)
                 surface.blit(dist_txt, (arrow_cx - dist_txt.get_width() // 2, arrow_cy + 10))
 
         # 4. Danger Alert Warning Banner
         if self.danger_alert_timer > 0:
-            banner_w = 440
-            banner_h = 28
-            bx = screen_w // 2 - banner_w // 2
-            by = 88
+            banner = hud_layout.DANGER_BANNER_RECT
             pulse = int(180 + 75 * math.sin(pygame.time.get_ticks() * 0.015))
-            pygame.draw.rect(surface, (65, 15, 15), (bx, by, banner_w, banner_h), border_radius=4)
-            pygame.draw.rect(surface, (255, 60, 60), (bx, by, banner_w, banner_h), 1, border_radius=4)
-            alert_lbl = font_small.render(f"⚠️  {self.danger_alert_text}  ⚠️", True, (255, pulse, pulse))
-            surface.blit(alert_lbl, (screen_w // 2 - alert_lbl.get_width() // 2, by + 6))
+            widgets.draw_panel(
+                surface, banner, theme.lerp_color(theme.PANEL, theme.DANGER, 0.3), theme.DANGER, brackets=False
+            )
+            alert_lbl = cache.render(label, f"! {self.danger_alert_text} !", (255, pulse, pulse))
+            surface.blit(alert_lbl, alert_lbl.get_rect(center=banner.center))
 
         # 5. Tactical 5-Slot Weapon Systems Dock & Resupply
-        dock_x = screen_w - 460
-        dock_y = screen_h - 94
-        dock_w = 444
-        dock_h = 86
+        dock = hud_layout.WEAPON_DOCK_RECT
+        dock_x, dock_y, dock_w = dock.x, dock.y, dock.w
+        widgets.draw_panel(surface, dock, theme.PANEL, theme.BORDER, theme.ACCENT)
 
-        # Dock Background Panel
-        pygame.draw.rect(surface, (12, 16, 26), (dock_x, dock_y, dock_w, dock_h), border_radius=6)
-        pygame.draw.rect(surface, (45, 62, 88), (dock_x, dock_y, dock_w, dock_h), 1, border_radius=6)
+        surface.blit(cache.render(tiny, "WEAPONS [WHEEL / 1-5]", theme.TEXT_MUTED), (dock_x + 10, dock_y + 6))
 
-        # Header Row
-        hdr_txt = font_small.render("WEAPONS [SCROLL / 1-5]", True, (140, 165, 195))
-        surface.blit(hdr_txt, (dock_x + 8, dock_y + 5))
-
-        # Slow-mo energy indicator in dock if aiming
         if self.aiming_active and self.equipped_slot > 0:
-            sm_col = (0, 255, 200) if self.slow_mo_energy > 0.9 else (255, 80, 80)
-            sm_lbl = font_small.render(f"SLOW-MO: {self.slow_mo_energy:.1f}s", True, sm_col)
-            surface.blit(sm_lbl, (dock_x + 160, dock_y + 5))
+            sm_col = theme.SUCCESS if self.slow_mo_energy > 0.9 else theme.DANGER
+            surface.blit(cache.render(tiny, f"SLOW-MO: {self.slow_mo_energy:.1f}s", sm_col), (dock_x + 170, dock_y + 6))
 
         supply_ready = (self.supply_cooldown <= 0)
-        sup_col = (0, 220, 255) if supply_ready else (160, 175, 190)
         sup_str = "[X] RESUPPLY (READY)" if supply_ready else f"[X] RESUPPLY ({self.supply_cooldown:.1f}s)"
-        sup_txt = font_small.render(sup_str, True, sup_col)
-        surface.blit(sup_txt, (dock_x + dock_w - sup_txt.get_width() - 8, dock_y + 5))
+        sup_txt = cache.render(tiny, sup_str, theme.INFO if supply_ready else theme.TEXT_MUTED)
+        surface.blit(sup_txt, (dock_x + dock_w - sup_txt.get_width() - 10, dock_y + 6))
 
-        # 5 Weapon Slots
         slot_w = 82
         slot_h = 56
         slot_gap = 5
         start_sx = dock_x + 6
         sy = dock_y + 24
+        name_w = slot_w - 8
+
+        def slot_panel(rect, active, border):
+            widgets.draw_panel(
+                surface, rect, theme.PANEL_HOVER if active else theme.PANEL_RAISED,
+                theme.ACCENT if active else border, brackets=False,
+            )
+
+        def centered(text_surf, rect, y):
+            surface.blit(text_surf, (rect.centerx - text_surf.get_width() // 2, y))
 
         # Slot 0: Main Gun (Quad-Autocannon)
         s0_rect = pygame.Rect(start_sx, sy, slot_w, slot_h)
         is_s0 = (self.equipped_slot == 0)
-        s0_bg = (24, 42, 60) if is_s0 else (16, 22, 32)
-        s0_border = (0, 255, 200) if is_s0 else (45, 60, 80)
-        s0_bwidth = 2 if is_s0 else 1
-        pygame.draw.rect(surface, s0_bg, s0_rect, border_radius=5)
-        pygame.draw.rect(surface, s0_border, s0_rect, s0_bwidth, border_radius=5)
-
-        s0_tag = font_small.render("[1] GUN", True, (255, 220, 80) if is_s0 else (140, 160, 185))
-        surface.blit(s0_tag, (start_sx + 4, sy + 3))
-
-        s0_name = font.render("CANNON", True, (255, 255, 255) if is_s0 else (180, 195, 210))
-        surface.blit(s0_name, (start_sx + slot_w // 2 - s0_name.get_width() // 2, sy + 18))
+        slot_panel(s0_rect, is_s0, theme.BORDER)
+        surface.blit(cache.render(tiny, "[1] GUN", theme.ACCENT if is_s0 else theme.TEXT_MUTED), (start_sx + 4, sy + 3))
+        centered(cache.render(label, "CANNON", theme.TEXT if is_s0 else theme.TEXT_MUTED), s0_rect, sy + 17)
 
         is_reloading = getattr(player, 'reloading', False)
         s0_stat_str = "RELOAD" if is_reloading else ("ACTIVE" if is_s0 else "READY")
-        s0_stat_col = (255, 140, 40) if is_reloading else ((0, 255, 200) if is_s0 else (46, 204, 113))
-        s0_stat = font_small.render(s0_stat_str, True, s0_stat_col)
-        surface.blit(s0_stat, (start_sx + slot_w // 2 - s0_stat.get_width() // 2, sy + 37))
+        s0_stat_col = theme.WARNING if is_reloading else (theme.ACCENT if is_s0 else theme.SUCCESS)
+        centered(cache.render(tiny, s0_stat_str, s0_stat_col), s0_rect, sy + 38)
 
         # Slots 1 to 4: Chosen Stratagems
         for idx in range(4):
@@ -3223,48 +3214,35 @@ class GroundSupportManager:
                 max_ch = st_data.get("max_charges", 1)
                 is_ready = self.weapon_menu.is_ready(st_id)
 
-                bg_col = (28, 42, 62) if is_active else (16, 22, 32)
-                border_col = (0, 255, 200) if is_active else (st_data["border_color"] if is_ready else (45, 55, 70))
-                border_w = 2 if is_active else 1
+                slot_panel(s_rect, is_active, st_data["border_color"] if is_ready else theme.BORDER)
 
-                pygame.draw.rect(surface, bg_col, s_rect, border_radius=5)
-                pygame.draw.rect(surface, border_col, s_rect, border_w, border_radius=5)
-
-                tag_txt = font_small.render(f"[{idx+2}] {st_data['symbol']}", True, (255, 220, 80) if is_active else st_data["color"])
+                tag_txt = cache.render(tiny, f"[{idx+2}] {st_data['symbol']}", theme.ACCENT if is_active else st_data["color"])
                 surface.blit(tag_txt, (sx + 4, sy + 3))
 
-                ch_col = (0, 255, 200) if ch > 0 else (255, 80, 80)
-                ch_txt = font_small.render(f"x{ch}", True, ch_col)
+                ch_txt = cache.render(tiny, f"x{ch}", theme.SUCCESS if ch > 0 else theme.DANGER)
                 surface.blit(ch_txt, (s_rect.right - ch_txt.get_width() - 4, sy + 3))
 
-                name_short = st_data["name"][:7]
-                name_txt = font.render(name_short, True, (255, 255, 255) if is_active else (180, 195, 210))
-                surface.blit(name_txt, (sx + slot_w // 2 - name_txt.get_width() // 2, sy + 18))
+                name_short = widgets.fit_text(label, st_data["name"].upper(), name_w)
+                centered(cache.render(label, name_short, theme.TEXT if is_active else theme.TEXT_MUTED), s_rect, sy + 17)
 
                 if self.weapon_menu.is_rearming:
-                    stat_txt = font_small.render(f"R:{self.weapon_menu.rearm_timer:.0f}s", True, (255, 140, 40))
-                    surface.blit(stat_txt, (sx + slot_w // 2 - stat_txt.get_width() // 2, sy + 37))
+                    stat_txt = cache.render(tiny, f"R:{self.weapon_menu.rearm_timer:.0f}s", theme.WARNING)
                 elif cd > 0:
-                    stat_txt = font_small.render(f"CD:{cd:.1f}s", True, (255, 140, 40))
-                    surface.blit(stat_txt, (sx + slot_w // 2 - stat_txt.get_width() // 2, sy + 37))
+                    stat_txt = cache.render(tiny, f"CD:{cd:.1f}s", theme.WARNING)
                 elif ch == 0:
-                    stat_txt = font_small.render("EMPTY [R]", True, (255, 75, 75))
-                    surface.blit(stat_txt, (sx + slot_w // 2 - stat_txt.get_width() // 2, sy + 37))
+                    stat_txt = cache.render(tiny, "EMPTY [R]", theme.DANGER)
+                elif is_active and self.aiming_active:
+                    stat_txt = cache.render(tiny, "AIMING", theme.ACCENT)
+                elif is_active:
+                    stat_txt = cache.render(tiny, "EQUIPPED", theme.ACCENT)
                 else:
-                    if is_active and self.aiming_active:
-                        stat_txt = font_small.render("AIMING", True, (0, 255, 200))
-                    elif is_active:
-                        stat_txt = font_small.render("EQUIPPED", True, (0, 255, 200))
-                    else:
-                        stat_txt = font_small.render(f"{ch}/{max_ch}", True, (46, 204, 113))
-                    surface.blit(stat_txt, (sx + slot_w // 2 - stat_txt.get_width() // 2, sy + 37))
+                    stat_txt = cache.render(tiny, f"{ch}/{max_ch}", theme.SUCCESS)
+                centered(stat_txt, s_rect, sy + 38)
             else:
-                # Empty slot
-                pygame.draw.rect(surface, (14, 18, 26), s_rect, border_radius=5)
-                pygame.draw.rect(surface, (40, 50, 65), s_rect, 1, border_radius=5)
-                emp_txt = font_small.render("EMPTY", True, (90, 110, 130))
-                surface.blit(emp_txt, (sx + slot_w // 2 - emp_txt.get_width() // 2, sy + 20))
+                widgets.draw_panel(surface, s_rect, theme.PANEL, theme.BORDER, brackets=False)
+                emp_txt = cache.render(tiny, "EMPTY", theme.TEXT_DISABLED)
+                surface.blit(emp_txt, emp_txt.get_rect(center=s_rect.center))
 
         # 6. Weapon Arsenal Menu (if open)
         if self.weapon_menu.is_open:
-            self.weapon_menu.draw(surface, mouse_pos, font_title, font_sub, font, font_small)
+            self.weapon_menu.draw(surface, mouse_pos)
