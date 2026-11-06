@@ -26,6 +26,7 @@ from eagle1.systems.powerups import (
 from eagle1.ui import hud_layout, theme, widgets
 from eagle1.ui.hud import HudRenderer
 from eagle1.ui.help_menu import HelpMenu
+from eagle1.ui.lock_reticle import draw_lock_brackets
 from eagle1.ui.mission_select_menu import MissionSelectMenu
 from eagle1.ui.menu_nav import MenuButton, MenuNavigator, VARIANT_DANGER, VARIANT_PRIMARY
 from eagle1.ui.settings_menu import SettingsMenu
@@ -2447,30 +2448,17 @@ def draw(mouse_pos=None):
                     frost_rect = pygame.Rect(enemy_screen_x, enemy_screen_y, LIGHT_ENEMY_WIDTH, LIGHT_ENEMY_HEIGHT)
                     pygame.draw.rect(canvas, (120, 220, 255), frost_rect, 2)
 
-                # Target Lock-on HUD Reticle
-                if player.is_enemy_in_lock_zone(enemy):
-                    if -80 <= enemy_screen_x <= GAME_WIDTH + 80 and -80 <= enemy_screen_y <= GAME_HEIGHT + 80:
-                        ret_pad = 6
-                        ret_len = 8
-                        ret_x = enemy_screen_x - ret_pad
-                        ret_y = enemy_screen_y - ret_pad
-                        ret_w = LIGHT_ENEMY_WIDTH + ret_pad * 2
-                        ret_h = LIGHT_ENEMY_HEIGHT + ret_pad * 2
-
-                        ret_color = (255, 60, 60)
-                        pygame.draw.line(canvas, ret_color, (ret_x, ret_y), (ret_x + ret_len, ret_y), 2)
-                        pygame.draw.line(canvas, ret_color, (ret_x, ret_y), (ret_x, ret_y + ret_len), 2)
-                        pygame.draw.line(canvas, ret_color, (ret_x + ret_w, ret_y), (ret_x + ret_w - ret_len, ret_y), 2)
-                        pygame.draw.line(canvas, ret_color, (ret_x + ret_w, ret_y), (ret_x + ret_w, ret_y + ret_len), 2)
-                        pygame.draw.line(canvas, ret_color, (ret_x, ret_y + ret_h), (ret_x + ret_len, ret_y + ret_h), 2)
-                        pygame.draw.line(canvas, ret_color, (ret_x, ret_y + ret_h), (ret_x, ret_y + ret_h - ret_len), 2)
-                        pygame.draw.line(canvas, ret_color, (ret_x + ret_w, ret_y + ret_h), (ret_x + ret_w - ret_len, ret_y + ret_h), 2)
-                        pygame.draw.line(canvas, ret_color, (ret_x + ret_w, ret_y + ret_h), (ret_x + ret_w, ret_y + ret_h - ret_len), 2)
-
-                        mode_tag = "CONE LOCK" if player.radar_mode == "CONE" else "OMNI LOCK"
-                        lock_text = hud_renderer.get_lock_label(mode_tag)
-                        if lock_text is not None:
-                            canvas.blit(lock_text, (ret_x + ret_w // 2 - lock_text.get_width() // 2, ret_y - 14))
+        # Target lock-on brackets for every radar-locked aerial target (fighters, bombers, drones)
+        if player.health > 0:
+            mode_tag = "CONE LOCK" if player.radar_mode == "CONE" else "OMNI LOCK"
+            lock_label = hud_renderer.get_lock_label(mode_tag)
+            for tgt in get_rocket_targets():
+                if not player.is_enemy_in_lock_zone(tgt):
+                    continue
+                sx = tgt.x - camera_x
+                sy = tgt.y - camera_y
+                if -80 <= sx <= GAME_WIDTH + 80 and -80 <= sy <= GAME_HEIGHT + 80:
+                    draw_lock_brackets(canvas, pygame.Rect(int(sx), int(sy), tgt.width, tgt.height), lock_label)
 
         # Draw explosions with camera offset
         explosion_group.update()
