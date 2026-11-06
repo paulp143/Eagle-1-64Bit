@@ -139,7 +139,7 @@ Triggered upon destroying the first fabricator or when wave 2 begins, Viper-4 Do
   - Leaves Braker alive but heavily wounded (shields cleared, HP reduced to 25%).
 - **[3. DISSIDENT] Aborting drop! Coming in with cannons! (`-12.0` Loyalty)**:
   - Aborts the 500kg drop; the fabricator remains intact.
-  - Braker survives uninjured; HUD objective updates to destroy the vent manually with guns and rockets.
+  - Braker survives uninjured; HUD objective updates to destroy the vent manually with guns.
 
 ### Factory Strider Boss Raid & Dynamic Banter (Sortie 4)
 
@@ -351,7 +351,7 @@ The game incorporates a dedicated power-up subsystem (`src/eagle1/systems/poweru
 - **Enemy Countermeasures:**
   - *Beam break:* fighters that spot a rocket homing on them turn perpendicular to it at corner speed; a well-timed break can make the rocket overshoot (`EVADED`).
   - *Flares:* when a rocket closes in, fighters (1 salvo) and bombers (2 salvos) may eject flares that can pull it off target (`FLARES` / `MISSILE DECOYED`).
-  - EMS-stunned targets can neither break nor flare. Roughly two out of three rockets still hit a defending fighter.
+  - EMS-stunned, smoke-blinded and frozen (Freeze power-up) targets can neither break nor flare. Roughly two out of three rockets still hit a defending fighter.
 
 ### Dual Radar Modes (Toggle with `Q`)
 

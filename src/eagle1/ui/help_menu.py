@@ -70,7 +70,7 @@ WEAPONS = [
         "range": "1200 px max tracking range  |  2.5s maximum flight lifetime",
         "cooldown": "350 ms firing delay  |  Velocity: 11.5 px/frame  |  Agility: 5.5°/frame",
         "capacity": "4 rockets  |  Reload: 12.0s when all 4 rockets are exhausted",
-        "notes": "Air-to-air only. Requires radar lock (CONE or OMNI forward arc). Enemies may break perpendicular to the missile or eject flares that can decoy it; EMS-stunned targets cannot defend.",
+        "notes": "Air-to-air only, needs radar lock (CONE or OMNI forward arc). Enemies dodge or eject decoy flares; stunned, smoked or frozen targets cannot.",
         "color": (255, 120, 60),
     },
     {
