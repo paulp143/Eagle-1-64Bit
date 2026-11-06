@@ -1423,7 +1423,8 @@ class Light_Enemy(pygame.Rect):
             self.stun_timer = max(0.0, self.stun_timer - 0.016 * speed_factor)
             return
 
-        if getattr(self, "smoke_blinded", False):
+        smoke_blinded = getattr(self, "smoke_blinded", False)
+        if smoke_blinded:
             self.state = "PATROL"
             self.smoke_blinded = False
 
@@ -1435,8 +1436,12 @@ class Light_Enemy(pygame.Rect):
             pcy = target.pos_y + PLAYER_HEIGHT / 2
             dist_to_player = math.hypot(pcx - cx, pcy - cy)
 
-            # Incoming-missile awareness (short reaction delay before the beam break)
-            incoming = missile_defense.find_incoming_rocket(self, incoming_rockets)
+            # Incoming-missile awareness (short reaction delay before the beam break).
+            # Smoke-blinded or frozen (speed_factor 0) fighters cannot see the missile.
+            if smoke_blinded or speed_factor <= 0:
+                incoming = None
+            else:
+                incoming = missile_defense.find_incoming_rocket(self, incoming_rockets)
             if incoming is None:
                 self.missile_reaction_frames = 0
             else:
@@ -2011,20 +2016,14 @@ def move():
 
     # Rocket Update & Collision across aerial targets only (fighters, bombers, academy drones)
     rocket_targets = get_rocket_targets()
+    enemies_frozen = powerup_manager.is_enemy_frozen()
 
     for rocket in player.rockets:
-        prev_target = rocket.target
-        new_flares = missile_defense.update_rocket_countermeasures(rocket)
-        if new_flares:
-            active_flares.extend(new_flares)
-            fx, fy = missile_defense.entity_center(prev_target)
-            popup = "MISSILE DECOYED" if rocket.decoyed else "FLARES"
-            ground_support_manager.add_combat_popup(popup, fx, fy - 30, theme.WARNING)
-        elif missile_defense.update_rocket_evasion(rocket):
-            ex, ey = missile_defense.entity_center(prev_target)
-            ground_support_manager.add_combat_popup("EVADED", ex, ey - 30, theme.WARNING)
-        rocket.update_position(rocket_targets, player=player)
-        missile_defense.check_flare_detonation(rocket)
+        step = missile_defense.step_rocket(rocket, rocket_targets, player=player, frozen=enemies_frozen)
+        if step.flares:
+            active_flares.extend(step.flares)
+        if step.popup is not None:
+            ground_support_manager.add_combat_popup(step.popup, step.popup_pos[0], step.popup_pos[1], theme.WARNING)
         if rocket.used:
             range_explosion = Large_explosion_a(
                 rocket.x + ROCKET_WIDTH // 2,
@@ -2034,7 +2033,7 @@ def move():
             )
             explosion_group.add(range_explosion)
             audio_manager.play_sfx("explosion_small")
-        elif not rocket.decoyed:
+        elif missile_defense.rocket_can_fuse(rocket):
             # Decoyed/evaded rockets have lost their lock and can no longer fuse on a target
             for enemy in wave_manager.enemies:
                 if rocket.colliderect(enemy) and not enemy.exploding:
@@ -2170,6 +2169,12 @@ def move():
     for flare in active_flares:
         flare.update(speed_factor)
     active_flares[:] = [f for f in active_flares if f.is_alive]
+
+    # Smoke blindness is re-applied every frame by the smoke zone (ground support update).
+    # Fighters clear it in Light_Enemy.update; bombers have no AI that clears it, so reset it
+    # here, after the rocket countermeasure rolls have read it this frame.
+    for bomber in bomber_enemies:
+        bomber.smoke_blinded = False
 
     for enemy in wave_manager.enemies:
         if not enemy.exploding:

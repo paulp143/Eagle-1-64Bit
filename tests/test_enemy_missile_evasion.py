@@ -192,3 +192,34 @@ def test_decoyed_rocket_is_not_rolled_again():
     rocket = _close_rocket(enemy)
     rocket.decoyed = True
     assert missile_defense.update_rocket_evasion(rocket, rng=_FixedRng([0.0])) is False
+
+
+def test_smoke_blinded_enemy_cannot_evade_roll():
+    enemy = _EvadingEnemy(1000, 1000)
+    enemy.smoke_blinded = True
+    assert missile_defense.update_rocket_evasion(_close_rocket(enemy), rng=_FixedRng([0.0])) is False
+
+
+def test_frozen_enemy_cannot_evade_roll():
+    enemy = _EvadingEnemy(1000, 1000)
+    rocket = _close_rocket(enemy)
+    assert missile_defense.update_rocket_evasion(rocket, rng=_FixedRng([0.0]), frozen=True) is False
+    assert not getattr(rocket, "evasion_rolled", False)
+
+
+def test_frozen_enemy_does_not_enter_missile_defense():
+    p, enemy, rocket = _setup_enemy_and_rocket()
+    for _ in range(missile_defense.MISSILE_REACTION_DELAY_FRAMES + 5):
+        enemy.update(target_player=p, enemies=[enemy], speed_factor=0.0, incoming_rockets=[rocket])
+    assert enemy.bfm_mode != "MISSILE_DEFENSE"
+    assert enemy.missile_reaction_frames == 0
+
+
+def test_smoke_blinded_enemy_does_not_notice_rocket():
+    p, enemy, rocket = _setup_enemy_and_rocket(player_distance=1400.0)
+    enemy.state = "PATROL"
+    for _ in range(missile_defense.MISSILE_REACTION_DELAY_FRAMES + 5):
+        enemy.smoke_blinded = True  # re-applied every frame by the smoke zone
+        enemy.update(target_player=p, enemies=[enemy], incoming_rockets=[rocket])
+    assert enemy.state == "PATROL"
+    assert enemy.bfm_mode != "MISSILE_DEFENSE"

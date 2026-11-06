@@ -8,7 +8,7 @@ Heading conventions used in this codebase:
 
 import math
 import random
-from typing import Iterable, List, Optional
+from typing import Iterable, List, NamedTuple, Optional
 
 import pygame
 
@@ -122,7 +122,23 @@ def spawn_flare_salvo(entity) -> List[Flare]:
     return flares
 
 
-def update_rocket_countermeasures(rocket, rng: Optional[random.Random] = None) -> List[Flare]:
+def can_defend(target, frozen: bool = False) -> bool:
+    """True if an aerial target is alive and able to react to a missile.
+
+    EMS-stunned, smoke-blinded and frozen (Freeze power-up) units cannot defend.
+    """
+    return (
+        is_air_target(target)
+        and not frozen
+        and not getattr(target, "exploding", False)
+        and getattr(target, "health", 0) > 0
+        and getattr(target, "stun_timer", 0) <= 0
+        and not getattr(target, "smoke_blinded", False)
+    )
+
+
+def update_rocket_countermeasures(rocket, rng: Optional[random.Random] = None,
+                                  frozen: bool = False) -> List[Flare]:
     """Roll the target's flare response once per rocket when it closes inside FLARE_TRIGGER_RANGE.
 
     Returns the newly ejected flares (empty list if none). A successful decoy roll
@@ -132,13 +148,7 @@ def update_rocket_countermeasures(rocket, rng: Optional[random.Random] = None) -
         return []
 
     target = rocket.target
-    if (
-        not is_air_target(target)
-        or getattr(target, "flares_remaining", 0) <= 0
-        or getattr(target, "exploding", False)
-        or getattr(target, "health", 0) <= 0
-        or getattr(target, "stun_timer", 0) > 0
-    ):
+    if not can_defend(target, frozen) or getattr(target, "flares_remaining", 0) <= 0:
         return []
 
     rx, ry = entity_center(rocket)
@@ -214,7 +224,7 @@ def compute_beam_heading(enemy_cx: float, enemy_cy: float, enemy_angle: float,
     return (best + 180) % 360 - 180
 
 
-def update_rocket_evasion(rocket, rng: Optional[random.Random] = None) -> bool:
+def update_rocket_evasion(rocket, rng: Optional[random.Random] = None, frozen: bool = False) -> bool:
     """Roll once whether a breaking fighter makes the rocket overshoot.
 
     Applies only while the target is in the MISSILE_DEFENSE beam break and the
@@ -226,13 +236,7 @@ def update_rocket_evasion(rocket, rng: Optional[random.Random] = None) -> bool:
         return False
 
     target = rocket.target
-    if (
-        not is_air_target(target)
-        or getattr(target, "bfm_mode", "") != "MISSILE_DEFENSE"
-        or getattr(target, "exploding", False)
-        or getattr(target, "health", 0) <= 0
-        or getattr(target, "stun_timer", 0) > 0
-    ):
+    if not can_defend(target, frozen) or getattr(target, "bfm_mode", "") != "MISSILE_DEFENSE":
         return False
 
     rx, ry = entity_center(rocket)
@@ -247,3 +251,43 @@ def update_rocket_evasion(rocket, rng: Optional[random.Random] = None) -> bool:
     rocket.decoyed = True
     rocket.target = None
     return True
+
+
+class RocketStep(NamedTuple):
+    """Outcome of one rocket frame: new flares and an optional popup (text, world position)."""
+
+    flares: List[Flare]
+    popup: Optional[str]
+    popup_pos: Optional[tuple]
+
+
+def step_rocket(rocket, targets, player=None, rng: Optional[random.Random] = None,
+                frozen: bool = False) -> RocketStep:
+    """Advance one homing rocket by one frame, including enemy countermeasures.
+
+    Order: flare roll -> evasion roll (only if no flares were ejected) -> guidance
+    and movement -> flare detonation. Shared by the game loop and the balance
+    simulation so both run identical rules. Collision with targets stays with the
+    caller and must be gated by `rocket_can_fuse()`.
+    """
+    prev_target = rocket.target
+    popup = None
+    flares = update_rocket_countermeasures(rocket, rng=rng, frozen=frozen)
+    if flares:
+        popup = "MISSILE DECOYED" if getattr(rocket, "decoyed", False) else "FLARES"
+    elif update_rocket_evasion(rocket, rng=rng, frozen=frozen):
+        popup = "EVADED"
+
+    rocket.update_position(targets, player=player)
+    check_flare_detonation(rocket)
+
+    popup_pos = None
+    if popup is not None:
+        cx, cy = entity_center(prev_target)
+        popup_pos = (cx, cy - 30)
+    return RocketStep(flares, popup, popup_pos)
+
+
+def rocket_can_fuse(rocket) -> bool:
+    """False once a rocket is spent or has lost its lock to a flare or an evasive break."""
+    return not rocket.used and not getattr(rocket, "decoyed", False)
