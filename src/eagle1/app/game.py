@@ -102,7 +102,6 @@ def calculate_turn_rate(speed: float, base_turn_rate: float) -> float:
 
 
 COLLISION_COOLDOWN_MS = 500
-COLLISION_SEPARATION_DIST = 48.0
 
 
 def calculate_directional_gun_damage(
@@ -160,43 +159,15 @@ def compute_bfm_evade_sign(
 
 
 def resolve_aerial_collision(player_obj, enemy_obj, current_time_ms=None):
-    """Resolve mid-air collision with physical bounce-back, momentum loss, and hull trauma.
+    """Resolve a mid-air collision as mutual hull trauma without any physical knockback.
 
-    Deals lethal kamikaze impact damage to one-hit destroy standard enemy aircraft on ramming,
-    while separating craft and applying collision cooldown to prevent multi-frame grinding.
+    Deals lethal kamikaze impact damage to one-hit destroy standard enemy aircraft on ramming.
+    Neither craft is displaced and the player keeps speed and heading: aircraft do not bounce
+    off each other. The per-enemy collision cooldown prevents multi-frame damage grinding while
+    the hulls still overlap.
     """
     now = current_time_ms if current_time_ms is not None else pygame.time.get_ticks()
     last_hit = getattr(enemy_obj, "last_collision_time", -99999)
-
-    e_w = getattr(enemy_obj, "width", LIGHT_ENEMY_WIDTH)
-    e_h = getattr(enemy_obj, "height", LIGHT_ENEMY_HEIGHT)
-    p_cx = player_obj.pos_x + PLAYER_WIDTH / 2
-    p_cy = player_obj.pos_y + PLAYER_HEIGHT / 2
-    e_cx = enemy_obj.pos_x + e_w / 2
-    e_cy = enemy_obj.pos_y + e_h / 2
-
-    dx = p_cx - e_cx
-    dy = p_cy - e_cy
-    dist = math.hypot(dx, dy)
-    if dist < 0.001:
-        rad = math.radians(player_obj.angle)
-        nx, ny = math.sin(rad), math.cos(rad)
-    else:
-        nx, ny = dx / dist, dy / dist
-
-    push_half = COLLISION_SEPARATION_DIST / 2.0
-    player_obj.pos_x = max(0.0, min(float(MAP_WIDTH - PLAYER_WIDTH), player_obj.pos_x + nx * push_half))
-    player_obj.pos_y = max(0.0, min(float(MAP_HEIGHT - PLAYER_HEIGHT), player_obj.pos_y + ny * push_half))
-    player_obj.x = int(player_obj.pos_x)
-    player_obj.y = int(player_obj.pos_y)
-
-    enemy_obj.pos_x = max(50.0, min(float(MAP_WIDTH - e_w - 50.0), enemy_obj.pos_x - nx * push_half))
-    enemy_obj.pos_y = max(50.0, min(float(MAP_HEIGHT - e_h - 50.0), enemy_obj.pos_y - ny * push_half))
-    enemy_obj.x = int(enemy_obj.pos_x)
-    enemy_obj.y = int(enemy_obj.pos_y)
-
-    player_obj.velocity_x = max(player_obj.min_speed, player_obj.velocity_x * 0.55)
-    player_obj.velocity_y = max(player_obj.min_speed, player_obj.velocity_y * 0.55)
 
     if now - last_hit >= COLLISION_COOLDOWN_MS:
         enemy_obj.last_collision_time = now
@@ -2088,7 +2059,7 @@ def move():
                         audio_manager.play_sfx("explosion")
                         break
 
-    # Player Aerial Collision (Physical bounce-back, speed loss, and mutual hull trauma)
+    # Player Aerial Collision (mutual hull trauma; no knockback or speed loss)
     for enemy in wave_manager.enemies:
         if not enemy.exploding and player.colliderect(enemy):
             if resolve_aerial_collision(player, enemy) and "combat_juice" in globals():
