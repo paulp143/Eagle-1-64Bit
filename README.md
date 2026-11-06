@@ -11,13 +11,12 @@ A 2D top-down space combat arcade game built in Python using Pygame. The game fe
 
 > 🌐 **Official Website & Downloads:** [paulp143.github.io/Eagle-1-64Bit](https://paulp143.github.io/Eagle-1-64Bit/)
 
-![Eagle-1 in combat: Close Air Support over the Automaton front with the Military Terminal HUD](images/screenshots/gameplay_hud.png)
+![Eagle-1 main menu with keyboard focus and the CONTINUE button showing the active pilot callsign](images/screenshots/main_menu.png)
 
 
 ## Table of Contents
 
 - [Overview](#overview)
-- [Screenshots](#screenshots)
 - [Key Features](#key-features)
 - [Story Campaign Subsystem (Acts I & II)](#story-campaign-subsystem-acts-i--ii)
   - [Campaign Structure & Canonical Sorties 1–4](#campaign-structure--canonical-sorties-14)
@@ -64,43 +63,6 @@ A 2D top-down space combat arcade game built in Python using Pygame. The game fe
 A custom 2D camera tracks the player ship across the map, clamping to world borders and rendering seamless starfield background tiles. Combat combines primary quad-cannon salvos with secondary steerable homing rockets, 8 stratagem air strikes, and close air support missions for friendly ground troops fighting against hostile Automaton forces.
 
 
-## Screenshots
-
-All screenshots are rendered from the live game code at the internal 1280×720 resolution (`python tools/capture_screenshots.py` regenerates them into `images/screenshots/`).
-
-### Menus & Pre-Flight
-
-| Main Menu | Pilot Enlistment |
-| :---: | :---: |
-| ![Main menu with keyboard focus and the CONTINUE button showing the active pilot callsign](images/screenshots/main_menu.png) | ![Enlistment screen with callsign input and the Contract of Employment](images/screenshots/enlistment.png) |
-| **Operation Select** | **Stratagem Loadout** |
-| ![Mission select list with five operational modes](images/screenshots/mission_select.png) | ![Stratagem loadout with four equipped slots and keyboard focus](images/screenshots/stratagem_loadout.png) |
-
-### In Flight
-
-| Close Air Support HUD | Factory Strider Boss Raid |
-| :---: | :---: |
-| ![Gameplay HUD with status, squad, weapons panel, minimap and stratagem dock](images/screenshots/gameplay_hud.png) | ![Factory Strider boss with boss health bar and squad danger banner](images/screenshots/strider_raid.png) |
-| **Air Strike Arsenal (`V` / `TAB`)** | **Pause Menu (`P`)** |
-| ![Close air support arsenal overlay with eight stratagems](images/screenshots/arsenal_menu.png) | ![Pause menu over the frozen battlefield frame](images/screenshots/pause_menu.png) |
-
-### Super Destroyer
-
-| Orbital Rearm: Ordnance Hoist | Orbital Rearm: Wing Pylon Service |
-| :---: | :---: |
-| ![Rearm cinematic: gantry hoist lowering a 500 kg round onto Eagle-1 next to the Stratagem Hero terminal](images/screenshots/rearm_hoist.png) | ![Rearm cinematic: articulated service arms at the wing pylons and the rearm checklist](images/screenshots/rearm_wing_service.png) |
-| **Hub Deck: The Bridge** | **NPC Dialogue** |
-| ![Super Destroyer hub deck bridge zone](images/screenshots/super_destroyer_bridge.png) | ![Dialogue with Democracy Officer Karl Reiner and three stance options](images/screenshots/super_destroyer_dialogue.png) |
-| **After-Action Report** | **Tactical Manual (`H`)** |
-| ![Mission debriefing with rank, stats and focusable buttons](images/screenshots/debriefing.png) | ![Tactical manual squad tab](images/screenshots/manual_squad.png) |
-
-### Settings & Manual
-
-| Settings: Gameplay & HUD | Settings: Flight Controls |
-| :---: | :---: |
-| ![Gameplay and HUD toggles](images/screenshots/settings_gameplay.png) | ![Controls tab generated from the shared key-binding list](images/screenshots/settings_controls.png) |
-
-
 ## Key Features
 
 - **Story Campaign Mode & Pilot Enlistment:** Streamlined story-driven main menu (`NEW GAME`, conditional `CONTINUE` locked until enlistment, `SETTINGS`, `TACTICAL MANUAL`, `QUIT TO DESKTOP`). Recruits enter their official pilot callsign, review the official Super Earth Helldivers Division **Contract of Employment** (with all indemnity, martyrdom deductions, and binding Clause 6.4), and take the Oath of Democracy before deploying.
@@ -133,6 +95,12 @@ All screenshots are rendered from the live game code at the internal 1280×720 r
 ## Story Campaign Subsystem (Acts I & II)
 
 The narrative campaign bridges high-speed flight mechanics and character-driven drama. Flight Lieutenant Val flies Close Air Support for Fireteam Viper under the watchful eye of Democracy Officer Karl Reiner, confronting the harsh moral arithmetic of Super Earth high command.
+
+Every campaign starts with enlistment: the recruit types a callsign, reviews the Contract of Employment and signs before the Naval Academy drills.
+
+![Enlistment screen with callsign input and the Contract of Employment](images/screenshots/enlistment.png)
+*Pilot enlistment (`NEW GAME`): callsign input, contract and oath; validation errors stay on screen.*
+
 
 ### Campaign Structure & Canonical Sorties 1–4
 
@@ -181,6 +149,10 @@ Before Pelican-1 extraction in Sortie 4, `emit_sortie4_casualty_check` queries b
 - **Partial Casualties (1–3 KIA)**: Pelican-1 reports wounded and fallen aboard.
 - **Squad Wiped (4 KIA)**: Pelican-1 reports a silent LZ with no Viper beacons responding.
 
+![Factory Strider boss with boss health bar and squad danger banner](images/screenshots/strider_raid.png)
+*The Factory Strider raid: boss health bar under the objective, squad danger banner and the walking fortress top right.*
+
+
 ### Super Destroyer Catapult Launch & Debriefing Loop
 
 Between sorties, the pilot returns to the *SES Leviathan of Truth*:
@@ -189,11 +161,23 @@ Between sorties, the pilot returns to the *SES Leviathan of Truth*:
 - **The Hangar:** Review the sortie tactical briefing card and pull the catapult launch lever to deploy into the next operation.
 - **Debriefing Screen:** Mission victory triggers `MissionController.complete_current_sortie()`, calculating mission performance rank, squad survival bonuses, and advancing the campaign counter.
 
+| Hub Deck: The Bridge | NPC Dialogue (`Tab` focus, `E` talk) |
+| :---: | :---: |
+| ![Super Destroyer hub deck bridge zone with NPC cards](images/screenshots/super_destroyer_bridge.png) | ![Dialogue with Democracy Officer Karl Reiner and three stance options](images/screenshots/super_destroyer_dialogue.png) |
+
+![Mission debriefing with rank, stats and focusable buttons](images/screenshots/debriefing.png)
+*After-Action Report: rank, combat statistics and the REPLAY / RETURN TO HUB / MISSIONS / MAIN MENU buttons (arrow keys + `Enter`).*
+
+
 
 
 ## Ground Support & Helldivers Subsystem
 
 The ground support subsystem (`ground_support.py`) brings a living planetary battlefield to life. Players command Close Air Support (CAS) from Eagle-1 to protect, resupply, and evacuate an allied 4-trooper ground squad on the surface while battling hostile Automaton ground forces.
+
+![Gameplay HUD with status, squad, weapons panel, minimap and stratagem dock](images/screenshots/gameplay_hud.png)
+*Close Air Support over the Automaton front: status and squad panels (top left), weapons panel (top right), squad danger banner, minimap and speed gauge (bottom left), key hint bar and the stratagem dock (bottom right).*
+
 
 ### Allied Helldiver Squad (Viper 1-4)
 
@@ -296,6 +280,11 @@ The dynamic aiming reticle (`AimingReticle` in `ground_support.py`) provides rea
 
 Access the comprehensive stratagem arsenal by pressing **`V`** or **`TAB`** to open the interactive **Air Strike Weapon Menu**, select your 4-stratagem loadout prior to launch, or cycle between your Autocannon (Slot 1) and equipped stratagems (Slots 2–5) via number keys **`1`** through **`5`** or the single-slot mouse scroll wheel.
 
+| Pre-Mission Loadout (`Enter` toggles, `Space` deploys) | In-Flight Arsenal (`V` / `TAB`) |
+| :---: | :---: |
+| ![Stratagem loadout with four equipped slots and keyboard focus](images/screenshots/stratagem_loadout.png) | ![Close air support arsenal overlay with eight stratagems and charge status](images/screenshots/arsenal_menu.png) |
+
+
 ### Super Destroyer Orbital Rearm (`R`) & Stratagem Hero
 Stratagems operate with discrete charge counts and fast operational delays between deployments. When charges are exhausted or low, pressing **`R`** triggers a **15.0s Super Destroyer Orbital Rearm**:
 1. **Atmospheric Ascent (1.2s):** Eagle-1 accelerates skyward with flared afterburners and streaks through the upper atmosphere.
@@ -381,6 +370,10 @@ Access the interactive in-game tactical manual at any time by pressing **`H`**. 
 | **5** | **Enemies** | Wave formations, agro awareness, alignment-gated enemy fire, and anti-retreat nanite drops. |
 | **6** | **Squad** | Ground squad roles, Automaton hostiles, fabricators, CAS call-in missions, and Pelican-1 extraction. |
 
+| Tab 1: Weapons | Tab 6: Squad |
+| :---: | :---: |
+| ![Tactical manual weapons tab with cannon and rocket intel cards](images/screenshots/manual_weapons.png) | ![Tactical manual squad tab with Helldiver roles and CAS notes](images/screenshots/manual_squad.png) |
+
 
 
 ## Gameplay Description
@@ -425,6 +418,10 @@ Access the interactive in-game tactical manual at any time by pressing **`H`**. 
                                  ▼
                        mission_select ──Enter──► stratagem_select ──SPACE (4 equipped)──► gameplay ("")
 ```
+
+| Operation Select (`mission_select`) | Pause Menu (`pause_menu`, frozen frame) |
+| :---: | :---: |
+| ![Mission select list with five operational modes](images/screenshots/mission_select.png) | ![Pause menu over the frozen battlefield frame](images/screenshots/pause_menu.png) |
 
 
 
@@ -472,6 +469,10 @@ Access the interactive in-game tactical manual at any time by pressing **`H`**. 
 | **Close Dialogue / Exit to Menu** | `Escape` (`ESC`) | Click `CLOSE` | Super Destroyer Hub Deck |
 | **Catapult Launch Sortie** | `L` / `F` | Click the catapult launch button | Super Destroyer Hangar Deck |
 | **Return to Super Destroyer Hub** | `H` / `Enter` | Click `RETURN TO HUB` | Mission Debriefing Screen |
+
+![Settings controls tab generated from the shared key-binding list](images/screenshots/settings_controls.png)
+*The same bindings in-game (Settings → `3. Flight Controls`), generated from `src/eagle1/ui/controls_reference.py`.*
+
 ## Game Audio & Extensible Settings Architecture
 
 Eagle-1-64Bit features a centralized, 16-channel audio system (`audio_manager.py`) with procedural audio generation (`generate_audio_assets.py`), dynamic combat music adaptation, thruster engine sound modulation, anti-clipping voice limiting, and an extensible tabbed Settings Menu (`settings_menu.py`).
@@ -483,6 +484,10 @@ Eagle-1-64Bit features a centralized, 16-channel audio system (`audio_manager.py
 - **Flight Velocity-Modulated Engine Hum**: Continuous jet thruster frequency and volume scale smoothly with player acceleration and flight speed.
 - **Anti-Clipping & Voice Limiting**: Configurable minimum intervals prevent audio stacking during intense bullet storms.
 - **Extensible Settings Menu**: Modular, tabbed interface (`1. Audio Settings`, `2. Gameplay & HUD`, `3. Flight Controls`) with interactive volume sliders (Master, Music, SFX), Mute toggle switch, SFX test button, and persistence to `data/audio_settings.json`. Gameplay & HUD toggles (screen shake, speedometer, low hull/shield vignettes; the alarm audio always plays) persist to `data/gameplay_settings.json`. Easily extended with new categories and options.
+
+![Settings gameplay and HUD tab with three toggles](images/screenshots/settings_gameplay.png)
+*Settings → `2. Gameplay & HUD`: toggles are keyboard-focusable (`Up` / `Down`, `Enter`) and saved across restarts.*
+
 
 
 
@@ -831,7 +836,7 @@ Fonts are loaded only through `eagle1.ui.theme` (with a system-font fallback if 
 | `bullet_ui.png` | 80×60 px | Ammunition counter icon (4×6 px). |
 | `Eagle-1.icns` | multi-size | macOS application icon used by the packaging scripts. |
 | `portraits/` | various | Character portraits for the comms HUD and hub dialogues. |
-| `screenshots/` | 1280×720 px | README screenshots rendered by `tools/capture_screenshots.py`. |
+| `screenshots/` | 1280×720 px | README screenshots, rendered headlessly from the game code by `python tools/capture_screenshots.py`. |
 | `backround.png`, `a10.png` | — | Legacy assets, not referenced by the game code. |
 
 
