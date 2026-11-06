@@ -158,6 +158,8 @@ class AcademyWaypointGate:
 class AcademyTargetDrone(pygame.Rect):
     """Automaton training target drone for Quad-Cannon and Missile drills."""
 
+    is_air_target = True
+
     def __init__(self, x: float, y: float, max_health: float = 50.0, label: str = "DRONE-1", is_mobile: bool = False):
         safe_x = max(50.0, min(MAP_WIDTH - 50.0, float(x)))
         safe_y = max(50.0, min(MAP_HEIGHT - 50.0, float(y)))
@@ -230,6 +232,8 @@ class AcademyTargetDrone(pygame.Rect):
 
 class AcademyTargetBunker(pygame.Rect):
     """Automaton simulated training foundry bunker for Stratagem Air Strike drill."""
+
+    is_air_target = False
 
     def __init__(self, x: float, y: float, max_health: float = 100.0, label: str = "TRAINING FOUNDRY"):
         safe_x = max(80.0, min(MAP_WIDTH - 80.0, float(x)))

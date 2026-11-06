@@ -139,7 +139,7 @@ Triggered upon destroying the first fabricator or when wave 2 begins, Viper-4 Do
   - Leaves Braker alive but heavily wounded (shields cleared, HP reduced to 25%).
 - **[3. DISSIDENT] Aborting drop! Coming in with cannons! (`-12.0` Loyalty)**:
   - Aborts the 500kg drop; the fabricator remains intact.
-  - Braker survives uninjured; HUD objective updates to destroy the vent manually with guns and rockets.
+  - Braker survives uninjured; HUD objective updates to destroy the vent manually with guns.
 
 ### Factory Strider Boss Raid & Dynamic Banter (Sortie 4)
 
@@ -206,15 +206,15 @@ The ground support subsystem (`ground_support.py`) brings a living planetary bat
 - **Automaton Fabricators (`EnemyFabricator`):**
   - Fortified manufacturing structures (220 HP, 150 PTS) with glowing thermal exhaust ports and factory antennas.
   - Continuously construct and deploy ground reinforcements (Troopers & Walkers): first unit after 12 seconds, then every 16 seconds.
-  - Can be targeted and destroyed by cannons, homing rockets, and precision air strikes, triggering multi-stage secondary explosions.
+  - Can be targeted and destroyed by cannons and precision air strikes, triggering multi-stage secondary explosions.
 
 ### Air-to-Ground Combat (Cannons, Rockets & Strikes)
 
 - **Quad-Cannon Ground Strafing (`Spacebar`):**
   - Player bullets collide with and damage Automaton Troopers, Walkers, and Fabricator buildings.
   - Floating score popups (`+25 PTS`, `+60 PTS`, `+150 PTS`) indicate confirmed ground kills.
-- **Homing Rockets Ground Lock-on (`Right-Click` or `E` / `F` / `LCTRL`):**
-  - Homing missiles acquire ground hostiles and fabricators within radar coverage (`CONE` or `OMNI`), steering downward to detonate directly on target.
+- **Homing Rockets are air-to-air only:**
+  - Rockets ignore ground hostiles and fabricators; use cannons and stratagems against ground targets.
 - **Stratagem Air Strikes (`C`):**
   - All 8 stratagem strikes damage both aerial hostiles and ground targets within their blast radius.
 
@@ -345,15 +345,19 @@ The game incorporates a dedicated power-up subsystem (`src/eagle1/systems/poweru
 ### Secondary Homing Rockets (`Player.Rocket`)
 
 - **Capacity & Reload:** Carries up to 4 rockets and reloads automatically (12.0 s) when depleted.
-- **Target Acquisition:** Acquires both aerial squadrons and ground hostiles (Automaton Troopers, Walkers, Fabricators).
+- **Target Acquisition:** Air-to-air only: acquires fighters, bombers and academy training drones.
 - **Fire Controls:** Triggered using **Right Mouse Button**, `E`, `F`, or `Left Control`.
 - **Flight Dynamics:** Rockets travel with smooth turning physics and explode on impact.
+- **Enemy Countermeasures:**
+  - *Beam break:* fighters that spot a rocket homing on them turn perpendicular to it at corner speed; a well-timed break can make the rocket overshoot (`EVADED`).
+  - *Flares:* when a rocket closes in, fighters (1 salvo) and bombers (2 salvos) may eject flares that can pull it off target (`FLARES` / `MISSILE DECOYED`).
+  - EMS-stunned, smoke-blinded and frozen (Freeze power-up) targets can neither break nor flare. Roughly two out of three rockets still hit a defending fighter.
 
 ### Dual Radar Modes (Toggle with `Q`)
 
 - **`CONE` Mode (Long-Range Intercept):** Forward search arc (300px to 1050px) for head-on approaches.
-- **`OMNI` Mode (Close-Quarter Defense):** Full 360-degree perimeter scan (0px to 420px) for dogfighting and ground strafing.
-- **Target Lock Indicator:** Bounding lock boxes highlight tracked hostiles on HUD and minimap.
+- **`OMNI` Mode (Close-Quarter Dogfighting):** Wide forward arc (±75°, 0px to 420px); targets behind the ship cannot be locked.
+- **Target Lock Indicator:** Lock brackets mark every radar-locked aerial target (fighters, bombers, drones); the minimap shows the active radar sector.
 
 
 
@@ -511,7 +515,7 @@ pytest -v
 
 | Area | Representative modules | What is covered |
 | :--- | :--- | :--- |
-| Flight & combat | `test_flight_dynamics.py`, `test_dogfight_combat.py`, `test_enemy_bfm_ai.py`, `test_missile_intercept.py`, `test_health_and_damage.py`, `test_math_and_physics.py`, `test_weapons_and_cooldowns.py` | Inertia flight model, enemy BFM AI, rocket guidance, shields-first damage, camera clamping, reticle lead, cannon/rocket reloads, stratagem charges. |
+| Flight & combat | `test_flight_dynamics.py`, `test_dogfight_combat.py`, `test_enemy_bfm_ai.py`, `test_missile_intercept.py`, `test_missile_defense.py`, `test_enemy_missile_evasion.py`, `test_rocket_air_only.py`, `test_radar_lock_zone.py`, `test_rocket_balance.py`, `test_health_and_damage.py`, `test_math_and_physics.py`, `test_weapons_and_cooldowns.py` | Inertia flight model, enemy BFM AI, rocket guidance, missile countermeasures (flares, beam evasion) and their seeded balance band, air-only rocket locks, radar lock zones, shields-first damage, camera clamping, reticle lead, cannon/rocket reloads, stratagem charges. |
 | Ground war & missions | `test_ground_support.py`, `test_bomber_extraction.py`, `test_mission_modes_regression.py`, `test_mission_progression.py` | Helldiver squad AI, CAS delivery, supply drops, Factory Strider, extraction gating, all mission modes. |
 | Story campaign | `test_act1_sorties.py`, `test_act2_sorties.py`, `test_campaign_e2e_progression.py`, `test_campaign_session.py`, `test_narrative_triggers.py`, `test_story_*.py`, `test_cinematic_player.py`, `test_super_destroyer.py` | Sortie triggers and dilemmas, loyalty vector, saves, cinematics, hub deck and NPC dialogue. |
 | Tutorial & rearm | `test_academy_briefing.py`, `test_academy_integration.py`, `test_hangar_cinematic.py`, `test_hangar_cinematic_theme.py` | Academy drills and graduation, rearm phases, hoist/wing-arm choreography, Stratagem Hero highscore persistence. |

@@ -75,10 +75,10 @@ Always keep coordinate spaces strictly separated:
 
 ### 2. Weapons & Fire Control
 - **Quad-Cannons (`Spacebar`)**: 4 wing-offset projectiles per volley. Consumes ammo from `PLAYER_MAX_BULLETS = 200` with periodic reloads (`PLAYER_RELOAD_TIME = 5000` ms).
-- **Homing Rockets (`Right Click` / `E` / `F` / `LCTRL`)**: Capacity of 4 missiles. Locks onto aerial or ground targets within radar coverage, navigating with turning physics.
+- **Homing Rockets (`Right Click` / `E` / `F` / `LCTRL`)**: Capacity of 4 missiles. Locks onto aerial targets only (fighters, bombers, academy drones) within radar coverage, navigating with turning physics. Enemies counter with beam breaks and flares (`src/eagle1/systems/missile_defense.py`; balance locked by `tests/test_rocket_balance.py`).
 - **Radar Modes (`Q`)**:
   - `CONE`: Forward intercept arc (50° angle, 300–1050 px).
-  - `OMNI`: 360° close-quarters perimeter scan (0–420 px).
+  - `OMNI`: Wide forward arc (±75°, 0–420 px); no locks behind the ship.
 - **Predictive Aiming Reticle**:
   - Gun convergence pip at 180 px forward along flight vector.
   - Predictive bomb impact zone dynamically computed ahead: $\text{lead} = 320.0 + v \times 8.0$.

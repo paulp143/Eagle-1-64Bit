@@ -177,7 +177,7 @@ SORTIE3_OBJECTIVE_NEUTRAL: str = (
     "Vent perimeter breached. Finish the damaged fabricator and cover Doc while he stabilizes Braker."
 )
 SORTIE3_OBJECTIVE_DISSIDENT: str = (
-    "500kg drop aborted. Destroy the fabricator manually with cannons and rockets; keep Braker clear."
+    "500kg drop aborted. Destroy the fabricator manually with cannons; keep Braker clear."
 )
 SORTIE4_OBJECTIVE_LOYAL: str = (
     "PRIORITY: Commit every pass to the Factory Strider's ventral core. Squad cover is secondary."

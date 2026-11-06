@@ -15,6 +15,7 @@ from eagle1.systems.ground_support import (
     SCORE_EXTRACTION_BONUS,
     StratagemSelectMenu,
 )
+from eagle1.systems import missile_defense
 from eagle1.systems.powerups import (
     DAMAGE_BOOST_MULTIPLIER,
     RAPID_FIRE_COOLDOWN_MS,
@@ -25,6 +26,7 @@ from eagle1.systems.powerups import (
 from eagle1.ui import hud_layout, theme, widgets
 from eagle1.ui.hud import HudRenderer
 from eagle1.ui.help_menu import HelpMenu
+from eagle1.ui.lock_reticle import draw_lock_brackets
 from eagle1.ui.mission_select_menu import MissionSelectMenu
 from eagle1.ui.menu_nav import MenuButton, MenuNavigator, VARIANT_DANGER, VARIANT_PRIMARY
 from eagle1.ui.settings_menu import SettingsMenu
@@ -100,7 +102,6 @@ def calculate_turn_rate(speed: float, base_turn_rate: float) -> float:
 
 
 COLLISION_COOLDOWN_MS = 500
-COLLISION_SEPARATION_DIST = 48.0
 
 
 def calculate_directional_gun_damage(
@@ -158,43 +159,15 @@ def compute_bfm_evade_sign(
 
 
 def resolve_aerial_collision(player_obj, enemy_obj, current_time_ms=None):
-    """Resolve mid-air collision with physical bounce-back, momentum loss, and hull trauma.
+    """Resolve a mid-air collision as mutual hull trauma without any physical knockback.
 
-    Deals lethal kamikaze impact damage to one-hit destroy standard enemy aircraft on ramming,
-    while separating craft and applying collision cooldown to prevent multi-frame grinding.
+    Deals lethal kamikaze impact damage to one-hit destroy standard enemy aircraft on ramming.
+    Neither craft is displaced and the player keeps speed and heading: aircraft do not bounce
+    off each other. The per-enemy collision cooldown prevents multi-frame damage grinding while
+    the hulls still overlap.
     """
     now = current_time_ms if current_time_ms is not None else pygame.time.get_ticks()
     last_hit = getattr(enemy_obj, "last_collision_time", -99999)
-
-    e_w = getattr(enemy_obj, "width", LIGHT_ENEMY_WIDTH)
-    e_h = getattr(enemy_obj, "height", LIGHT_ENEMY_HEIGHT)
-    p_cx = player_obj.pos_x + PLAYER_WIDTH / 2
-    p_cy = player_obj.pos_y + PLAYER_HEIGHT / 2
-    e_cx = enemy_obj.pos_x + e_w / 2
-    e_cy = enemy_obj.pos_y + e_h / 2
-
-    dx = p_cx - e_cx
-    dy = p_cy - e_cy
-    dist = math.hypot(dx, dy)
-    if dist < 0.001:
-        rad = math.radians(player_obj.angle)
-        nx, ny = math.sin(rad), math.cos(rad)
-    else:
-        nx, ny = dx / dist, dy / dist
-
-    push_half = COLLISION_SEPARATION_DIST / 2.0
-    player_obj.pos_x = max(0.0, min(float(MAP_WIDTH - PLAYER_WIDTH), player_obj.pos_x + nx * push_half))
-    player_obj.pos_y = max(0.0, min(float(MAP_HEIGHT - PLAYER_HEIGHT), player_obj.pos_y + ny * push_half))
-    player_obj.x = int(player_obj.pos_x)
-    player_obj.y = int(player_obj.pos_y)
-
-    enemy_obj.pos_x = max(50.0, min(float(MAP_WIDTH - e_w - 50.0), enemy_obj.pos_x - nx * push_half))
-    enemy_obj.pos_y = max(50.0, min(float(MAP_HEIGHT - e_h - 50.0), enemy_obj.pos_y - ny * push_half))
-    enemy_obj.x = int(enemy_obj.pos_x)
-    enemy_obj.y = int(enemy_obj.pos_y)
-
-    player_obj.velocity_x = max(player_obj.min_speed, player_obj.velocity_x * 0.55)
-    player_obj.velocity_y = max(player_obj.min_speed, player_obj.velocity_y * 0.55)
 
     if now - last_hit >= COLLISION_COOLDOWN_MS:
         enemy_obj.last_collision_time = now
@@ -239,14 +212,19 @@ def calculate_missile_intercept_point(rx: float, ry: float, r_speed: float, targ
     dist = math.hypot(tx - rx, ty - ry)
     t_intercept = min(35.0, dist / max(1.0, float(r_speed)))
 
-    t_speed = float(getattr(target, "speed", 0.0))
-    if t_speed > 0.0 and hasattr(target, "angle"):
-        t_rad = math.radians(float(target.angle))
-        v_tx = math.sin(t_rad) * t_speed
-        v_ty = math.cos(t_rad) * t_speed
+    velocity = getattr(target, "velocity", None)
+    if isinstance(velocity, tuple) and len(velocity) == 2:
+        # Explicit world-space velocity (bombers, flares) is convention-independent
+        v_tx, v_ty = float(velocity[0]), float(velocity[1])
     else:
-        v_tx = 0.0
-        v_ty = 0.0
+        t_speed = float(getattr(target, "speed", 0.0))
+        if t_speed > 0.0 and hasattr(target, "angle"):
+            t_rad = math.radians(float(target.angle))
+            v_tx = math.sin(t_rad) * t_speed
+            v_ty = math.cos(t_rad) * t_speed
+        else:
+            v_tx = 0.0
+            v_ty = 0.0
 
     return (tx + v_tx * t_intercept, ty + v_ty * t_intercept)
 
@@ -683,6 +661,8 @@ active_mission_config = MISSION_CONFIGS[MissionType.ENDLESS_WAR]
 
 class BomberEnemy(pygame.Rect):
     """Heavy Automaton aerial bomber targeting friendly orbital bases or structures."""
+    is_air_target = True
+
     def __init__(self, x=None, y=None):
         rx = x if x is not None else random.randint(300, MAP_WIDTH - 300)
         ry = y if y is not None else -80.0
@@ -696,6 +676,9 @@ class BomberEnemy(pygame.Rect):
         self.score_value = 150
         self.angle = 180.0
         self.bullet_damage = 15.0
+        self.velocity = (0.0, 0.0)
+        self.flares_remaining = missile_defense.BOMBER_FLARES
+        self.flare_deploy_chance = missile_defense.BOMBER_FLARE_DEPLOY_CHANCE
 
     def update(self, target_pos=(1500, 1500), speed_factor=1.0):
         if self.exploding:
@@ -708,8 +691,9 @@ class BomberEnemy(pygame.Rect):
         desired_angle = math.degrees(math.atan2(-dx, -dy)) % 360
         self.angle = desired_angle
 
-        self.pos_x += (dx / dist) * self.speed * speed_factor
-        self.pos_y += (dy / dist) * self.speed * speed_factor
+        self.velocity = ((dx / dist) * self.speed * speed_factor, (dy / dist) * self.speed * speed_factor)
+        self.pos_x += self.velocity[0]
+        self.pos_y += self.velocity[1]
         self.x = int(self.pos_x)
         self.y = int(self.pos_y)
 
@@ -803,6 +787,7 @@ mission_select_menu = MissionSelectMenu(
 stratagem_select_menu = StratagemSelectMenu()
 pending_mission_config = None
 bomber_enemies = []
+active_flares = []
 orbital_base = None
 
 def get_display_scale_and_offset():
@@ -1012,6 +997,9 @@ class Player(pygame.Rect):
             self.max_flight_time = ROCKET_MAX_FLIGHT_TIME  # 2.5 Sekunden
             self.distance_traveled = 0.0
             self.target = target
+            self.decoyed = False
+            self.countermeasure_rolled = False
+            self.evasion_rolled = False
             self.used = False
             self.original_image = rocket_image
             self.image = pygame.transform.rotate(self.original_image, self.angle)
@@ -1030,6 +1018,7 @@ class Player(pygame.Rect):
                 candidates = [targets]
             else:
                 candidates = []
+            candidates = [t for t in candidates if missile_defense.is_air_target(t)]
 
             if not candidates:
                 self.target = None
@@ -1071,7 +1060,7 @@ class Player(pygame.Rect):
                 self.used = True
                 return
 
-            if targets is not None:
+            if targets is not None and not self.decoyed:
                 if not self.target or getattr(self.target, 'exploding', False) or getattr(self.target, 'health', 0) <= 0:
                     self.lock_on(targets, player=player)
 
@@ -1135,6 +1124,9 @@ class Player(pygame.Rect):
 
         self.kamikaze_attack_damage = PLAYER_ATTACK_DAMAGE_KAMIKAZE
         self.invincible = False
+        # Absolute pygame tick at which timed invincibility (e.g. after the orbital rearm
+        # cinematic) ends; 0 means post-hit i-frames, which INVINCIBLE_END clears instead.
+        self.invincible_timer = 0
         self.invincible_time = PLAYER_INVINCIBLE_TIME
         self.max_shield = PLAYER_MAX_SHIELD
         self.shield = PLAYER_MAX_SHIELD
@@ -1164,7 +1156,7 @@ class Player(pygame.Rect):
         audio_manager.play_sfx("rocket_lock")
 
     def is_enemy_in_lock_zone(self, enemy):
-        """Prüft, ob sich der Gegner im aktiven Radar-Lock-Bereich befindet."""
+        """Return True if the enemy is inside the active radar lock zone (CONE: long forward sector, OMNI: short wide forward arc)."""
         if not enemy or getattr(enemy, 'exploding', False) or getattr(enemy, 'health', 0) <= 0:
             return False
 
@@ -1177,7 +1169,9 @@ class Player(pygame.Rect):
         dist = math.hypot(diff_x, diff_y)
 
         if self.radar_mode == "OMNI":
-            return dist <= RADAR_OMNI_RANGE
+            if dist > RADAR_OMNI_RANGE:
+                return False
+            return missile_defense.heading_deviation_deg(cx, cy, self.angle, tx, ty) <= missile_defense.RADAR_OMNI_HALF_ANGLE
 
         elif self.radar_mode == "CONE":
             if dist <= RADAR_CONE_RANGE and dist >= RADAR_CONE_MIN_RANGE:
@@ -1284,10 +1278,16 @@ class Player(pygame.Rect):
     def add_score(self):
         self.score += 1
 
+    def update_invincibility(self, now_ms):
+        """End timed invincibility once its deadline (``invincible_timer``) has passed."""
+        if self.invincible and self.invincible_timer > 0 and now_ms >= self.invincible_timer:
+            self.invincible = False
+            self.invincible_timer = 0
+
     def take_damage(self, damage):
         if self.invincible:
             return
-        
+
         audio_manager.play_sfx("player_damage")
 
         if self.shield < damage:
@@ -1318,6 +1318,8 @@ class HealthDrop(pygame.Rect):
 
 
 class Light_Enemy(pygame.Rect):
+    is_air_target = True
+
     class Bullet(pygame.Rect):
         def __init__(self, x, y, angle=0.0, speed=LIGHT_ENEMY_BULLET_SPEED):
             pygame.Rect.__init__(self, int(x), int(y), BULLET_WIDTH, BULLET_HEIGHT)
@@ -1376,6 +1378,9 @@ class Light_Enemy(pygame.Rect):
         self.orbit_direction = orbit_direction
         self.orbit_radius = orbit_radius
         self.formation_offset = formation_offset
+        self.flares_remaining = missile_defense.LIGHT_ENEMY_FLARES
+        self.flare_deploy_chance = missile_defense.LIGHT_ENEMY_FLARE_DEPLOY_CHANCE
+        self.missile_reaction_frames = 0
         self.orbit_angle = math.degrees(math.atan2(self.pos_x - MAP_WIDTH / 2, self.pos_y - MAP_HEIGHT / 2))
 
     def get_effective_turn_rate(self):
@@ -1389,7 +1394,7 @@ class Light_Enemy(pygame.Rect):
                 if getattr(other, 'squadron_id', None) == self.squadron_id and not getattr(other, 'exploding', False):
                     other.state = "AGRO"
 
-    def update(self, target_player=None, enemies=None, speed_factor=1.0):
+    def update(self, target_player=None, enemies=None, speed_factor=1.0, incoming_rockets=None):
         if self.exploding:
             return
 
@@ -1398,7 +1403,8 @@ class Light_Enemy(pygame.Rect):
             self.stun_timer = max(0.0, self.stun_timer - 0.016 * speed_factor)
             return
 
-        if getattr(self, "smoke_blinded", False):
+        smoke_blinded = getattr(self, "smoke_blinded", False)
+        if smoke_blinded:
             self.state = "PATROL"
             self.smoke_blinded = False
 
@@ -1409,6 +1415,23 @@ class Light_Enemy(pygame.Rect):
             pcx = target.pos_x + PLAYER_WIDTH / 2
             pcy = target.pos_y + PLAYER_HEIGHT / 2
             dist_to_player = math.hypot(pcx - cx, pcy - cy)
+
+            # Incoming-missile awareness (short reaction delay before the beam break).
+            # Smoke-blinded or frozen (speed_factor 0) fighters cannot see the missile.
+            if smoke_blinded or speed_factor <= 0:
+                incoming = None
+            else:
+                incoming = missile_defense.find_incoming_rocket(self, incoming_rockets)
+            if incoming is None:
+                self.missile_reaction_frames = 0
+            else:
+                self.missile_reaction_frames += 1
+            missile_threat = (
+                incoming is not None
+                and self.missile_reaction_frames > missile_defense.MISSILE_REACTION_DELAY_FRAMES
+            )
+            if missile_threat and self.state == "PATROL":
+                self.trigger_agro(enemies)
 
             # Check Agro Radius
             if self.state == "PATROL":
@@ -1454,6 +1477,13 @@ class Light_Enemy(pygame.Rect):
                     los_angle = math.degrees(math.atan2(dx, dy))
                     self.speed = CORNER_SPEED if sq_id % 2 == 0 else CORNER_SPEED * 1.15
                     target_angle = (los_angle + evade_sign * 95.0) % 360
+                elif missile_threat:
+                    # MISSILE_DEFENSE: beam the incoming rocket at corner speed to force an overshoot
+                    self.bfm_mode = "MISSILE_DEFENSE"
+                    self.bfm_commit_timer = 0
+                    self.speed = CORNER_SPEED
+                    r_cx, r_cy = missile_defense.entity_center(incoming)
+                    target_angle = missile_defense.compute_beam_heading(cx, cy, self.angle, r_cx, r_cy)
                 elif self.bfm_commit_timer > 0:
                     # Stay committed to current break heading so enemy passes through the merge
                     # instead of orbiting in a tiny circle
@@ -1531,7 +1561,10 @@ class Light_Enemy(pygame.Rect):
             # Rotate enemy sprite so it turns to face heading
             prev_angle = self.angle
             angle_diff = (target_angle - self.angle + 180) % 360 - 180
-            turn_mult = 1.85 if (self.bfm_mode == "MERGE_BREAK" and dist_to_player < 280.0) else 1.0
+            if self.bfm_mode == "MISSILE_DEFENSE":
+                turn_mult = missile_defense.MISSILE_EVASION_TURN_MULT
+            else:
+                turn_mult = 1.85 if (self.bfm_mode == "MERGE_BREAK" and dist_to_player < 280.0) else 1.0
             effective_turn_rate = self.get_effective_turn_rate() * turn_mult * speed_factor
             if abs(angle_diff) <= effective_turn_rate:
                 self.angle = target_angle
@@ -1826,6 +1859,8 @@ def move():
     if player.health <= 0 or game_state in ("mission_debriefing", "super_destroyer"):
         return
 
+    player.update_invincibility(pygame.time.get_ticks())
+
     # Boundary damage
     if player.pos_x < 0 or player.pos_x + PLAYER_WIDTH > MAP_WIDTH or \
        player.pos_y < 0 or player.pos_y + PLAYER_HEIGHT > MAP_HEIGHT:
@@ -1961,15 +1996,16 @@ def move():
                         explosion_group.add(Large_explosion_a(cx, cy, large_explosion_a_spritesheet.frames, speed=0.6))
                     break
 
-    # Rocket Update & Collision across all targets (aerial enemies, bombers, ground units, fabricators, strider, academy targets)
-    all_combat_targets = list(wave_manager.enemies) + list(bomber_enemies) + [g for g in ground_support_manager.enemy_ground_units if g.is_alive] + [f for f in ground_support_manager.enemy_fabricators if f.is_alive]
-    if ground_support_manager.factory_strider and ground_support_manager.factory_strider.is_alive:
-        all_combat_targets.append(ground_support_manager.factory_strider)
-    if active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL:
-        all_combat_targets.extend(academy_manager.get_combat_targets())
+    # Rocket Update & Collision across aerial targets only (fighters, bombers, academy drones)
+    rocket_targets = get_rocket_targets()
+    enemies_frozen = powerup_manager.is_enemy_frozen()
 
     for rocket in player.rockets:
-        rocket.update_position(all_combat_targets, player=player)
+        step = missile_defense.step_rocket(rocket, rocket_targets, player=player, frozen=enemies_frozen)
+        if step.flares:
+            active_flares.extend(step.flares)
+        if step.popup is not None:
+            ground_support_manager.add_combat_popup(step.popup, step.popup_pos[0], step.popup_pos[1], theme.WARNING)
         if rocket.used:
             range_explosion = Large_explosion_a(
                 rocket.x + ROCKET_WIDTH // 2,
@@ -1979,7 +2015,8 @@ def move():
             )
             explosion_group.add(range_explosion)
             audio_manager.play_sfx("explosion_small")
-        else:
+        elif missile_defense.rocket_can_fuse(rocket):
+            # Decoyed/evaded rockets have lost their lock and can no longer fuse on a target
             for enemy in wave_manager.enemies:
                 if rocket.colliderect(enemy) and not enemy.exploding:
                     rocket.used = True
@@ -2017,43 +2054,8 @@ def move():
                         audio_manager.play_sfx("explosion")
                         break
 
-            if not rocket.used:
-                for ge in ground_support_manager.enemy_ground_units:
-                    if ge.is_alive and rocket.colliderect(ge):
-                        rocket.used = True
-                        ge.take_damage(rocket.damage)
-                        if not ge.is_alive:
-                            score_val = getattr(ge, 'score_value', 25)
-                            player.score += score_val
-                            ground_support_manager.add_combat_popup(f"+{score_val} PTS", ge.pos_x, ge.pos_y, (255, 215, 0))
-                            audio_manager.play_sfx("enemy_defeat")
-                        hit_explosion = Large_explosion_a(
-                            rocket.x + ROCKET_WIDTH // 2,
-                            rocket.y + ROCKET_HEIGHT // 2,
-                            large_explosion_a_spritesheet.frames,
-                            speed=0.6
-                        )
-                        explosion_group.add(hit_explosion)
-                        audio_manager.play_sfx("explosion")
-                        break
-
-            if not rocket.used:
-                for fab in ground_support_manager.enemy_fabricators:
-                    if fab.is_alive and rocket.colliderect(fab):
-                        rocket.used = True
-                        fab.take_damage(rocket.damage)
-                        hit_explosion = Large_explosion_a(
-                            rocket.x + ROCKET_WIDTH // 2,
-                            rocket.y + ROCKET_HEIGHT // 2,
-                            large_explosion_a_spritesheet.frames,
-                            speed=0.6
-                        )
-                        explosion_group.add(hit_explosion)
-                        audio_manager.play_sfx("explosion")
-                        break
-
             if not rocket.used and active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL:
-                for target in academy_manager.get_combat_targets():
+                for target in missile_defense.filter_air_targets(academy_manager.get_combat_targets()):
                     if target.is_alive and rocket.colliderect(target):
                         rocket.used = True
                         target.take_damage(rocket.damage)
@@ -2068,7 +2070,7 @@ def move():
                         audio_manager.play_sfx("explosion")
                         break
 
-    # Player Aerial Collision (Physical bounce-back, speed loss, and mutual hull trauma)
+    # Player Aerial Collision (mutual hull trauma; no knockback or speed loss)
     for enemy in wave_manager.enemies:
         if not enemy.exploding and player.colliderect(enemy):
             if resolve_aerial_collision(player, enemy) and "combat_juice" in globals():
@@ -2146,9 +2148,19 @@ def move():
     speed_factor = powerup_manager.modify_enemy_speed(1.0) * slow_mo_mult
     bullet_speed_factor = powerup_manager.modify_enemy_bullet_speed(1.0) * slow_mo_mult
 
+    for flare in active_flares:
+        flare.update(speed_factor)
+    active_flares[:] = [f for f in active_flares if f.is_alive]
+
+    # Smoke blindness is re-applied every frame by the smoke zone (ground support update).
+    # Fighters clear it in Light_Enemy.update; bombers have no AI that clears it, so reset it
+    # here, after the rocket countermeasure rolls have read it this frame.
+    for bomber in bomber_enemies:
+        bomber.smoke_blinded = False
+
     for enemy in wave_manager.enemies:
         if not enemy.exploding:
-            enemy.update(player, wave_manager.enemies, speed_factor=speed_factor)
+            enemy.update(player, wave_manager.enemies, speed_factor=speed_factor, incoming_rockets=player.rockets)
         
         for bullet in enemy.bullets:
             bullet.update_position(speed_factor=bullet_speed_factor)
@@ -2186,6 +2198,14 @@ def move():
         wave_manager.update(player)
 
 
+def get_rocket_targets() -> list:
+    """Aerial entities homing rockets may lock: wave fighters, bombers, academy drones."""
+    candidates = list(wave_manager.enemies) + list(bomber_enemies)
+    if active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL:
+        candidates.extend(academy_manager.get_combat_targets())
+    return missile_defense.filter_air_targets(candidates)
+
+
 def respawn(mission_config=None, selected_stratagems=None):
     global active_mission_config, bomber_enemies, orbital_base
     global wave_manager, health_drops, light_enemy, ground_support_manager
@@ -2210,11 +2230,14 @@ def respawn(mission_config=None, selected_stratagems=None):
         player.highscore = player.score
         add_highscore(player.score)
     player.health = player.max_health
+    player.invincible = False
+    player.invincible_timer = 0
     player.bullets.clear()
     player.used_bullets = 0
     player.shooting = False
     player.reloading = False
     player.rockets.clear()
+    active_flares.clear()
     player.used_rockets = 0
     player.rocket_shooting = False
     player.rocket_reloading = False
@@ -2427,6 +2450,8 @@ def draw(mouse_pos=None):
             )
             canvas.blit(rocket.image, rocket_rect.topleft)
 
+        missile_defense.draw_flares(canvas, active_flares, camera_x, camera_y)
+
         # Draw health drops
         for drop in health_drops:
             if not drop.used:
@@ -2470,30 +2495,17 @@ def draw(mouse_pos=None):
                     frost_rect = pygame.Rect(enemy_screen_x, enemy_screen_y, LIGHT_ENEMY_WIDTH, LIGHT_ENEMY_HEIGHT)
                     pygame.draw.rect(canvas, (120, 220, 255), frost_rect, 2)
 
-                # Target Lock-on HUD Reticle
-                if player.is_enemy_in_lock_zone(enemy):
-                    if -80 <= enemy_screen_x <= GAME_WIDTH + 80 and -80 <= enemy_screen_y <= GAME_HEIGHT + 80:
-                        ret_pad = 6
-                        ret_len = 8
-                        ret_x = enemy_screen_x - ret_pad
-                        ret_y = enemy_screen_y - ret_pad
-                        ret_w = LIGHT_ENEMY_WIDTH + ret_pad * 2
-                        ret_h = LIGHT_ENEMY_HEIGHT + ret_pad * 2
-
-                        ret_color = (255, 60, 60)
-                        pygame.draw.line(canvas, ret_color, (ret_x, ret_y), (ret_x + ret_len, ret_y), 2)
-                        pygame.draw.line(canvas, ret_color, (ret_x, ret_y), (ret_x, ret_y + ret_len), 2)
-                        pygame.draw.line(canvas, ret_color, (ret_x + ret_w, ret_y), (ret_x + ret_w - ret_len, ret_y), 2)
-                        pygame.draw.line(canvas, ret_color, (ret_x + ret_w, ret_y), (ret_x + ret_w, ret_y + ret_len), 2)
-                        pygame.draw.line(canvas, ret_color, (ret_x, ret_y + ret_h), (ret_x + ret_len, ret_y + ret_h), 2)
-                        pygame.draw.line(canvas, ret_color, (ret_x, ret_y + ret_h), (ret_x, ret_y + ret_h - ret_len), 2)
-                        pygame.draw.line(canvas, ret_color, (ret_x + ret_w, ret_y + ret_h), (ret_x + ret_w - ret_len, ret_y + ret_h), 2)
-                        pygame.draw.line(canvas, ret_color, (ret_x + ret_w, ret_y + ret_h), (ret_x + ret_w, ret_y + ret_h - ret_len), 2)
-
-                        mode_tag = "CONE LOCK" if player.radar_mode == "CONE" else "OMNI LOCK"
-                        lock_text = hud_renderer.get_lock_label(mode_tag)
-                        if lock_text is not None:
-                            canvas.blit(lock_text, (ret_x + ret_w // 2 - lock_text.get_width() // 2, ret_y - 14))
+        # Target lock-on brackets for every radar-locked aerial target (fighters, bombers, drones)
+        if player.health > 0:
+            mode_tag = "CONE LOCK" if player.radar_mode == "CONE" else "OMNI LOCK"
+            lock_label = hud_renderer.get_lock_label(mode_tag)
+            for tgt in get_rocket_targets():
+                if not player.is_enemy_in_lock_zone(tgt):
+                    continue
+                sx = tgt.x - camera_x
+                sy = tgt.y - camera_y
+                if -80 <= sx <= GAME_WIDTH + 80 and -80 <= sy <= GAME_HEIGHT + 80:
+                    draw_lock_brackets(canvas, pygame.Rect(int(sx), int(sy), tgt.width, tgt.height), lock_label)
 
         # Draw explosions with camera offset
         explosion_group.update()
@@ -2592,8 +2604,19 @@ def draw(mouse_pos=None):
             pygame.draw.line(minimap_surface, (0, 240, 220, 130), (p1_x, p1_y), (p2_x, p2_y), 1)
 
         elif player.radar_mode == "OMNI":
-            omni_r_mm = int(RADAR_OMNI_RANGE * MINIMAP_SCALE)
-            pygame.draw.circle(minimap_surface, (255, 140, 40, 190), (int(player_mm_x), int(player_mm_y)), omni_r_mm, 1)
+            omni_r_mm = RADAR_OMNI_RANGE * MINIMAP_SCALE
+            half = math.radians(missile_defense.RADAR_OMNI_HALF_ANGLE)
+            p_rad = math.radians(player.angle)
+            omni_color = (255, 140, 40, 190)
+            for edge in (p_rad + half, p_rad - half):
+                ex = player_mm_x - math.sin(edge) * omni_r_mm
+                ey = player_mm_y - math.cos(edge) * omni_r_mm
+                pygame.draw.line(minimap_surface, omni_color, (player_mm_x, player_mm_y), (ex, ey), 1)
+            arc_rect = pygame.Rect(
+                int(player_mm_x - omni_r_mm), int(player_mm_y - omni_r_mm), int(omni_r_mm * 2), int(omni_r_mm * 2)
+            )
+            center_math = p_rad + math.pi / 2  # screen-forward expressed in pygame.draw.arc angle space
+            pygame.draw.arc(minimap_surface, omni_color, arc_rect, center_math - half, center_math + half, 1)
 
         # Power-ups as glowing dots on minimap
         powerup_manager.draw_minimap_blips(minimap_surface, MINIMAP_SCALE)
@@ -3094,9 +3117,7 @@ def run_game():
                                 ground_support_manager.start_aiming()
                         elif event.button == 3:
                             ground_support_manager.stop_aiming()
-                            targets = list(wave_manager.enemies) + [g for g in ground_support_manager.enemy_ground_units if g.is_alive] + [f for f in ground_support_manager.enemy_fabricators if f.is_alive]
-                            if active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL:
-                                targets.extend(academy_manager.get_combat_targets())
+                            targets = get_rocket_targets()
                             player.set_shoot_rocket(targets)
 
             # Button release to deploy equipped Stratagem
@@ -3421,9 +3442,7 @@ def run_game():
                                 player.set_shoot()
 
                         if (keys[pygame.K_e] or (keys[pygame.K_f] and not (keys[pygame.K_LMETA] or keys[pygame.K_RMETA])) or keys[pygame.K_LCTRL]) and not player.rocket_reloading:
-                            targets = list(wave_manager.enemies) + [g for g in ground_support_manager.enemy_ground_units if g.is_alive] + [f for f in ground_support_manager.enemy_fabricators if f.is_alive]
-                            if active_mission_config.get("id") == MissionType.ACADEMY_TUTORIAL:
-                                targets.extend(academy_manager.get_combat_targets())
+                            targets = get_rocket_targets()
                             player.set_shoot_rocket(targets)
 
                         move()

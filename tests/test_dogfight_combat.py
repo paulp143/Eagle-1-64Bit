@@ -39,8 +39,8 @@ def test_directional_armor_head_on_vs_tail_chase():
     assert front_dmg < side_dmg < rear_dmg
 
 
-def test_aerial_collision_one_hit_kills_enemy_and_separates():
-    """Verify mid-air collision one-hit destroys Light_Enemy, bounces craft apart, and returns True."""
+def test_aerial_collision_one_hit_kills_enemy_without_knockback():
+    """Verify mid-air collision one-hit destroys Light_Enemy and keeps the player's flight path intact."""
     p = Player()
     p.pos_x = 1000.0
     p.pos_y = 1000.0
@@ -50,6 +50,7 @@ def test_aerial_collision_one_hit_kills_enemy_and_separates():
     p.velocity_y = 6.5
 
     enemy = Light_Enemy(x=1005, y=1005)
+    enemy_pos_before = (enemy.pos_x, enemy.pos_y)
 
     hit = resolve_aerial_collision(p, enemy, current_time_ms=1000)
 
@@ -59,12 +60,27 @@ def test_aerial_collision_one_hit_kills_enemy_and_separates():
     # Enemy is destroyed in one hit (health <= 0)
     assert enemy.health <= 0
 
-    # Aircraft are physically pushed apart to prevent multi-frame overlap grinding
-    dist_after = math.hypot(p.pos_x - enemy.pos_x, p.pos_y - enemy.pos_y)
-    assert dist_after >= 40.0
+    # Aircraft are not shoved apart: neither craft is teleported by the impact
+    assert (p.pos_x, p.pos_y) == (1000.0, 1000.0)
+    assert (p.x, p.y) == (1000, 1000)
+    assert (enemy.pos_x, enemy.pos_y) == enemy_pos_before
 
-    # Player loses speed on impact
-    assert p.velocity_x < 6.5
+    # Player keeps its momentum (no bounce-back speed loss)
+    assert p.velocity_x == pytest.approx(6.5)
+    assert p.velocity_y == pytest.approx(6.5)
+
+
+def test_aerial_collision_keeps_player_speed_at_any_throttle():
+    """Verify a collision never changes the player's speed, at minimum or maximum throttle."""
+    for speed in (Player().min_speed, Player().max_speed):
+        p = Player()
+        p.pos_x, p.pos_y = 1000.0, 1000.0
+        p.velocity_x = speed
+        p.velocity_y = speed
+        enemy = Light_Enemy(x=1000, y=1000)
+        resolve_aerial_collision(p, enemy, current_time_ms=1000)
+        assert p.velocity_x == pytest.approx(speed)
+        assert p.velocity_y == pytest.approx(speed)
 
 
 def test_aerial_collision_cooldown_prevents_invincibility_grinding():
@@ -115,9 +131,10 @@ def test_resolve_aerial_collision_exact_coincident_centers():
 
     hit = resolve_aerial_collision(p, enemy, current_time_ms=1000)
     assert hit is True
-    # Craft should be pushed apart cleanly
-    sep = math.hypot(p.pos_x - enemy.pos_x, p.pos_y - enemy.pos_y)
-    assert sep >= 40.0
+    # Coincident centers must not produce NaN or any displacement
+    assert (p.pos_x, p.pos_y) == (1000.0, 1000.0)
+    assert (enemy.pos_x, enemy.pos_y) == (999, 1007.5)
+    assert not math.isnan(p.pos_x) and not math.isnan(enemy.pos_x)
 
 
 def test_directional_gun_damage_zero_velocity_bullet():
