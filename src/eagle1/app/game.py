@@ -241,14 +241,19 @@ def calculate_missile_intercept_point(rx: float, ry: float, r_speed: float, targ
     dist = math.hypot(tx - rx, ty - ry)
     t_intercept = min(35.0, dist / max(1.0, float(r_speed)))
 
-    t_speed = float(getattr(target, "speed", 0.0))
-    if t_speed > 0.0 and hasattr(target, "angle"):
-        t_rad = math.radians(float(target.angle))
-        v_tx = math.sin(t_rad) * t_speed
-        v_ty = math.cos(t_rad) * t_speed
+    velocity = getattr(target, "velocity", None)
+    if isinstance(velocity, tuple) and len(velocity) == 2:
+        # Explicit world-space velocity (bombers, flares) is convention-independent
+        v_tx, v_ty = float(velocity[0]), float(velocity[1])
     else:
-        v_tx = 0.0
-        v_ty = 0.0
+        t_speed = float(getattr(target, "speed", 0.0))
+        if t_speed > 0.0 and hasattr(target, "angle"):
+            t_rad = math.radians(float(target.angle))
+            v_tx = math.sin(t_rad) * t_speed
+            v_ty = math.cos(t_rad) * t_speed
+        else:
+            v_tx = 0.0
+            v_ty = 0.0
 
     return (tx + v_tx * t_intercept, ty + v_ty * t_intercept)
 
@@ -700,6 +705,7 @@ class BomberEnemy(pygame.Rect):
         self.score_value = 150
         self.angle = 180.0
         self.bullet_damage = 15.0
+        self.velocity = (0.0, 0.0)
 
     def update(self, target_pos=(1500, 1500), speed_factor=1.0):
         if self.exploding:
@@ -712,8 +718,9 @@ class BomberEnemy(pygame.Rect):
         desired_angle = math.degrees(math.atan2(-dx, -dy)) % 360
         self.angle = desired_angle
 
-        self.pos_x += (dx / dist) * self.speed * speed_factor
-        self.pos_y += (dy / dist) * self.speed * speed_factor
+        self.velocity = ((dx / dist) * self.speed * speed_factor, (dy / dist) * self.speed * speed_factor)
+        self.pos_x += self.velocity[0]
+        self.pos_y += self.velocity[1]
         self.x = int(self.pos_x)
         self.y = int(self.pos_y)
 

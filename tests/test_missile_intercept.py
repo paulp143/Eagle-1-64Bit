@@ -77,3 +77,22 @@ def test_rocket_intercepts_fleeing_or_crossing_enemy():
 
     assert hit is True
 
+
+
+def test_intercept_leads_bomber_in_its_travel_direction():
+    """Bombers use the player heading convention; the intercept must lead along their real travel vector."""
+    from eagle1.app.game import BomberEnemy
+
+    bomber = BomberEnemy(1000, 500)
+    bomber.update(target_pos=(1032, 1500))
+    center_y = bomber.pos_y + bomber.height / 2
+    _, lead_y = calculate_missile_intercept_point(1032.0, 1400.0, 11.5, bomber)
+    assert lead_y > center_y
+
+
+def test_intercept_uses_flare_velocity():
+    from eagle1.systems.missile_defense import Flare
+
+    flare = Flare(500.0, 500.0, 3.0, 0.0)
+    lead_x, _ = calculate_missile_intercept_point(500.0, 800.0, 11.5, flare)
+    assert lead_x > flare.center()[0]
