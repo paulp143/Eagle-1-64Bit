@@ -25,7 +25,8 @@ Eagle-1-64Bit/
 │   │   ├── academy_briefing.py   # Academy tutorial drills and graduation ceremony.
 │   │   └── hangar_cinematic.py   # Orbital rearm cinematic (gantry hoist, wing arms, checklist) + Stratagem Hero.
 │   ├── story/                # Campaign: Super Destroyer hub view, MissionController, StoryManager,
-│   │                         # comms HUD, cinematic player, dialogue data/DB, campaign save.
+│   │                         # comms HUD, cinematic player, dialogue data/DB, campaign save,
+│   │                         # campaign_act1/2/3.py (sortie triggers, choice resolvers, Act III endings).
 │   ├── ui/                   # "Military Terminal" design system and every screen:
 │   │                         # theme.py (palette, type scale, bundled-font loader), widgets.py (allocation-free
 │   │                         # panels/bars/TextCache), menu_nav.py (MenuButton/MenuNavigator), hud.py + hud_layout.py
