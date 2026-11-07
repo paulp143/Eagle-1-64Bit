@@ -622,7 +622,8 @@ DIALOGUE_DATABASE: Dict[str, DialogueNode] = {
         portrait="images/portraits/npc_reiner.png",
         prompt=(
             "Lieutenant Val. Hand over your flight transponder key. Your psychological evaluation has "
-            "returned a verdict of 'Irredeemably Defective.' You weep for fallen meat. You are scheduled "
+            "returned a verdict of 'Irredeemably Defective.' You weep for fallen meat. You question High "
+            "Command. You are scheduled "
             "for immediate reassignment to a Penal Labor Battalion."
         ),
         options={

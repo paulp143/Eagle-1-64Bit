@@ -40,8 +40,11 @@ from eagle1.story.campaign_act3 import (
     SORTIE5B_SURRENDER_OBJECTIVE,
     SORTIE5B_SURRENDER_SECONDS,
     SORTIE_5B_CONFIG,
+    SORTIE5B_LANDING_RADIUS,
+    SORTIE5B_SCRAP_YARD_POS,
     WEAPONS_DISARMED_EXTRA_KEY,
     apply_act3b_weapon_disarmament,
+    is_in_scrap_yard_landing_zone,
     register_act3b_triggers,
     resolve_act3b_choice,
     resolve_act3b_confrontation_choice,
@@ -111,7 +114,7 @@ from eagle1.story.story_manager import (
     MAX_LOYALTY,
     StoryManager,
 )
-from eagle1.systems.ground_support import GroundSupportManager
+from eagle1.systems.ground_support import EAGLE_REARM_TIME, GroundSupportManager
 
 ACT3A_NODE_IDS = ("act3a_encrypted_order", "sortie_5a_trench_lock")
 ACT3A_BANTER_CATEGORIES = (
@@ -810,7 +813,11 @@ def test_act3b_confrontation_invalid_stance_returns_none(dissident_story, bad):
     assert ACT3B_CONFRONTATION_EXTRA_KEY not in dissident_story.extra
 
 
-@pytest.mark.parametrize("loyalty, expected", [(-5.0, 0.0), (7.5, 7.5), (40.0, 15.0), (float("nan"), 15.0), (True, 15.0)])
+@pytest.mark.parametrize(
+    "loyalty, expected",
+    [(-5.0, 0.0), (7.5, 7.5), (40.0, 15.0), (float("nan"), 15.0), (True, 15.0),
+     (float("inf"), 15.0), (float("-inf"), 0.0)],
+)
 def test_act3b_confrontation_clamps_loyalty(dissident_story, loyalty, expected):
     dissident_story.loyalty = loyalty
     resolve_act3b_confrontation_choice("neutral", dissident_story)
@@ -1114,3 +1121,104 @@ def test_act3b_symbols_exported_from_story_package():
     for name in expected:
         assert hasattr(story_pkg, name)
     assert story_pkg.apply_act3b_weapon_disarmament is apply_act3b_weapon_disarmament
+
+
+
+# -----------------------------------------------------------------------------
+# Act III-B: review follow-ups (rearm, lifecycle, persistence, landing zone, audio)
+# -----------------------------------------------------------------------------
+
+
+def test_act3b_disarmament_cancels_pending_rearm(dissident_story):
+    gsm = GroundSupportManager()
+    gsm.weapon_menu.charges[gsm.active_loadout[0]] = 0
+    assert gsm.weapon_menu.trigger_rearm()
+    apply_act3b_weapon_disarmament(None, gsm, dissident_story)
+    assert gsm.weapon_menu.is_rearming is False
+    gsm.weapon_menu.update(EAGLE_REARM_TIME + 1.0)
+    assert all(value == 0 for value in gsm.weapon_menu.charges.values())
+
+
+def test_act3b_retry_after_restore_replays_broadcast_without_double_count(dissident_story):
+    comms = _CalloutRecorder()
+    player = _DisarmPlayer()
+    first = apply_act3b_weapon_disarmament(player, GroundSupportManager(), dissident_story, comms_hud=comms)
+    restore_act3b_weapons(player, dissident_story)
+    second = apply_act3b_weapon_disarmament(player, GroundSupportManager(), dissident_story, comms_hud=comms)
+    assert second.already_disarmed is False
+    assert len(comms.callouts) == 2
+    assert dissident_story.extra[ACT3B_ORDNANCE_DUMPED_EXTRA_KEY] == second.ordnance_dumped == first.ordnance_dumped
+
+
+def test_act3b_restore_keeps_confrontation_stance(dissident_story):
+    resolve_act3b_confrontation_choice("dissident", dissident_story)
+    apply_act3b_weapon_disarmament(None, None, dissident_story)
+    restore_act3b_weapons(None, dissident_story)
+    assert dissident_story.extra[ACT3B_CONFRONTATION_EXTRA_KEY] == "dissident"
+
+
+@pytest.mark.parametrize("node_id", [ACT3B_CONFRONTATION_NODE_ID, SORTIE5B_SURRENDER_NODE_ID])
+def test_act3b_loyal_answer_clamp_survives_reload(dissident_story, tmp_path, node_id):
+    dissident_story.loyalty = 15.0
+    dissident_story.record_choice(node_id, "loyal")
+    resolve_act3b_choice(node_id, "loyal", dissident_story)
+    reloaded = StoryManager(save_manager=CampaignSaveManager(data_dir=tmp_path))
+    assert reloaded.loyalty <= ACT3B_MAX_LOYALTY
+    assert reloaded.get_ending_branch() == BRANCH_DISSIDENT_SURRENDER
+
+
+def test_act3b_resolver_must_follow_record_choice(dissident_story):
+    """Contract for #77: record_choice() first, then the resolver (the reverse order flips the branch)."""
+    dissident_story.loyalty = 15.0
+    resolve_act3b_confrontation_choice("loyal", dissident_story)
+    dissident_story.record_choice(ACT3B_CONFRONTATION_NODE_ID, "loyal")
+    assert dissident_story.get_ending_branch() != BRANCH_DISSIDENT_SURRENDER
+    resolve_act3b_confrontation_choice("loyal", dissident_story)
+    assert dissident_story.get_ending_branch() == BRANCH_DISSIDENT_SURRENDER
+
+
+@pytest.mark.parametrize(
+    "disarmed, dumped", [("true", 3.0), (1, True), (None, "x"), ([1], -4)]
+)
+def test_act3b_disarmament_with_malformed_saved_extra(dissident_story, tmp_path, disarmed, dumped):
+    dissident_story.extra[WEAPONS_DISARMED_EXTRA_KEY] = disarmed
+    dissident_story.extra[ACT3B_ORDNANCE_DUMPED_EXTRA_KEY] = dumped
+    dissident_story.save_campaign_state()
+    reloaded = StoryManager(save_manager=CampaignSaveManager(data_dir=tmp_path))
+    outcome = apply_act3b_weapon_disarmament(None, GroundSupportManager(), reloaded)
+    assert outcome.already_disarmed is False
+    assert reloaded.extra[WEAPONS_DISARMED_EXTRA_KEY] is True
+    assert reloaded.extra[ACT3B_ORDNANCE_DUMPED_EXTRA_KEY] == outcome.ordnance_dumped
+
+
+@pytest.mark.parametrize("loyalty, expected", [(90.0, 15.0), (-5.0, 0.0), (float("nan"), 15.0)])
+def test_act3b_epilogue_stats_clamp_loyalty(dissident_story, loyalty, expected):
+    dissident_story.loyalty = loyalty
+    assert build_act3b_epilogue_stats(dissident_story).final_loyalty == expected
+
+
+def test_act3b_scrap_yard_landing_zone():
+    cx, cy = SORTIE5B_SCRAP_YARD_POS
+    assert is_in_scrap_yard_landing_zone(cx, cy)
+    assert is_in_scrap_yard_landing_zone(cx + SORTIE5B_LANDING_RADIUS, cy)
+    assert not is_in_scrap_yard_landing_zone(cx + SORTIE5B_LANDING_RADIUS + 1.0, cy)
+    for bad in (None, True, "1500", float("nan"), float("inf")):
+        assert not is_in_scrap_yard_landing_zone(bad, cy)
+        assert not is_in_scrap_yard_landing_zone(cx, bad)
+    assert 0.0 <= cx <= 3000.0 and 0.0 <= cy <= 3000.0
+
+
+def test_act3b_gunshot_has_dedicated_channel():
+    from eagle1.systems.audio_manager import SOUND_CHANNELS, SOUND_MIN_INTERVALS
+
+    assert "gunshot" in SOUND_CHANNELS
+    assert "gunshot" in SOUND_MIN_INTERVALS
+
+
+def test_act3b_review_symbols_exported():
+    import eagle1.story as story_pkg
+
+    for name in ("PLAYER_WEAPONS_DISARMED_ATTR", "SORTIE5B_SCRAP_YARD_OBJECTIVE",
+                 "SORTIE5B_SCRAP_YARD_POS", "is_in_scrap_yard_landing_zone"):
+        assert name in story_pkg.__all__
+        assert hasattr(story_pkg, name)

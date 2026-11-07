@@ -621,10 +621,14 @@ SORTIE5B_PURSUIT_SECONDS: float = 2.0
 SORTIE5B_SURRENDER_SECONDS: float = 7.0
 
 SORTIE5B_INITIAL_OBJECTIVE: str = (
-    "Emergency launch override: Eagle-1 is airborne without clearance. Clear the battery's flak."
+    "Emergency launch override: Eagle-1 is airborne without clearance. The Automaton battery is tracking you."
 )
 SORTIE5B_SURRENDER_OBJECTIVE: str = "Reiner is on the open channel. Answer him, Eagle-1."
 SORTIE5B_SCRAP_YARD_OBJECTIVE: str = "Weapons cold. Glide to the central Automaton scrap yard and land."
+
+# Central Automaton scrap yard in world space (map centre of the 3000x3000 battlefield).
+SORTIE5B_SCRAP_YARD_POS: Tuple[float, float] = (1500.0, 1500.0)
+SORTIE5B_LANDING_RADIUS: float = 220.0
 
 SORTIE_5B_CONFIG: CampaignSortieConfig = CampaignSortieConfig(
     sortie_num=SORTIE5B_NUM,
@@ -704,8 +708,8 @@ def register_act3b_triggers(manager: NarrativeTriggerManager) -> int:
 
 
 def _clamp_dissident(value: Any) -> float:
-    """Clamp loyalty into [MIN_LOYALTY, ACT3B_MAX_LOYALTY]; bools, NaN, inf and garbage become the maximum."""
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+    """Clamp loyalty into [MIN_LOYALTY, ACT3B_MAX_LOYALTY]; bools, NaN and garbage become the maximum."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or math.isnan(value):
         return ACT3B_MAX_LOYALTY
     return min(ACT3B_MAX_LOYALTY, max(MIN_LOYALTY, float(value)))
 
@@ -777,7 +781,11 @@ def _disarm_player(player: Any) -> bool:
 
 
 def _dump_ordnance(ground_support_manager: Any) -> int:
-    """Cancel stratagem aiming, empty every stratagem charge and close the arsenal; returns charges dumped."""
+    """Cancel aiming and any pending Eagle rearm, empty every stratagem charge and close the arsenal.
+
+    Returns:
+        Number of stratagem charges dumped.
+    """
     stop_aiming = getattr(ground_support_manager, "stop_aiming", None)
     if callable(stop_aiming):
         stop_aiming()
@@ -790,6 +798,9 @@ def _dump_ordnance(ground_support_manager: Any) -> int:
         dumped = sum(value for value in charges.values() if _is_count(value))
         for key in list(charges):
             charges[key] = 0
+    # A rearm already in progress would refill every charge when its timer runs out.
+    _set_existing_attr(menu, "is_rearming", False)
+    _set_existing_attr(menu, "rearm_timer", 0.0)
     _set_existing_attr(menu, "is_open", False)
     return dumped
 
@@ -806,12 +817,18 @@ def apply_act3b_weapon_disarmament(
     Duck-typed against Player (used/max bullets and rockets) and GroundSupportManager
     (stop_aiming(), weapon_menu.charges); every argument may be None. Records
     story.extra["weapons_disarmed"], keeps loyalty <= THRESHOLD_DISSIDENT_SURRENDER, sets the
-    HUD objective to the scrap yard landing zone and plays Val's broadcast once. Calling it
-    again re-applies the disarmament without repeating the broadcast (already_disarmed=True).
+    HUD objective to the scrap yard landing zone and plays Val's broadcast once per attempt.
+    Calling it again with the same StoryManager re-applies the disarmament without repeating
+    the broadcast (already_disarmed=True).
 
-    Reversal: game.respawn() refills the magazines, GroundSupportManager.reset() refills the
-    stratagems, StoryManager.reset_campaign() drops the flag; restore_act3b_weapons() clears
-    the player and story flags explicitly.
+    This only empties the magazines and stratagem charges once. Keeping the ship cold is the
+    game loop's job (#77): it must gate fire input, RELOAD_END / ROCKET_RELOAD_END, Eagle
+    rearm and supply-pod resupply on PLAYER_WEAPONS_DISARMED_ATTR, pacify the Automaton wave
+    and complete the sortie on landing (is_in_scrap_yard_landing_zone()).
+
+    Reversal: neither game.respawn() nor GroundSupportManager.reset() clears the player flag or
+    the persisted story flag, so #77 must call restore_act3b_weapons() on every respawn and on
+    every Sortie 5B (re)start. StoryManager.reset_campaign() also drops the story flag.
     """
     story = _as_story(story_manager)
     already = story is not None and story.extra.get(WEAPONS_DISARMED_EXTRA_KEY) is True
@@ -852,7 +869,9 @@ def apply_act3b_weapon_disarmament(
 def restore_act3b_weapons(player: Optional[Any] = None, story_manager: Optional[StoryManager] = None) -> bool:
     """Undo apply_act3b_weapon_disarmament() for the player and the story flags.
 
-    Stratagem charges are refilled by GroundSupportManager.reset() on the next mission.
+    Call on every respawn and Sortie 5B (re)start so a retry replays the broadcast and an
+    Arcade mission never starts disarmed. Stratagem charges are refilled by
+    GroundSupportManager.reset(); the Scene 3B.1 stance is kept (it is campaign history).
 
     Returns:
         True if anything was restored.
@@ -874,6 +893,15 @@ def restore_act3b_weapons(player: Optional[Any] = None, story_manager: Optional[
     return changed
 
 
+def is_in_scrap_yard_landing_zone(x: Any, y: Any) -> bool:
+    """Return True if the world position lies within the Sortie 5B scrap yard landing zone."""
+    for value in (x, y):
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            return False
+    cx, cy = SORTIE5B_SCRAP_YARD_POS
+    return math.hypot(float(x) - cx, float(y) - cy) <= SORTIE5B_LANDING_RADIUS
+
+
 def resolve_act3b_choice(
     node_id: str,
     stance: str,
@@ -886,7 +914,8 @@ def resolve_act3b_choice(
     """Route a recorded Act III-B choice to its effect.
 
     Every answer on the surrender channel ends in the disarmament: Reiner rejects the loyal
-    answer and denies the neutral one.
+    answer and denies the neutral one. Call after StoryManager.record_choice(): the resolver
+    re-clamps (and saves) the loyalty that record_choice() may have raised.
 
     Returns:
         The HUD objective text that follows the choice, or None if node_id is not an
@@ -1058,7 +1087,7 @@ def build_act3b_epilogue_stats(story_manager: Optional[StoryManager]) -> Epilogu
     return EpilogueSummaryStats(
         ending_branch=BRANCH_DISSIDENT_SURRENDER,
         ending_title=ACT3B_ENDING_TITLE,
-        final_loyalty=story.loyalty if story is not None else MIN_LOYALTY,
+        final_loyalty=_clamp_dissident(story.loyalty) if story is not None else MIN_LOYALTY,
         total_casualties=story.total_casualties if story is not None else 0,
         sorties_completed=ACT3B_SORTIES_COMPLETED,
         pilot_status=ACT3B_PILOT_STATUS,
