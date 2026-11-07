@@ -2505,6 +2505,14 @@ class GroundSupportManager:
         self.add_combat_popup(f"CASUALTY: {unit.callsign} KIA!", unit.pos_x, unit.pos_y, (255, 75, 75))
         return True
 
+    def mark_squad_wipe_reported(self) -> None:
+        """Suppress the automatic squad-wipe notification for a scripted story event.
+
+        Used when the caller records the narrative consequence of the wipe itself
+        (e.g. the Act III-A purge), so update() must not apply StoryManager.on_squad_wipe().
+        """
+        self._squad_wipe_reported = True
+
     def add_combat_popup(self, text, x, y, color=(255, 255, 255)):
         self.floating_popups.append({
             "text": text,
