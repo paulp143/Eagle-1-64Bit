@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, List, Optional,
 
 from eagle1.story.dialogue_data import BANTER_QUEUES, get_contextual_banter
 from eagle1.story.dialogue_db import get_dialogue_node
-from eagle1.story.mission_controller import MAX_SORTIE_NUM, MIN_SORTIE_NUM, MissionController
+from eagle1.story.mission_controller import MAX_STORY_SORTIE_NUM, MIN_SORTIE_NUM, MissionController
 from eagle1.story.story_manager import StoryManager
 
 if TYPE_CHECKING:
@@ -152,7 +152,7 @@ def validate_sortie_event_trigger(trigger: SortieEventTrigger) -> None:
 
     if isinstance(trigger.sortie_num, bool) or not isinstance(trigger.sortie_num, int):
         raise ValueError(f"Trigger '{tid}': sortie_num must be an int")
-    if not MIN_SORTIE_NUM <= trigger.sortie_num <= MAX_SORTIE_NUM:
+    if not MIN_SORTIE_NUM <= trigger.sortie_num <= MAX_STORY_SORTIE_NUM:
         raise ValueError(f"Trigger '{tid}': sortie_num {trigger.sortie_num} is out of range")
 
     if isinstance(trigger.priority, bool) or not isinstance(trigger.priority, int):
@@ -351,7 +351,7 @@ class NarrativeTriggerManager:
         if isinstance(sortie_num, bool) or not isinstance(sortie_num, int):
             logger.warning("Invalid sortie number %r; falling back to %d", sortie_num, MIN_SORTIE_NUM)
             return MIN_SORTIE_NUM
-        if not MIN_SORTIE_NUM <= sortie_num <= MAX_SORTIE_NUM:
+        if not MIN_SORTIE_NUM <= sortie_num <= MAX_STORY_SORTIE_NUM:
             logger.warning("Sortie number %d out of range; falling back to %d", sortie_num, MIN_SORTIE_NUM)
             return MIN_SORTIE_NUM
         return sortie_num
