@@ -1094,3 +1094,23 @@ def test_act3b_scene_renderers_draw_something(scene_type):
     keyframe = next(kf for kf in build_act3b_cinematic_sequence().keyframes if kf.scene_type == scene_type)
     player._draw_scene(canvas, keyframe)
     assert canvas.get_at((640, 360))[:3] != (0, 0, 0)
+
+
+def test_act3b_symbols_exported_from_story_package():
+    import eagle1.story as story_pkg
+
+    expected = {
+        "SORTIE_5B_CONFIG",
+        "ACT3B_TRIGGERS",
+        "register_act3b_triggers",
+        "resolve_act3b_confrontation_choice",
+        "apply_act3b_weapon_disarmament",
+        "restore_act3b_weapons",
+        "resolve_act3b_choice",
+        "build_act3b_cinematic_sequence",
+        "build_act3b_epilogue_stats",
+    }
+    assert expected <= set(story_pkg.__all__)
+    for name in expected:
+        assert hasattr(story_pkg, name)
+    assert story_pkg.apply_act3b_weapon_disarmament is apply_act3b_weapon_disarmament

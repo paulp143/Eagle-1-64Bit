@@ -4,8 +4,13 @@ Act III-A "The Path of Blind Obedience" (OBEDIENCE_PURGE, docs/story.md Section 
 Scene 3A.1 encrypted Priority Red order (Vermilion-Nine), Sortie 5A trench purge of
 Viper Squad, Scene 3A.2 hangar clone interlude and the Sortie 6A terminal dive.
 
-The ending is a tragedy without an exit: whatever the pilot answers, the resolvers keep
-loyalty at zealot level (>= THRESHOLD_OBEDIENCE_PURGE) so the branch can never flip.
+Act III-B "The Path of the Dissident" (DISSIDENT_SURRENDER, docs/story.md Section 7):
+Scene 3B.1 ready-room confrontation, Sortie 5B weapon disarmament and surrender broadcast,
+and the Judgment of Viper Squad execution cinematic in the Automaton scrap yard.
+
+Both endings are tragedies without an exit: whatever the pilot answers, the resolvers keep
+loyalty at zealot level (>= THRESHOLD_OBEDIENCE_PURGE) or dissident level
+(<= THRESHOLD_DISSIDENT_SURRENDER) so the branch can never flip.
 """
 
 from dataclasses import dataclass
