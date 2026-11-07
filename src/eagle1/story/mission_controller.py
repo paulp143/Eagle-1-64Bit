@@ -17,6 +17,11 @@ logger = logging.getLogger(__name__)
 MIN_SORTIE_NUM: int = 1
 MAX_SORTIE_NUM: int = 4
 
+# Highest sortie number narrative content may target: the Act III branch sorties (5A/5B/5C)
+# use sortie 5 and the Act III-A terminal dive uses sortie 6. They live outside
+# CAMPAIGN_SORTIE_REGISTRY, which only covers the linear Sorties 1-4.
+MAX_STORY_SORTIE_NUM: int = 6
+
 VALID_CAMPAIGN_MISSION_MODES: Tuple[str, ...] = (
     "air_superiority",
     "base_defense",

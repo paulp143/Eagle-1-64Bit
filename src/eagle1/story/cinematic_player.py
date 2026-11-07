@@ -40,6 +40,8 @@ CINEMATIC_SCENE_HANGAR_CLONES: str = "hangar_clones"
 CINEMATIC_SCENE_SCRAP_YARD_EXECUTION: str = "scrap_yard_execution"
 CINEMATIC_SCENE_OBSERVATION_DECK_FUNERAL: str = "observation_deck_funeral"
 CINEMATIC_SCENE_EPILOGUE_CARD: str = "epilogue_card"
+CINEMATIC_SCENE_TRENCH_STRIKE: str = "trench_strike"
+CINEMATIC_SCENE_WHITE_FLASH: str = "white_flash"
 
 VALID_CINEMATIC_SCENE_TYPES: Tuple[str, ...] = (
     CINEMATIC_SCENE_SUICIDE_DIVE,
@@ -47,6 +49,8 @@ VALID_CINEMATIC_SCENE_TYPES: Tuple[str, ...] = (
     CINEMATIC_SCENE_SCRAP_YARD_EXECUTION,
     CINEMATIC_SCENE_OBSERVATION_DECK_FUNERAL,
     CINEMATIC_SCENE_EPILOGUE_CARD,
+    CINEMATIC_SCENE_TRENCH_STRIKE,
+    CINEMATIC_SCENE_WHITE_FLASH,
 )
 
 DEFAULT_SUBTITLE_COLOR: Tuple[int, int, int] = (235, 240, 250)
@@ -367,6 +371,8 @@ class CinematicPlayer:
             CINEMATIC_SCENE_SCRAP_YARD_EXECUTION: self._draw_scene_scrap_yard_execution,
             CINEMATIC_SCENE_OBSERVATION_DECK_FUNERAL: self._draw_scene_observation_deck_funeral,
             CINEMATIC_SCENE_EPILOGUE_CARD: self._draw_scene_epilogue_card,
+            CINEMATIC_SCENE_TRENCH_STRIKE: self._draw_scene_trench_strike,
+            CINEMATIC_SCENE_WHITE_FLASH: self._draw_scene_white_flash,
         }
 
         self._init_fonts()
@@ -819,6 +825,21 @@ class CinematicPlayer:
 
     def _draw_scene_epilogue_card(self, surface: pygame.Surface) -> None:
         surface.fill((5, 5, 8))
+
+    def _draw_scene_trench_strike(self, surface: pygame.Surface) -> None:
+        """Ash-grey valley, Viper Squad's trench with four blue beacons and the falling 500kg."""
+        surface.fill((58, 58, 62))
+        valley = [self._project(x, y) for x, y in [(-700, 120), (-260, 40), (260, 40), (700, 120), (700, 400), (-700, 400)]]
+        pygame.draw.polygon(surface, (44, 40, 38), valley)
+        pygame.draw.line(surface, (24, 22, 20), self._project(-220, 90), self._project(220, 90), self._scale(14))
+        for x in (-120, -40, 40, 120):
+            pygame.draw.circle(surface, (60, 140, 255), self._project(x, 80), self._scale(7))
+        pygame.draw.line(surface, (255, 40, 30), self._project(0, -360), self._project(0, 80), max(1, self._scale(2)))
+        bomb = [self._project(x, y) for x, y in [(0, -150), (-12, -180), (-12, -230), (12, -230), (12, -180)]]
+        pygame.draw.polygon(surface, (30, 30, 34), bomb)
+
+    def _draw_scene_white_flash(self, surface: pygame.Surface) -> None:
+        surface.fill((255, 255, 255))
 
     def _draw_letterbox_and_subtitles(self, surface: pygame.Surface) -> None:
         h = CINEMATIC_LETTERBOX_HEIGHT

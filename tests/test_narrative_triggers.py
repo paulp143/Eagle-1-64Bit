@@ -134,7 +134,7 @@ def test_validate_accepts_custom_with_predicate():
         {"trigger_id": ""},
         {"trigger_id": "   "},
         {"sortie_num": 0},
-        {"sortie_num": 5},
+        {"sortie_num": 7},
         {"sortie_num": True},
         {"priority": True},
         {"condition_type": "bogus"},
@@ -559,3 +559,20 @@ def test_dispatch_log_is_capped(manager, comms, monkeypatch):
         comms.dismiss()
 
     assert manager.dispatch_log == ["b", "c"]
+
+
+def test_trigger_for_act3_sortie_is_accepted(manager):
+    """Act III branch sorties (5) and the Act III-A terminal dive (6) may carry triggers."""
+    manager.register_trigger(_trigger("act3_s5", threshold=1, sortie_num=5))
+    manager.register_trigger(_trigger("act3_s6", threshold=1, sortie_num=6))
+    manager.reset_for_sortie(5)
+    assert manager.active_sortie_num == 5
+    assert manager.evaluate(CombatTelemetrySnapshot(aerial_kills=1)) == ("act3_s5",)
+    manager.reset_for_sortie(6)
+    assert manager.active_sortie_num == 6
+
+
+def test_trigger_sortie_beyond_story_range_rejected():
+    """Sortie numbers above MAX_STORY_SORTIE_NUM stay invalid."""
+    with pytest.raises(ValueError):
+        validate_sortie_event_trigger(_trigger("too_far", sortie_num=7))

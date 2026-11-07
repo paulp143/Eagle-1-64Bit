@@ -530,6 +530,91 @@ DIALOGUE_DATABASE: Dict[str, DialogueNode] = {
         act=2,
         sortie=4,
     ),
+    # Act III-A (OBEDIENCE_PURGE, #74). Refusal is narratively overridden: whatever the
+    # pilot answers, campaign_act3 clamps loyalty back to zealot level and the strike happens.
+    "act3a_encrypted_order": DialogueNode(
+        node_id="act3a_encrypted_order",
+        speaker="Democracy Officer Karl Reiner",
+        location="Eagle-1 Cockpit - Encrypted Channel 9",
+        portrait="images/portraits/npc_reiner.png",
+        prompt=(
+            "Viper Squad is infected with anti-democratic defeatism. At Outpost Gamma you will receive "
+            "coordinates for an alleged Automaton bunker. They are Viper Squad's foxhole. Deploy your 500kg "
+            "ordinance directly onto that grid. Authorization code: Vermilion-Nine. Confirm understanding."
+        ),
+        options={
+            "loyal": DialogueOption(
+                stance="loyal",
+                key_name="1",
+                key_code=pygame.K_1,
+                label="[1. LOYAL] Orders received, Officer Reiner. Purity must be preserved. Eliminating the dissidents.",
+                loyalty_delta=+10.0,
+                response="Exemplary, Lieutenant. You are a true daughter of Super Earth.",
+            ),
+            "neutral": DialogueOption(
+                stance="neutral",
+                key_name="2",
+                key_code=pygame.K_2,
+                label="[2. NEUTRAL] Requesting written confirmation of Vermilion-Nine before weapons release.",
+                loyalty_delta=0.0,
+                response="Refusal triggers remote detonation of your craft's engine reactor in three... two...",
+                speaker_reaction="Val: '...Understood. Preparing ordinance.'",
+            ),
+            "dissident": DialogueOption(
+                stance="dissident",
+                key_name="3",
+                key_code=pygame.K_3,
+                label="[3. DISSIDENT] Negative. I will not drop a 500kg on my own squad.",
+                loyalty_delta=-10.0,
+                response="Refusal triggers remote detonation of your craft's engine reactor in three... two...",
+                speaker_reaction="Val: '...Understood. Preparing ordinance.'",
+            ),
+        },
+        act=3,
+        sortie=5,
+    ),
+    "sortie_5a_trench_lock": DialogueNode(
+        node_id="sortie_5a_trench_lock",
+        speaker="Viper-2 Braker vs Officer Reiner",
+        location="In-Flight Radio Comms",
+        portrait="images/portraits/viper_2_braker.png",
+        prompt=(
+            "Braker: 'Hey... Eagle? Your targeting laser is painting our trench. "
+            "Val? Why is the targeting reticle on us? Val, abort! ABORT!' "
+            "Reiner: 'Vermilion-Nine is authorized, Eagle-1. Release the 500kg.'"
+        ),
+        options={
+            "loyal": DialogueOption(
+                stance="loyal",
+                key_name="1",
+                key_code=pygame.K_1,
+                label="[1. LOYAL] Releasing ordinance on Vermilion-Nine coordinates.",
+                loyalty_delta=+10.0,
+                response="Apex: 'Super Earth... why...?'",
+                speaker_reaction="Reiner: 'Magnificent strike, Lieutenant. A hero's reception awaits you.'",
+            ),
+            "neutral": DialogueOption(
+                stance="neutral",
+                key_name="2",
+                key_code=pygame.K_2,
+                label="[2. NEUTRAL] Weapons release per Authorization Vermilion-Nine. Logging the order.",
+                loyalty_delta=0.0,
+                response="Apex: 'Super Earth... why...?'",
+                speaker_reaction="Val: 'Target... neutralized. Sector clean.'",
+            ),
+            "dissident": DialogueOption(
+                stance="dissident",
+                key_name="3",
+                key_code=pygame.K_3,
+                label="[3. DISSIDENT] Braker, get out of the trench! RUN!",
+                loyalty_delta=-10.0,
+                response="Reiner: 'Remote release engaged, Lieutenant. Vermilion-Nine does not require your consent.'",
+                speaker_reaction="Apex: 'Super Earth... why...?'",
+            ),
+        },
+        act=3,
+        sortie=5,
+    ),
     "bridge_vance_logistics": DialogueNode(
         node_id="bridge_vance_logistics",
         speaker="Ship Master Cynthia Vance",

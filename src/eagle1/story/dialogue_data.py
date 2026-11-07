@@ -589,6 +589,47 @@ BANTER_QUEUES: Dict[str, List[BanterLine]] = {
             portrait_path="",
         ),
     ],
+    # Act III-A Sortie 5A "The Purge of Viper Squad" (#74).
+    "act3a_s5_apex_checkin": [
+        BanterLine(
+            line_id="act3a_s5_apex_checkin_01",
+            member_id="viper_1",
+            speaker='Viper-1 "Apex"',
+            category="act3a_s5_apex_checkin",
+            text="Eagle-1! Thank God you're overhead! We've held this trench for forty minutes! Did you bring the extraction beacon?",
+            portrait_path="images/portraits/viper_1_apex.png",
+        ),
+    ],
+    "act3a_s5_doc_evac": [
+        BanterLine(
+            line_id="act3a_s5_doc_evac_01",
+            member_id="viper_4",
+            speaker='Viper-4 "Doc"',
+            category="act3a_s5_doc_evac",
+            text="Eagle, we're out of stims, out of ammo! We need evac!",
+            portrait_path="images/portraits/viper_4_doc.png",
+        ),
+    ],
+    "act3a_s5_apex_final": [
+        BanterLine(
+            line_id="act3a_s5_apex_final_01",
+            member_id="viper_1",
+            speaker='Viper-1 "Apex"',
+            category="act3a_s5_apex_final",
+            text="Super Earth... why...?",
+            portrait_path="images/portraits/viper_1_apex.png",
+        ),
+    ],
+    "act3a_s5_reiner_commendation": [
+        BanterLine(
+            line_id="act3a_s5_reiner_commendation_01",
+            member_id="reiner",
+            speaker="Officer Reiner",
+            category="act3a_s5_reiner_commendation",
+            text="Magnificent strike, Lieutenant. Return to the Leviathan. A hero's reception awaits you.",
+            portrait_path="",
+        ),
+    ],
 }
 
 
