@@ -615,6 +615,101 @@ DIALOGUE_DATABASE: Dict[str, DialogueNode] = {
         act=3,
         sortie=5,
     ),
+    "act3b_ready_room_confrontation": DialogueNode(
+        node_id="act3b_ready_room_confrontation",
+        speaker="Democracy Officer Karl Reiner",
+        location="SES Leviathan of Truth - Ready Room (0300 Hours)",
+        portrait="images/portraits/npc_reiner.png",
+        prompt=(
+            "Lieutenant Val. Hand over your flight transponder key. Your psychological evaluation has "
+            "returned a verdict of 'Irredeemably Defective.' You weep for fallen meat. You are scheduled "
+            "for immediate reassignment to a Penal Labor Battalion."
+        ),
+        options={
+            "loyal": DialogueOption(
+                stance="loyal",
+                key_name="1",
+                key_code=pygame.K_1,
+                label="[1. LOYAL] Understood, Officer Reiner. Surrendering my transponder key to Super Earth.",
+                loyalty_delta=+10.0,
+                response=(
+                    "Vance (P.A.): 'General quarters! Automaton battery has locked onto our orbital drive! "
+                    "Scramble Eagle-1!'"
+                ),
+                speaker_reaction="Reiner: 'Too late for contrition. Guards, take her.' Val: '...Stand aside, Karl.'",
+            ),
+            "neutral": DialogueOption(
+                stance="neutral",
+                key_name="2",
+                key_code=pygame.K_2,
+                label="[2. NEUTRAL] Requesting a formal review of the evaluation through the chain of command.",
+                loyalty_delta=0.0,
+                response=(
+                    "Vance (P.A.): 'General quarters! Automaton battery has locked onto our orbital drive! "
+                    "Scramble Eagle-1!'"
+                ),
+                speaker_reaction="Reiner: 'The defective do not get a review.' Val: '...Stand aside, Karl.'",
+            ),
+            "dissident": DialogueOption(
+                stance="dissident",
+                key_name="3",
+                key_code=pygame.K_3,
+                label="[3. DISSIDENT] Why? Because I question High Command? Stand aside, Karl.",
+                loyalty_delta=-10.0,
+                response=(
+                    "Vance (P.A.): 'General quarters! Automaton battery has locked onto our orbital drive! "
+                    "Scramble Eagle-1!'"
+                ),
+                speaker_reaction=(
+                    "Reiner: 'You will die down there, traitor. "
+                    "If the bots don't grind you into grease, Super Earth will.'"
+                ),
+            ),
+        },
+        act=3,
+        sortie=5,
+    ),
+    "sortie_5b_surrender_broadcast": DialogueNode(
+        node_id="sortie_5b_surrender_broadcast",
+        speaker="Officer Reiner vs Eagle-1",
+        location="In-Flight Radio Comms",
+        portrait="images/portraits/npc_reiner.png",
+        prompt=(
+            "Reiner: 'Eagle-1, you launched without clearance. Engage the Automaton battery or be shot down "
+            "as a deserter.' The battery's anti-aircraft guns are tracking your craft."
+        ),
+        options={
+            "loyal": DialogueOption(
+                stance="loyal",
+                key_name="1",
+                key_code=pygame.K_1,
+                label="[1. LOYAL] Eagle-1 engaging the battery. For Super Earth, Officer Reiner.",
+                loyalty_delta=+10.0,
+                response="Reiner: 'Your transponder is flagged, traitor. Super Earth no longer accepts your service.'",
+                speaker_reaction="Val: '...Then I'm done. Disarming quad-cannons.'",
+            ),
+            "neutral": DialogueOption(
+                stance="neutral",
+                key_name="2",
+                key_code=pygame.K_2,
+                label="[2. NEUTRAL] Holding fire. Eagle-1 requests a direct channel to Ship Master Vance.",
+                loyalty_delta=0.0,
+                response="Reiner: 'Channel denied. Deserters do not get a hearing.'",
+                speaker_reaction="Val: '...Then I'm done. Disarming quad-cannons.'",
+            ),
+            "dissident": DialogueOption(
+                stance="dissident",
+                key_name="3",
+                key_code=pygame.K_3,
+                label="[3. DISSIDENT] This is Eagle-1 to all frequencies. Disarming quad-cannons. I surrender.",
+                loyalty_delta=-10.0,
+                response="Val: 'Dumping bomb racks into the sea. I am terminating my commission with Super Earth.'",
+                speaker_reaction="Reiner: 'Traitor! Every gun in orbit has your signature!'",
+            ),
+        },
+        act=3,
+        sortie=5,
+    ),
     "bridge_vance_logistics": DialogueNode(
         node_id="bridge_vance_logistics",
         speaker="Ship Master Cynthia Vance",

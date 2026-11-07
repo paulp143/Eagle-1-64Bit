@@ -2,6 +2,9 @@
 
 Act III-A "The Path of Blind Obedience" (#74): Scene 3A.1 encrypted order, Sortie 5A trench
 purge, Scene 3A.2 hangar clone interlude, Sortie 6A terminal dive cinematic and epilogue.
+
+Act III-B "The Path of the Dissident" (#75): Scene 3B.1 ready-room confrontation, Sortie 5B
+weapon disarmament and surrender, and the Judgment of Viper Squad execution cinematic.
 """
 
 import math
@@ -75,6 +78,7 @@ ACT3A_BANTER_CATEGORIES = (
     "act3a_s5_apex_final",
     "act3a_s5_reiner_commendation",
 )
+ACT3B_NODE_IDS = ("act3b_ready_room_confrontation", "sortie_5b_surrender_broadcast")
 
 
 # -----------------------------------------------------------------------------
@@ -595,3 +599,60 @@ def test_act3a_choice_recorded_after_strike_is_clamped_again(story_mgr, tmp_path
     assert story_mgr.total_casualties == 4
     reloaded = StoryManager(save_manager=CampaignSaveManager(data_dir=tmp_path))
     assert reloaded.get_ending_branch() == BRANCH_OBEDIENCE_PURGE
+
+
+# -----------------------------------------------------------------------------
+# Act III-B: dialogue nodes and banter
+# -----------------------------------------------------------------------------
+
+
+def test_act3b_dialogue_nodes_pass_validation():
+    for node_id in ACT3B_NODE_IDS:
+        assert node_id in DIALOGUE_DATABASE
+    assert validate_dialogue_database({k: DIALOGUE_DATABASE[k] for k in ACT3B_NODE_IDS}) is True
+    assert validate_dialogue_database(DIALOGUE_DATABASE) is True
+
+
+def test_act3b_nodes_are_act3_sortie5():
+    ids = {node.node_id for node in get_nodes_for_act_and_sortie(3, 5)}
+    assert set(ACT3B_NODE_IDS) <= ids
+    for node_id in ACT3B_NODE_IDS:
+        node = get_dialogue_node(node_id)
+        assert node.act == 3
+        assert node.sortie == 5
+
+
+def test_act3b_confrontation_prompt_and_vance_alarm():
+    node = get_dialogue_node("act3b_ready_room_confrontation")
+    for phrase in ("transponder key", "Irredeemably Defective", "Penal Labor Battalion"):
+        assert phrase in node.prompt
+    for option in node.options.values():
+        assert "Scramble Eagle-1!" in option.response
+        assert "General quarters!" in option.response
+    assert "If the bots don't grind you into grease" in node.options["dissident"].speaker_reaction
+
+
+def test_act3b_surrender_dissident_option_is_canonical_broadcast():
+    node = get_dialogue_node("sortie_5b_surrender_broadcast")
+    dissident = node.options["dissident"]
+    assert "This is Eagle-1 to all frequencies. Disarming quad-cannons." in dissident.label
+    assert "I surrender." in dissident.label
+    assert "Dumping bomb racks into the sea" in dissident.response
+    assert "I am terminating my commission with Super Earth" in dissident.response
+
+
+def test_act3b_texts_fit_comms_and_modal_limits():
+    for node_id in ACT3B_NODE_IDS:
+        node = get_dialogue_node(node_id)
+        assert len(node.prompt) <= 300
+        for option in node.options.values():
+            assert len(option.label) <= 110
+            assert len(option.response) <= 126
+
+
+def test_act3b_banter_category_exists():
+    lines = BANTER_QUEUES["act3b_s5_reiner_pursuit"]
+    assert len(lines) == 1
+    assert lines[0].category == "act3b_s5_reiner_pursuit"
+    assert "deserter" in lines[0].text
+    assert validate_viper_dialogue_data() is True
