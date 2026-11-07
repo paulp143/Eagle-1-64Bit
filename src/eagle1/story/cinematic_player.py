@@ -42,6 +42,8 @@ CINEMATIC_SCENE_OBSERVATION_DECK_FUNERAL: str = "observation_deck_funeral"
 CINEMATIC_SCENE_EPILOGUE_CARD: str = "epilogue_card"
 CINEMATIC_SCENE_TRENCH_STRIKE: str = "trench_strike"
 CINEMATIC_SCENE_WHITE_FLASH: str = "white_flash"
+CINEMATIC_SCENE_SCRAP_PLAIN: str = "scrap_plain"
+CINEMATIC_SCENE_HELLPOD_DROP: str = "hellpod_drop"
 
 VALID_CINEMATIC_SCENE_TYPES: Tuple[str, ...] = (
     CINEMATIC_SCENE_SUICIDE_DIVE,
@@ -51,6 +53,8 @@ VALID_CINEMATIC_SCENE_TYPES: Tuple[str, ...] = (
     CINEMATIC_SCENE_EPILOGUE_CARD,
     CINEMATIC_SCENE_TRENCH_STRIKE,
     CINEMATIC_SCENE_WHITE_FLASH,
+    CINEMATIC_SCENE_SCRAP_PLAIN,
+    CINEMATIC_SCENE_HELLPOD_DROP,
 )
 
 DEFAULT_SUBTITLE_COLOR: Tuple[int, int, int] = (235, 240, 250)
@@ -373,6 +377,8 @@ class CinematicPlayer:
             CINEMATIC_SCENE_EPILOGUE_CARD: self._draw_scene_epilogue_card,
             CINEMATIC_SCENE_TRENCH_STRIKE: self._draw_scene_trench_strike,
             CINEMATIC_SCENE_WHITE_FLASH: self._draw_scene_white_flash,
+            CINEMATIC_SCENE_SCRAP_PLAIN: self._draw_scene_scrap_plain,
+            CINEMATIC_SCENE_HELLPOD_DROP: self._draw_scene_hellpod_drop,
         }
 
         self._init_fonts()
@@ -840,6 +846,34 @@ class CinematicPlayer:
 
     def _draw_scene_white_flash(self, surface: pygame.Surface) -> None:
         surface.fill((255, 255, 255))
+
+    def _draw_scene_scrap_plain(self, surface: pygame.Surface) -> None:
+        """Fog-bound scrap yard: wrecks, oil drums, landed Eagle-1 and silent red-eyed Automatons."""
+        surface.fill((34, 28, 24))
+        ground = [self._project(x, y) for x, y in [(-700, 80), (700, 80), (700, 400), (-700, 400)]]
+        pygame.draw.polygon(surface, (52, 42, 34), ground)
+        for wreck in ([(-560, 80), (-470, -10), (-360, 80)], [(320, 80), (430, -30), (560, 80)], [(-250, 80), (-210, 40), (-150, 80)]):
+            pygame.draw.polygon(surface, (66, 56, 46), [self._project(x, y) for x, y in wreck])
+        for x in (-320, -290, 250, 280):
+            drum_pos = self._project(x, 52)
+            pygame.draw.rect(surface, (110, 70, 30), (*drum_pos, self._scale(22), self._scale(30)))
+        eagle = [self._project(x, y) for x, y in [(0, 30), (-70, 80), (0, 66), (70, 80)]]
+        pygame.draw.polygon(surface, (150, 155, 165), eagle)
+        for i in range(9):
+            x = -360 + i * 90
+            body_pos = self._project(x - 10, -70)
+            pygame.draw.rect(surface, (30, 30, 36), (*body_pos, self._scale(20), self._scale(48)))
+            pygame.draw.circle(surface, (255, 40, 30), self._project(x, -60), self._scale(3))
+        for y in (-110, -20, 120):
+            pygame.draw.line(surface, (84, 78, 72), self._project(-700, y), self._project(700, y + 20), self._scale(2))
+
+    def _draw_scene_hellpod_drop(self, surface: pygame.Surface) -> None:
+        """Scrap plain with four black Hellpods slammed into the dirt around Eagle-1."""
+        self._draw_scene_scrap_plain(surface)
+        for x, y in ((-170, 60), (170, 60), (-110, 130), (110, 130)):
+            pygame.draw.circle(surface, (255, 140, 40), self._project(x, y + 18), self._scale(34), max(1, self._scale(3)))
+            pod = [self._project(px, py) for px, py in [(x, y - 50), (x - 18, y - 20), (x - 18, y + 18), (x + 18, y + 18), (x + 18, y - 20)]]
+            pygame.draw.polygon(surface, (12, 12, 14), pod)
 
     def _draw_letterbox_and_subtitles(self, surface: pygame.Surface) -> None:
         h = CINEMATIC_LETTERBOX_HEIGHT

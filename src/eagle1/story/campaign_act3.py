@@ -16,6 +16,9 @@ from typing import TYPE_CHECKING, Any, Optional, Tuple
 from eagle1.story.cinematic_player import (
     CINEMATIC_SCENE_EPILOGUE_CARD,
     CINEMATIC_SCENE_HANGAR_CLONES,
+    CINEMATIC_SCENE_HELLPOD_DROP,
+    CINEMATIC_SCENE_SCRAP_PLAIN,
+    CINEMATIC_SCENE_SCRAP_YARD_EXECUTION,
     CINEMATIC_SCENE_SUICIDE_DIVE,
     CINEMATIC_SCENE_TRENCH_STRIKE,
     CINEMATIC_SCENE_WHITE_FLASH,
@@ -37,6 +40,7 @@ from eagle1.story.narrative_trigger_manager import (
     SortieEventTrigger,
 )
 from eagle1.story.story_manager import (
+    BRANCH_DISSIDENT_SURRENDER,
     BRANCH_OBEDIENCE_PURGE,
     MAX_LOYALTY,
     MIN_LOYALTY,
@@ -897,3 +901,161 @@ def resolve_act3b_choice(
             player, ground_support_manager, story_manager, mission_controller, comms_hud
         ).objective
     return None
+
+
+# -----------------------------------------------------------------------------
+# Act III-B cinematic epilogue: The Judgment of Viper Squad
+# -----------------------------------------------------------------------------
+
+ACT3B_ENDING_TITLE: str = "THE PATH OF THE DISSIDENT"
+ACT3B_SEQUENCE_TITLE: str = "ACT III-B: " + ACT3B_ENDING_TITLE
+ACT3B_SORTIES_COMPLETED: int = SORTIE5B_NUM
+ACT3B_PILOT_STATUS: str = "KIA // EXECUTED FOR TREASON"
+ACT3B_GUNSHOT_CUE: str = "gunshot"
+ACT3B_WATCHERS_NARRATION: str = "Dozens of red-eyed Automaton Troopers stand motionless in the fog, watching."
+ACT3B_HELLPOD_NARRATION: str = "Sonic boom. Four black Hellpods slam into the rusted dirt around Eagle-1."
+ACT3B_VAL_RELIEF_LINE: str = "At least... it's over."
+ACT3B_APEX_TRAITOR_LINE: str = "The Helldivers do not leave traitors behind, Lieutenant."
+ACT3B_DOC_LINE: str = "Why did you do it, Val? Why couldn't you just follow orders like the rest of us...?"
+ACT3B_VAL_FINAL_LINE: str = "Because someone had to say no."
+ACT3B_APEX_FINAL_LINE: str = "For Democracy."
+ACT3B_EXECUTION_NOTICE_LINES: Tuple[str, ...] = (
+    "Dissident Element 'Eagle-1' neutralized by Helldiver detachment Viper-1.",
+    "Order has been restored to Sector 7.",
+    "Victory is ours.",
+)
+
+_APEX: str = 'Viper-1 "Apex"'
+_BRAKER: str = 'Viper-2 "Braker"'
+_DOC: str = 'Viper-4 "Doc"'
+
+
+def build_act3b_cinematic_sequence() -> CinematicSequence:
+    """Return the Act III-B cutscene: surrender glide, scrap-plain landing, Hellpod drop and execution."""
+    keyframes = (
+        CinematicKeyframe(
+            keyframe_id="act3b_surrender_glide",
+            duration=9.0,
+            scene_type=CINEMATIC_SCENE_SCRAP_PLAIN,
+            title_caption="SORTIE 5B // THE SURRENDER OF EAGLE-1",
+            camera_start=(0.0, -160.0, 0.8),
+            camera_end=(0.0, -40.0, 1.0),
+            audio_cue="radio_squelch",
+            subtitles=(
+                _sub(0.5, 3.0, ACT3B_VAL_SPEAKER, "This is Eagle-1 to all frequencies. Disarming quad-cannons."),
+                _sub(3.1, 6.2, ACT3B_VAL_SPEAKER, "Dumping bomb racks into the sea. I am terminating my commission with Super Earth. I surrender."),
+                _sub(6.4, 8.4, ACT3B_VAL_SPEAKER, ACT3B_LANDING_LINE),
+            ),
+        ),
+        CinematicKeyframe(
+            keyframe_id="act3b_scrap_plain",
+            duration=8.0,
+            scene_type=CINEMATIC_SCENE_SCRAP_PLAIN,
+            title_caption="THE SCRAP PLAIN",
+            camera_start=(0.0, -40.0, 1.0),
+            camera_end=(0.0, 20.0, 1.2),
+            audio_cue="rearm_crane",
+            subtitles=(
+                _sub(0.6, 4.0, "", ACT3B_WATCHERS_NARRATION, _ECHO_COLOR),
+                _sub(4.6, 7.4, ACT3B_VAL_SPEAKER, ACT3B_VAL_RELIEF_LINE),
+            ),
+        ),
+        CinematicKeyframe(
+            keyframe_id="act3b_hellpod_drop",
+            duration=6.0,
+            scene_type=CINEMATIC_SCENE_HELLPOD_DROP,
+            camera_start=(0.0, 20.0, 1.2),
+            camera_end=(0.0, 40.0, 1.0),
+            fade_in=0.0,
+            audio_cue="explosion",
+            subtitles=(
+                _sub(0.3, 2.8, "", ACT3B_HELLPOD_NARRATION, _ALERT_COLOR),
+                _sub(3.0, 5.6, ACT3B_VAL_SPEAKER, "Apex...? You... you survived the factory raid?"),
+            ),
+        ),
+        CinematicKeyframe(
+            keyframe_id="act3b_viper_confrontation",
+            duration=10.0,
+            scene_type=CINEMATIC_SCENE_SCRAP_YARD_EXECUTION,
+            title_caption="THE JUDGMENT OF VIPER SQUAD",
+            camera_start=(0.0, 0.0, 1.0),
+            camera_end=(0.0, 10.0, 1.2),
+            audio_cue="radio_chatter",
+            subtitles=(
+                _sub(0.5, 3.0, _APEX, ACT3B_APEX_TRAITOR_LINE),
+                _sub(3.2, 6.2, ACT3B_VAL_SPEAKER, "Apex, listen to me! Look at this place! Super Earth sent you down here to die!"),
+                _sub(6.4, 9.4, ACT3B_VAL_SPEAKER, "They don't care about you! They don't care about any of us!"),
+            ),
+        ),
+        CinematicKeyframe(
+            keyframe_id="act3b_braker_doc",
+            duration=10.0,
+            scene_type=CINEMATIC_SCENE_SCRAP_YARD_EXECUTION,
+            camera_start=(0.0, 10.0, 1.2),
+            camera_end=(0.0, 20.0, 1.5),
+            subtitles=(
+                _sub(0.4, 2.6, _BRAKER, "You left us in the mud, Val. You threw away your oath."),
+                _sub(2.7, 4.6, _BRAKER, "You thought the clankers would give you peace?"),
+                _sub(4.8, 7.6, _DOC, ACT3B_DOC_LINE, _ECHO_COLOR),
+                _sub(7.8, 9.6, ACT3B_VAL_SPEAKER, ACT3B_VAL_FINAL_LINE),
+            ),
+        ),
+        CinematicKeyframe(
+            keyframe_id="act3b_for_democracy",
+            duration=3.0,
+            scene_type=CINEMATIC_SCENE_SCRAP_YARD_EXECUTION,
+            title_caption="BRAKER'S HEAVY REVOLVER",
+            camera_start=(0.0, 20.0, 1.5),
+            camera_end=(0.0, 20.0, 1.9),
+            fade_out=0.0,
+            audio_cue="stop_music",
+            subtitles=(
+                _sub(0.6, 2.8, _APEX, ACT3B_APEX_FINAL_LINE),
+            ),
+        ),
+        CinematicKeyframe(
+            keyframe_id="act3b_gunshot_cut",
+            duration=2.5,
+            scene_type=CINEMATIC_SCENE_EPILOGUE_CARD,
+            fade_in=0.0,
+            fade_out=0.0,
+            audio_cue=ACT3B_GUNSHOT_CUE,
+        ),
+        CinematicKeyframe(
+            keyframe_id="act3b_ministry_notice",
+            duration=9.0,
+            scene_type=CINEMATIC_SCENE_EPILOGUE_CARD,
+            title_caption="MINISTRY OF DEFENSE // OFFICIAL NOTICE",
+            fade_in=1.0,
+            fade_out=1.0,
+            subtitles=(
+                _sub(1.0, 3.6, "", ACT3B_EXECUTION_NOTICE_LINES[0]),
+                _sub(3.7, 5.9, "", ACT3B_EXECUTION_NOTICE_LINES[1]),
+                _sub(6.0, 8.0, "", ACT3B_EXECUTION_NOTICE_LINES[2]),
+            ),
+        ),
+    )
+    return CinematicSequence(
+        sequence_id=ACT3B_SEQUENCE_ID,
+        ending_branch=BRANCH_DISSIDENT_SURRENDER,
+        title=ACT3B_SEQUENCE_TITLE,
+        keyframes=keyframes,
+        epilogue_lines=ACT3B_EXECUTION_NOTICE_LINES,
+    )
+
+
+def build_act3b_epilogue_stats(story_manager: Optional[StoryManager]) -> EpilogueSummaryStats:
+    """Return the Act III-B epilogue statistics with the Ministry of Defense execution notice.
+
+    Without a StoryManager the canonical dissident path is assumed: loyalty 0.0, no casualties.
+    """
+    story = story_manager if isinstance(story_manager, StoryManager) else None
+    return EpilogueSummaryStats(
+        ending_branch=BRANCH_DISSIDENT_SURRENDER,
+        ending_title=ACT3B_ENDING_TITLE,
+        final_loyalty=story.loyalty if story is not None else MIN_LOYALTY,
+        total_casualties=story.total_casualties if story is not None else 0,
+        sorties_completed=ACT3B_SORTIES_COMPLETED,
+        pilot_status=ACT3B_PILOT_STATUS,
+        epilogue_lines=ACT3B_EXECUTION_NOTICE_LINES,
+    )

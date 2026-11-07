@@ -14,6 +14,17 @@ import pygame
 import pytest
 
 from eagle1.story.campaign_act3 import (
+    ACT3B_APEX_FINAL_LINE,
+    ACT3B_APEX_TRAITOR_LINE,
+    ACT3B_DOC_LINE,
+    ACT3B_EXECUTION_NOTICE_LINES,
+    ACT3B_GUNSHOT_CUE,
+    ACT3B_PILOT_STATUS,
+    ACT3B_SEQUENCE_ID,
+    ACT3B_VAL_FINAL_LINE,
+    ACT3B_VAL_RELIEF_LINE,
+    build_act3b_cinematic_sequence,
+    build_act3b_epilogue_stats,
     ACT3B_CONFRONTATION_EXTRA_KEY,
     ACT3B_CONFRONTATION_NODE_ID,
     ACT3B_MAX_LOYALTY,
@@ -71,6 +82,9 @@ from eagle1.story.campaign_save import CampaignSaveManager
 from eagle1.story.cinematic_player import (
     CINEMATIC_SCENE_EPILOGUE_CARD,
     CINEMATIC_SCENE_HANGAR_CLONES,
+    CINEMATIC_SCENE_HELLPOD_DROP,
+    CINEMATIC_SCENE_SCRAP_PLAIN,
+    CINEMATIC_SCENE_SCRAP_YARD_EXECUTION,
     CINEMATIC_SCENE_SUICIDE_DIVE,
     CINEMATIC_SCENE_TRENCH_STRIKE,
     CINEMATIC_SCENE_WHITE_FLASH,
@@ -954,3 +968,129 @@ def test_act3b_gunshot_sfx_asset_exists():
         assert wav.getframerate() == 44100
         assert wav.getnchannels() == 2
         assert wav.getnframes() > 0
+
+
+
+# -----------------------------------------------------------------------------
+# Act III-B: The Judgment of Viper Squad cinematic and epilogue
+# -----------------------------------------------------------------------------
+
+
+def test_act3b_cinematic_sequence_is_valid():
+    sequence = build_act3b_cinematic_sequence()
+    assert validate_cinematic_sequence(sequence) is True
+    assert sequence.sequence_id == ACT3B_SEQUENCE_ID == SORTIE_5B_CONFIG.debrief_node_id
+    assert sequence.ending_branch == BRANCH_DISSIDENT_SURRENDER
+    assert sequence.epilogue_lines == ACT3B_EXECUTION_NOTICE_LINES
+
+
+def test_act3b_cinematic_story_order():
+    ids = [kf.keyframe_id for kf in build_act3b_cinematic_sequence().keyframes]
+    assert ids == [
+        "act3b_surrender_glide",
+        "act3b_scrap_plain",
+        "act3b_hellpod_drop",
+        "act3b_viper_confrontation",
+        "act3b_braker_doc",
+        "act3b_for_democracy",
+        "act3b_gunshot_cut",
+        "act3b_ministry_notice",
+    ]
+    scenes = [kf.scene_type for kf in build_act3b_cinematic_sequence().keyframes]
+    assert scenes[:3] == [CINEMATIC_SCENE_SCRAP_PLAIN, CINEMATIC_SCENE_SCRAP_PLAIN, CINEMATIC_SCENE_HELLPOD_DROP]
+    assert scenes[3:6] == [CINEMATIC_SCENE_SCRAP_YARD_EXECUTION] * 3
+    assert scenes[6:] == [CINEMATIC_SCENE_EPILOGUE_CARD] * 2
+
+
+def test_act3b_cinematic_contains_canonical_beats():
+    text = _all_subtitle_text(build_act3b_cinematic_sequence())
+    for expected in (
+        "Disarming quad-cannons",
+        "Landing gear deployed. Coming down in the scrap yard.",
+        "red-eyed Automaton Troopers stand motionless",
+        "Four black Hellpods",
+        ACT3B_VAL_RELIEF_LINE,
+        ACT3B_APEX_TRAITOR_LINE,
+        ACT3B_DOC_LINE,
+        ACT3B_VAL_FINAL_LINE,
+        ACT3B_APEX_FINAL_LINE,
+        "You left us in the mud, Val.",
+        *ACT3B_EXECUTION_NOTICE_LINES,
+    ):
+        assert expected in text
+    assert ACT3B_EXECUTION_NOTICE_LINES[0] == (
+        "Dissident Element 'Eagle-1' neutralized by Helldiver detachment Viper-1."
+    )
+
+
+def test_act3b_gunshot_cuts_to_black_before_notice():
+    keyframes = build_act3b_cinematic_sequence().keyframes
+    gunshot = keyframes[-2]
+    assert gunshot.audio_cue == ACT3B_GUNSHOT_CUE == "gunshot"
+    assert gunshot.scene_type == CINEMATIC_SCENE_EPILOGUE_CARD
+    assert gunshot.subtitles == ()
+    assert gunshot.fade_in == 0.0
+    assert keyframes[-3].subtitles[-1].text == "For Democracy."
+    assert keyframes[-1].title_caption == "MINISTRY OF DEFENSE // OFFICIAL NOTICE"
+
+
+def test_act3b_cinematic_audio_cues_have_assets():
+    sfx_dir = PROJECT_ROOT / "audio" / "sfx"
+    for kf in build_act3b_cinematic_sequence().keyframes:
+        if kf.audio_cue and kf.audio_cue != "stop_music":
+            assert (sfx_dir / f"{kf.audio_cue}.wav").is_file(), kf.audio_cue
+
+
+def test_act3b_cinematic_plays_through_player_to_epilogue(dissident_story):
+    apply_act3b_weapon_disarmament(None, None, dissident_story)
+    sequence = build_act3b_cinematic_sequence()
+    player = CinematicPlayer(1280, 720)
+    received = []
+    player.on_audio_cue = received.append
+    player.start_sequence(sequence, build_act3b_epilogue_stats(dissident_story))
+    canvas = pygame.Surface((1280, 720))
+    seen_subtitles = set()
+
+    total = sum(kf.duration for kf in sequence.keyframes)
+    for _ in range(int(total * 60) + 30):
+        player.update(1.0 / 60.0)
+        player.draw(canvas)
+        seen_subtitles.update(sub.text for sub in player.get_active_subtitles())
+        if player.is_epilogue:
+            break
+
+    assert player.is_epilogue
+    assert player.skipped is False
+    assert received == [kf.audio_cue.strip() for kf in sequence.keyframes if kf.audio_cue]
+    assert seen_subtitles == {sub.text for kf in sequence.keyframes for sub in kf.subtitles}
+    assert player.get_epilogue_lines() == ACT3B_EXECUTION_NOTICE_LINES
+
+
+def test_act3b_epilogue_stats_after_surrender(dissident_story):
+    dissident_story.total_casualties = 2
+    apply_act3b_weapon_disarmament(None, None, dissident_story)
+    stats = build_act3b_epilogue_stats(dissident_story)
+    assert stats.ending_branch == BRANCH_DISSIDENT_SURRENDER
+    assert stats.ending_title == "THE PATH OF THE DISSIDENT"
+    assert stats.pilot_status == ACT3B_PILOT_STATUS == "KIA // EXECUTED FOR TREASON"
+    assert stats.final_loyalty == 10.0
+    assert stats.total_casualties == 2
+    assert stats.sorties_completed == 5
+    assert stats.epilogue_lines == ACT3B_EXECUTION_NOTICE_LINES
+
+
+def test_act3b_epilogue_stats_without_story_manager():
+    stats = build_act3b_epilogue_stats(None)
+    assert stats.final_loyalty == 0.0
+    assert stats.total_casualties == 0
+    assert stats.pilot_status == ACT3B_PILOT_STATUS
+
+
+@pytest.mark.parametrize("scene_type", [CINEMATIC_SCENE_SCRAP_PLAIN, CINEMATIC_SCENE_HELLPOD_DROP])
+def test_act3b_scene_renderers_draw_something(scene_type):
+    player = CinematicPlayer(1280, 720)
+    canvas = pygame.Surface((1280, 720))
+    canvas.fill((0, 0, 0))
+    keyframe = next(kf for kf in build_act3b_cinematic_sequence().keyframes if kf.scene_type == scene_type)
+    player._draw_scene(canvas, keyframe)
+    assert canvas.get_at((640, 360))[:3] != (0, 0, 0)
