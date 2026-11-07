@@ -3,8 +3,8 @@ name: CI Pipeline
 on:
   push:
     branches: [ "main" ]
+  # Every pull request, whatever its base branch (stacked PRs into feature branches too).
   pull_request:
-    branches: [ "main" ]
   workflow_dispatch:
 
 permissions:
