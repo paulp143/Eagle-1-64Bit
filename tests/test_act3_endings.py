@@ -8,6 +8,7 @@ weapon disarmament and surrender, and the Judgment of Viper Squad execution cine
 """
 
 import math
+import wave
 
 import pygame
 import pytest
@@ -65,6 +66,7 @@ from eagle1.story.campaign_act3 import (
     resolve_act3a_order_choice,
     resolve_act3a_trench_strike,
 )
+from eagle1.paths import PROJECT_ROOT
 from eagle1.story.campaign_save import CampaignSaveManager
 from eagle1.story.cinematic_player import (
     CINEMATIC_SCENE_EPILOGUE_CARD,
@@ -943,3 +945,12 @@ def test_act3b_surrender_after_loyal_answer_keeps_branch(dissident_story):
     resolve_act3b_choice(SORTIE5B_SURRENDER_NODE_ID, "loyal", dissident_story)
     assert dissident_story.loyalty == ACT3B_MAX_LOYALTY
     assert dissident_story.get_ending_branch() == BRANCH_DISSIDENT_SURRENDER
+
+
+def test_act3b_gunshot_sfx_asset_exists():
+    path = PROJECT_ROOT / "audio" / "sfx" / "gunshot.wav"
+    assert path.is_file()
+    with wave.open(str(path), "rb") as wav:
+        assert wav.getframerate() == 44100
+        assert wav.getnchannels() == 2
+        assert wav.getnframes() > 0

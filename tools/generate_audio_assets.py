@@ -330,6 +330,17 @@ def generate_sfx(output_dir):
     radio_beep = (tone1 + tone2) * np.exp(-t * 28.0)
     save_wav(os.path.join(output_dir, "radio_beep.wav"), radio_beep * 0.75)
 
+    # 29. Heavy Revolver Gunshot (Act III-B execution cinematic)
+    dur = 0.9
+    t = np.linspace(0, dur, int(SAMPLE_RATE * dur), False)
+    crack = np.random.uniform(-1.0, 1.0, len(t)) * np.exp(-t * 60.0)
+    boom = 0.6 * np.sin(2 * np.pi * 90.0 * t) * np.exp(-t * 9.0)
+    echo_delay = int(SAMPLE_RATE * 0.18)
+    echo = np.zeros(len(t))
+    echo[echo_delay:] = 0.25 * crack[:len(t) - echo_delay] * np.exp(-t[:len(t) - echo_delay] * 25.0)
+    gunshot = crack + boom + echo
+    save_wav(os.path.join(output_dir, "gunshot.wav"), gunshot * 0.85)
+
     print("All SFX generated successfully.")
 
 
