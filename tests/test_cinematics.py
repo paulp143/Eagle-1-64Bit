@@ -7,9 +7,17 @@ import pytest
 import eagle1.app.game as game_module
 from eagle1.ui import hud_layout, theme
 from eagle1.ui.hud import HudRenderer
-from eagle1.story import CampaignSortieSession, StoryManager
+from eagle1.story import CampaignSortieSession, StoryManager, SuperDestroyerView
 from eagle1.story.campaign_act3 import (
     ACT3_OUTRO_SECONDS,
+    ACT3_SORTIE_CONFIGS,
+    SORTIE5B_LANDING_MIN_DELAY_SECONDS,
+    ACT3A_PILOT_STATUS,
+    ACT3A_SEQUENCE_ID,
+    ACT3B_PILOT_STATUS,
+    ACT3B_SEQUENCE_ID,
+    ACT3C_PILOT_STATUS,
+    ACT3C_SEQUENCE_ID,
     SORTIE5A_TRENCH_NODE_ID,
     SORTIE5B_SURRENDER_NODE_ID,
     SORTIE5C_ABORT_NODE_ID,
@@ -17,7 +25,12 @@ from eagle1.story.campaign_act3 import (
     build_act3c_epilogue_stats,
 )
 from eagle1.story.campaign_save import CampaignSaveManager
-from eagle1.story.cinematic_player import CINEMATIC_SKIP_AUDIO_FADE_MS, CinematicPlayer
+from eagle1.story.mission_controller import CAMPAIGN_SORTIE_REGISTRY
+from eagle1.story.cinematic_player import (
+    CINEMATIC_EPILOGUE_CONFIRM_DELAY,
+    CINEMATIC_SKIP_AUDIO_FADE_MS,
+    CinematicPlayer,
+)
 from eagle1.story.campaign_act3 import ACT3B_CONFRONTATION_NODE_ID, SORTIE_5C_CONFIG
 from eagle1.story.story_manager import BRANCH_COLD_PROTOCOL, BRANCH_DISSIDENT_SURRENDER, BRANCH_OBEDIENCE_PURGE
 from eagle1.systems.audio_manager import DEFAULT_CINEMATIC_FADE_MS, AudioManager
@@ -179,7 +192,8 @@ def game(monkeypatch, tmp_path):
     monkeypatch.setattr(game_module, "story_manager", story)
     monkeypatch.setattr(game_module, "campaign_session", session)
     monkeypatch.setattr(game_module.comms_hud, "story_manager", story)
-    monkeypatch.setattr(game_module.super_destroyer_view, "story_manager", story)
+    # Fresh hub: SuperDestroyerView keeps per-sortie completed nodes, which would leak between tests.
+    monkeypatch.setattr(game_module, "super_destroyer_view", SuperDestroyerView(story_manager=story))
     monkeypatch.setattr(game_module.ground_support_manager, "story_manager", story)
     monkeypatch.setattr(game_module, "add_highscore", lambda *args, **kwargs: None)
     monkeypatch.setattr(
@@ -194,7 +208,6 @@ def game(monkeypatch, tmp_path):
     yield game_module
     game_module.comms_hud.dismiss()
     game_module.cinematic_player.reset()
-    game_module.super_destroyer_view.set_act3_briefing(None, None)
     game_module.game_state = "main_menu"
 
 
@@ -364,7 +377,7 @@ def test_respawn_restores_weapons(game):
     story.extra["act3b_ordnance_dumped"] = 6
     game.player.weapons_disarmed = True
     game.respawn()
-    assert game.player.weapons_disarmed is False
+    assert getattr(game.player, "weapons_disarmed", False) is False
     assert "weapons_disarmed" not in story.extra
 
 
@@ -512,3 +525,142 @@ def test_game_draw_landing_marker_ring(game, monkeypatch):
     game.game_state = ""
     game.draw(None)
     assert (tuple(theme.SUCCESS), 220, 2) in calls
+
+
+# ---------------------------------------------------------------- Task 8: headless E2E finale suite
+
+FLOW_BRANCHES = (BRANCH_OBEDIENCE_PURGE, BRANCH_DISSIDENT_SURRENDER, BRANCH_COLD_PROTOCOL)
+FLOW_LOYALTY = {BRANCH_OBEDIENCE_PURGE: 95.0, BRANCH_DISSIDENT_SURRENDER: 10.0, BRANCH_COLD_PROTOCOL: 55.0}
+FLOW_SEQUENCE_ID = {
+    BRANCH_OBEDIENCE_PURGE: ACT3A_SEQUENCE_ID,
+    BRANCH_DISSIDENT_SURRENDER: ACT3B_SEQUENCE_ID,
+    BRANCH_COLD_PROTOCOL: ACT3C_SEQUENCE_ID,
+}
+FLOW_PILOT_STATUS = {
+    BRANCH_OBEDIENCE_PURGE: ACT3A_PILOT_STATUS,
+    BRANCH_DISSIDENT_SURRENDER: ACT3B_PILOT_STATUS,
+    BRANCH_COLD_PROTOCOL: ACT3C_PILOT_STATUS,
+}
+MAX_FLOW_FRAMES = 6000
+
+
+def _play_branch_to_main_menu(game, branch, skip_first_frame):
+    """Drive the real game loop state machine from the hub through the climax, cinematic and epilogue."""
+    story = _pending(game, branch, FLOW_LOYALTY[branch])
+    cfg = ACT3_SORTIE_CONFIGS[branch]
+    view = game.super_destroyer_view
+    gsm = game.ground_support_manager
+
+    game.enter_super_destroyer()
+    game.handle_super_destroyer_action(view.trigger_catapult_launch())
+    assert view._dialogue_open
+    assert view.select_dialogue_stance("neutral") is not None
+    game.handle_super_destroyer_action({
+        "action": "dialogue_choice", "node_id": cfg.briefing_node_id, "stance": "neutral",
+    })
+    view.close_dialogue()
+    game.handle_super_destroyer_action(view.trigger_catapult_launch())
+    assert game.game_state == ""
+
+    session = game.get_campaign_session()
+    assert session.is_act3_flight
+    for _ in range(MAX_FLOW_FRAMES):
+        session.update(FRAME_DT, 1, 0, gsm)
+        game.comms_hud.update(FRAME_DT)
+        if game.comms_hud.is_waiting_for_choice:
+            break
+    assert game.comms_hud.is_waiting_for_choice
+    assert session.handle_comms_keydown(_key(pygame.K_2), gsm) is True
+    assert session.is_act3_resolved
+
+    if branch == BRANCH_DISSIDENT_SURRENDER:
+        game.player.pos_x = 1500.0 - game.PLAYER_WIDTH / 2
+        game.player.pos_y = 1500.0 - game.PLAYER_HEIGHT / 2
+        game.player.velocity_x = game.player.min_speed
+        for _ in range(round((SORTIE5B_LANDING_MIN_DELAY_SECONDS + 0.1) / FRAME_DT)):
+            session.update(FRAME_DT, 1, 0, gsm)
+    else:
+        for _ in range(round((ACT3_OUTRO_SECONDS + 0.1) / FRAME_DT)):
+            session.update(FRAME_DT, 1, 0, gsm)
+
+    game.game_state = ""
+    assert game.check_act3_finale_transition() is True
+    assert game.game_state == "cinematic"
+    player = game.cinematic_player
+    assert player.sequence.sequence_id == FLOW_SEQUENCE_ID[branch]
+
+    if skip_first_frame:
+        assert game.handle_cinematic_keydown(_key(pygame.K_ESCAPE)) is False
+    else:
+        for _ in range(round(sum(kf.duration for kf in player.sequence.keyframes) * 60) + 120):
+            player.update(FRAME_DT)
+            if player.is_epilogue:
+                break
+    assert player.is_epilogue
+
+    stats = player.stats
+    assert stats.ending_branch == branch
+    assert stats.pilot_status == FLOW_PILOT_STATUS[branch]
+    assert stats.final_loyalty == story.loyalty
+    assert stats.total_casualties == story.total_casualties
+
+    player.update(CINEMATIC_EPILOGUE_CONFIRM_DELAY + 0.05)
+    assert game.handle_cinematic_keydown(_key(pygame.K_RETURN)) is True
+    assert game.game_state == "main_menu"
+    return story
+
+
+@pytest.mark.parametrize("skip_first_frame", [True, False])
+@pytest.mark.parametrize("branch", FLOW_BRANCHES)
+def test_full_finale_flow(game, branch, skip_first_frame):
+    story = _play_branch_to_main_menu(game, branch, skip_first_frame)
+    assert story.get_ending_branch() == branch
+    assert story.extra["campaign_finale_completed"] is True
+    assert game.cinematic_player.phase == "idle"
+    assert game.fades == ([600, CINEMATIC_SKIP_AUDIO_FADE_MS, 400] if skip_first_frame else [600, 400])
+    assert getattr(game.player, "weapons_disarmed", False) is False
+
+
+def test_cold_protocol_squad_loss_counts_four(game):
+    story = _play_branch_to_main_menu(game, BRANCH_COLD_PROTOCOL, False)
+    assert "act3c_protocol_abort" in story.extra
+    assert story.total_casualties == 4
+    assert 16.0 <= story.loyalty <= 89.0
+
+
+def test_obedience_purge_reaches_sortie_6(game):
+    story = _play_branch_to_main_menu(game, BRANCH_OBEDIENCE_PURGE, True)
+    assert story.current_sortie == 6
+
+
+def test_dissident_epilogue_restores_player_weapons(game):
+    _play_branch_to_main_menu(game, BRANCH_DISSIDENT_SURRENDER, False)
+    assert getattr(game.player, "weapons_disarmed", False) is False
+
+
+def test_after_finale_hub_launch_replays_sortie4(game):
+    _play_branch_to_main_menu(game, BRANCH_COLD_PROTOCOL, False)
+    game.enter_super_destroyer()
+    assert game.super_destroyer_view.act3_sortie_config is None
+    game.handle_super_destroyer_action(game.super_destroyer_view.trigger_catapult_launch())
+    assert game.get_campaign_session().is_replay is True
+    assert game.active_mission_config["id"] == "strider_raid"
+
+
+def test_new_campaign_after_finale_starts_act1(game):
+    _play_branch_to_main_menu(game, BRANCH_OBEDIENCE_PURGE, True)
+    game.start_new_campaign()
+    game.enter_super_destroyer()
+    assert game.super_destroyer_view.get_current_sortie_briefing()["title"] == CAMPAIGN_SORTIE_REGISTRY[1].title
+    game.handle_super_destroyer_action(game.super_destroyer_view.trigger_catapult_launch())
+    assert game.active_mission_config["campaign_sortie"] == 1
+
+
+@pytest.mark.parametrize("branch", FLOW_BRANCHES)
+def test_cinematic_frames_render_smoke(game, branch):
+    _pending(game, branch, FLOW_LOYALTY[branch])
+    assert game.start_campaign_finale() == branch
+    for _ in range(120):
+        game.cinematic_player.update(FRAME_DT)
+        game.cinematic_player.draw(game.canvas)
+    game.finish_campaign_finale()
