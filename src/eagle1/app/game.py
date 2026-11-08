@@ -46,6 +46,8 @@ from eagle1.story import (
     SuperDestroyerView,
     build_campaign_mission_config,
 )
+from eagle1.story.campaign_act3 import mark_campaign_finale_completed, restore_act3b_weapons
+from eagle1.story.cinematic_player import CINEMATIC_ACTION_RETURN_MAIN_MENU, CinematicPlayer
 
 BASE_DIR = str(PROJECT_ROOT)
 audio_manager = get_audio_manager()
@@ -1809,6 +1811,8 @@ def trigger_mission_complete():
     global game_state
     if game_state == "mission_debriefing":
         return
+    if get_campaign_session().is_act3_flight:
+        return  # Act III ends in the ending cinematic, never in a debriefing
     if player.score > player.highscore:
         player.highscore = player.score
         add_highscore(player.score)
@@ -2739,7 +2743,81 @@ def get_campaign_session():
     """Return the campaign session, rebinding it if the module-level StoryManager was replaced."""
     if campaign_session.story_manager is not story_manager:
         campaign_session.bind_story_manager(story_manager)
+    if campaign_session.player is not player:
+        campaign_session.attach_player(player)
     return campaign_session
+
+
+cinematic_player = CinematicPlayer(GAME_WIDTH, GAME_HEIGHT, audio_manager=audio_manager)
+FINALE_ENTER_AUDIO_FADE_MS = 600
+FINALE_EXIT_AUDIO_FADE_MS = 400
+_FINALE_CLEARED_EVENTS = [pygame.KEYDOWN, pygame.KEYUP, pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP]
+
+
+def _clear_input_events():
+    """Drop queued key and mouse events so a finale key press cannot fire on the next screen."""
+    try:
+        pygame.event.clear(_FINALE_CLEARED_EVENTS)
+    except (pygame.error, AttributeError):
+        pass
+
+
+def _stop_flight_input():
+    """Release every held flight control before a cutscene takes over the screen."""
+    player.shooting = False
+    player.rocket_shooting = False
+    player.reloading = False
+    player.rocket_reloading = False
+    ground_support_manager.stop_aiming()
+    ground_support_manager.weapon_menu.is_open = False
+
+
+def start_campaign_finale():
+    """Enter the Act III ending cinematic; returns the ending branch, or None if already playing."""
+    global game_state
+    if game_state == "cinematic":
+        return None
+    _stop_flight_input()
+    comms_hud.dismiss()
+    restore_act3b_weapons(player, None)
+    audio_manager.stop_cinematic_audio(fade_ms=FINALE_ENTER_AUDIO_FADE_MS)
+    _clear_input_events()
+    branch = get_campaign_session().start_act3_climax_cinematic(cinematic_player)
+    game_state = "cinematic"
+    return branch
+
+
+def finish_campaign_finale():
+    """Leave the ending cinematic: fade the audio, mark the finale done and return to the main menu."""
+    audio_manager.stop_cinematic_audio(fade_ms=FINALE_EXIT_AUDIO_FADE_MS)
+    mark_campaign_finale_completed(story_manager)
+    cinematic_player.reset()
+    super_destroyer_view.set_act3_briefing(None, None)
+    _clear_input_events()
+    return_to_main_menu()
+
+
+def handle_cinematic_keydown(event):
+    """Route one key press during the ending cinematic; True when the pilot returned to the main menu."""
+    if cinematic_player.handle_event(event) == CINEMATIC_ACTION_RETURN_MAIN_MENU:
+        finish_campaign_finale()
+        return True
+    return False
+
+
+def check_act3_finale_transition():
+    """Start the ending cinematic once the resolved Act III climax may end; True if it started."""
+    if game_state != "":
+        return False
+    session = get_campaign_session()
+    if not session.is_act3_flight:
+        return False
+    center_x = player.pos_x + PLAYER_WIDTH / 2
+    center_y = player.pos_y + PLAYER_HEIGHT / 2
+    if not session.is_act3_climax_complete(center_x, center_y, player.velocity_x, player.min_speed, player.health > 0):
+        return False
+    start_campaign_finale()
+    return True
 
 
 CAMPAIGN_OBJECTIVE_MAX_CHARS = 110
@@ -3243,6 +3321,9 @@ def run_game():
                         status_str = "MUTED" if is_muted else "UNMUTED"
                         ground_support_manager.add_combat_popup(f"AUDIO {status_str}", player.pos_x, player.pos_y, (255, 80, 80) if is_muted else (80, 255, 120))
 
+                elif game_state == "cinematic":
+                    handle_cinematic_keydown(event)
+
                 elif game_state == "":
                     if player.health <= 0:
                         handle_gameover_keydown(event, canvas_mouse_pos)
@@ -3330,6 +3411,8 @@ def run_game():
         if not running:
             break
 
+        check_act3_finale_transition()
+
         comms_hud.update(1.0 / 60.0 if (game_state == "" and player.health > 0) else 0.0)
         keys = pygame.key.get_pressed()
 
@@ -3375,6 +3458,10 @@ def run_game():
         elif game_state == "super_destroyer":
             super_destroyer_view.update(1.0 / 60.0)
             super_destroyer_view.draw(canvas, canvas_mouse_pos)
+
+        elif game_state == "cinematic":
+            cinematic_player.update(1.0 / 60.0)
+            cinematic_player.draw(canvas)
 
         elif game_state == "":
             if player.health > 0:
@@ -3453,6 +3540,8 @@ def run_game():
         # Background Music & Engine Audio Loop Updates
         if game_state in ("main_menu", "mission_select", "stratagem_select", "mission_debriefing", "super_destroyer"):
             audio_manager.play_music("menu_theme")
+            audio_manager.stop_engine_sound()
+        elif game_state == "cinematic":
             audio_manager.stop_engine_sound()
         elif game_state in ("pause_menu", "settings_menu", "help_menu"):
             audio_manager.stop_engine_sound()
