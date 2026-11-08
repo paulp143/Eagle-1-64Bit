@@ -21,7 +21,7 @@ branch can never flip.
 from dataclasses import dataclass
 import logging
 import math
-from typing import TYPE_CHECKING, Any, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple
 
 from eagle1.story.cinematic_player import (
     CINEMATIC_SCENE_EPILOGUE_CARD,
@@ -1609,3 +1609,174 @@ def build_act3c_epilogue_stats(story_manager: Optional[StoryManager]) -> Epilogu
         pilot_status=ACT3C_PILOT_STATUS,
         epilogue_lines=ACT3C_ARCHIVE_EPILOGUE_LINES,
     )
+
+
+# -----------------------------------------------------------------------------
+# Act III dispatcher (#77)
+# -----------------------------------------------------------------------------
+# Maps the locked ending branch to its sortie config, triggers, briefing NPC, mission overrides,
+# choice router and ending cinematic. MissionController.complete_current_sortie() locks the branch
+# after Sortie 4; this section only reads it.
+
+ENDING_BRANCH_EXTRA_KEY: str = "ending_branch"
+ACT2_COMPLETED_EXTRA_KEY: str = "act2_completed"
+CAMPAIGN_FINALE_COMPLETED_EXTRA_KEY: str = "campaign_finale_completed"
+
+VALID_ENDING_BRANCHES: Tuple[str, ...] = (BRANCH_OBEDIENCE_PURGE, BRANCH_DISSIDENT_SURRENDER, BRANCH_COLD_PROTOCOL)
+
+ACT3_OUTRO_SECONDS: float = 6.0
+SORTIE5B_LANDING_MIN_DELAY_SECONDS: float = 2.0
+SORTIE5B_LANDING_SPEED_TOLERANCE: float = 0.5
+ACT3C_TIMER_URGENT_SECONDS: float = 10.0
+ACT3_ENDLESS_WAVES: int = 99
+
+ACT3_SORTIE_CONFIGS: Dict[str, CampaignSortieConfig] = {
+    BRANCH_OBEDIENCE_PURGE: SORTIE_5A_CONFIG,
+    BRANCH_DISSIDENT_SURRENDER: SORTIE_5B_CONFIG,
+    BRANCH_COLD_PROTOCOL: SORTIE_5C_CONFIG,
+}
+
+ACT3_BRIEFING_NPC_IDS: Dict[str, str] = {
+    BRANCH_OBEDIENCE_PURGE: "npc_reiner",
+    BRANCH_DISSIDENT_SURRENDER: "npc_reiner",
+    BRANCH_COLD_PROTOCOL: "npc_vance",
+}
+
+_ACT3_COMMON_OVERRIDES: Dict[str, Any] = {
+    "has_base": False,
+    "has_bombers": False,
+    "has_fabricators": False,
+    "has_strider": False,
+}
+
+ACT3_MISSION_OVERRIDES: Dict[str, Dict[str, Any]] = {
+    SORTIE_5A_CONFIG.sortie_id: dict(_ACT3_COMMON_OVERRIDES, has_ground=True),
+    SORTIE_5B_CONFIG.sortie_id: dict(_ACT3_COMMON_OVERRIDES, has_ground=False),
+    SORTIE_5C_CONFIG.sortie_id: dict(_ACT3_COMMON_OVERRIDES, has_ground=True),
+}
+
+_ACT3_TRIGGER_REGISTRARS: Dict[str, Callable[[NarrativeTriggerManager], int]] = {
+    BRANCH_OBEDIENCE_PURGE: register_act3a_triggers,
+    BRANCH_DISSIDENT_SURRENDER: register_act3b_triggers,
+    BRANCH_COLD_PROTOCOL: register_act3c_triggers,
+}
+
+_ENDING_BUILDERS: Dict[
+    str,
+    Tuple[Callable[[], CinematicSequence], Callable[[Optional[StoryManager]], EpilogueSummaryStats]],
+] = {
+    BRANCH_OBEDIENCE_PURGE: (build_act3a_cinematic_sequence, build_act3a_epilogue_stats),
+    BRANCH_DISSIDENT_SURRENDER: (build_act3b_cinematic_sequence, build_act3b_epilogue_stats),
+    BRANCH_COLD_PROTOCOL: (build_act3c_cinematic_sequence, build_act3c_epilogue_stats),
+}
+
+
+def get_locked_ending_branch(story_manager: Optional[StoryManager]) -> str:
+    """Return the ending branch locked after Sortie 4, falling back to the loyalty vector.
+
+    Without a StoryManager the canonical COLD_PROTOCOL branch is returned.
+    """
+    story = _as_story(story_manager)
+    if story is None:
+        return BRANCH_COLD_PROTOCOL
+    raw = story.extra.get(ENDING_BRANCH_EXTRA_KEY)
+    if isinstance(raw, str) and raw in VALID_ENDING_BRANCHES:
+        return raw
+    return story.get_ending_branch()
+
+
+def get_act3_sortie_config(branch: Any) -> Optional[CampaignSortieConfig]:
+    """Return the Act III sortie config for a branch, or None for an unknown branch."""
+    if not isinstance(branch, str):
+        return None
+    return ACT3_SORTIE_CONFIGS.get(branch)
+
+
+def register_act3_triggers_for_branch(manager: NarrativeTriggerManager, branch: str) -> int:
+    """Register only the trigger set of the given branch (sortie 5 is shared by all three).
+
+    Raises:
+        ValueError: If branch is not a known Act III ending branch.
+    """
+    registrar = _ACT3_TRIGGER_REGISTRARS.get(branch) if isinstance(branch, str) else None
+    if registrar is None:
+        raise ValueError(f"Unknown Act III ending branch {branch!r}")
+    return registrar(manager)
+
+
+def is_act3_finale_pending(story_manager: Optional[StoryManager]) -> bool:
+    """True once Sortie 4 is complete and the ending cinematic has not been played yet."""
+    story = _as_story(story_manager)
+    if story is None:
+        return False
+    return (
+        story.extra.get(ACT2_COMPLETED_EXTRA_KEY) is True
+        and story.extra.get(CAMPAIGN_FINALE_COMPLETED_EXTRA_KEY) is not True
+    )
+
+
+def is_act3_climax_already_resolved(story_manager: Optional[StoryManager], branch: str) -> bool:
+    """True if the branch's climax beat was already resolved in an earlier session."""
+    story = _as_story(story_manager)
+    if story is None:
+        return False
+    if branch == BRANCH_OBEDIENCE_PURGE:
+        return story.extra.get(VIPER_SQUAD_PURGED_EXTRA_KEY) is True
+    if branch == BRANCH_COLD_PROTOCOL:
+        return story.extra.get(PROTOCOL_84C_EXTRA_KEY) is True
+    return False
+
+
+def has_recorded_act3_briefing(story_manager: Optional[StoryManager], branch: str) -> bool:
+    """True once the pilot answered the branch's briefing node (Reiner or Vance)."""
+    cfg = get_act3_sortie_config(branch)
+    story = _as_story(story_manager)
+    if story is None or cfg is None:
+        return False
+    return any(
+        isinstance(entry, dict) and entry.get("node") == cfg.briefing_node_id
+        for entry in story.dialogue_history
+    )
+
+
+def mark_campaign_finale_completed(story_manager: Optional[StoryManager]) -> bool:
+    """Persist that the ending cinematic was played; returns False without a StoryManager."""
+    story = _as_story(story_manager)
+    if story is None:
+        return False
+    story.extra[CAMPAIGN_FINALE_COMPLETED_EXTRA_KEY] = True
+    logger.info("Campaign finale completed (branch=%s)", get_locked_ending_branch(story))
+    return story.save_campaign_state()
+
+
+def resolve_act3_choice(
+    branch: str,
+    node_id: str,
+    stance: str,
+    story_manager: Optional[StoryManager],
+    player: Optional[Any] = None,
+    ground_support_manager: Optional["GroundSupportManager"] = None,
+    mission_controller: Optional[MissionController] = None,
+    comms_hud: Optional["CommsHUD"] = None,
+) -> Optional[str]:
+    """Route a recorded choice to the resolver of the given branch.
+
+    Returns:
+        The HUD objective text that follows the choice, or None for an unknown branch or node.
+    """
+    if branch == BRANCH_OBEDIENCE_PURGE:
+        return resolve_act3a_choice(node_id, stance, story_manager, ground_support_manager, mission_controller, comms_hud)
+    if branch == BRANCH_DISSIDENT_SURRENDER:
+        return resolve_act3b_choice(
+            node_id, stance, story_manager, player, ground_support_manager, mission_controller, comms_hud
+        )
+    if branch == BRANCH_COLD_PROTOCOL:
+        return resolve_act3c_choice(node_id, stance, story_manager, ground_support_manager, mission_controller, comms_hud)
+    return None
+
+
+def build_ending_cinematic(story_manager: Optional[StoryManager]) -> Tuple[CinematicSequence, EpilogueSummaryStats]:
+    """Build the ending cinematic and epilogue statistics for the locked ending branch."""
+    branch = get_locked_ending_branch(story_manager)
+    build_sequence, build_stats = _ENDING_BUILDERS[branch]
+    return build_sequence(), build_stats(_as_story(story_manager))
