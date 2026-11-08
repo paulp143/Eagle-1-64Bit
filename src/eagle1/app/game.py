@@ -48,9 +48,12 @@ from eagle1.story import (
 )
 from eagle1.story.campaign_act3 import (
     PLAYER_WEAPONS_DISARMED_ATTR,
+    SORTIE5B_LANDING_RADIUS,
+    SORTIE5B_SCRAP_YARD_POS,
     mark_campaign_finale_completed,
     restore_act3b_weapons,
 )
+from eagle1.story.story_manager import BRANCH_DISSIDENT_SURRENDER
 from eagle1.story.cinematic_player import CINEMATIC_ACTION_RETURN_MAIN_MENU, CinematicPlayer
 
 BASE_DIR = str(PROJECT_ROOT)
@@ -2671,6 +2674,16 @@ def draw(mouse_pos=None):
         # --- POWER-UP HUD OVERLAY ---
         powerup_manager.draw_hud(canvas, GAME_WIDTH, GAME_HEIGHT)
 
+        # --- SORTIE 5B SCRAP YARD LANDING MARKER (after the surrender) ---
+        landing_session = get_campaign_session()
+        if landing_session.is_act3_resolved and landing_session.act3_branch == BRANCH_DISSIDENT_SURRENDER:
+            zone_x, zone_y = SORTIE5B_SCRAP_YARD_POS
+            pygame.draw.circle(
+                canvas, theme.SUCCESS,
+                (int(zone_x - camera_x), int(zone_y - camera_y)),
+                int(SORTIE5B_LANDING_RADIUS), 2,
+            )
+
         # --- GROUND SUPPORT HUD OVERLAY & WEAPON ARSENAL ---
         ground_support_manager.draw_hud(canvas, GAME_WIDTH, GAME_HEIGHT, font, title_font, speed_font, hud_small_font, player, mouse_pos)
 
@@ -2709,11 +2722,17 @@ def draw(mouse_pos=None):
             else:
                 obj_text = f"OBJECTIVE: AIR SUPERIORITY [WAVE {wave_manager.wave}/{active_mission_config.get('max_waves', 5)}]"
 
+        if get_campaign_session().is_act3_flight:
+            obj_text = f"OBJECTIVE: {active_mission_config['name']}"
         hud_renderer.draw_objective_banner(canvas, obj_text, active_mission_config.get("icon_color", theme.ACCENT))
 
         # --- CAMPAIGN NARRATIVE OBJECTIVE (campaign sorties only) ---
         if campaign_objective_surf is not None:
             hud_renderer.draw_campaign_objective(canvas, campaign_objective_surf)
+
+        timer_text = get_campaign_session().get_act3_extraction_timer_text()
+        if timer_text is not None:
+            hud_renderer.draw_extraction_timer(canvas, timer_text, get_campaign_session().is_act3_extraction_timer_urgent())
 
         # --- SLOW-MOTION VIGNETTE OVERLAY ---
         if ground_support_manager.is_slow_mo:

@@ -5,10 +5,13 @@ import pygame
 import pytest
 
 import eagle1.app.game as game_module
+from eagle1.ui import hud_layout, theme
+from eagle1.ui.hud import HudRenderer
 from eagle1.story import CampaignSortieSession, StoryManager
 from eagle1.story.campaign_act3 import (
     ACT3_OUTRO_SECONDS,
     SORTIE5A_TRENCH_NODE_ID,
+    SORTIE5B_SURRENDER_NODE_ID,
     SORTIE5C_ABORT_NODE_ID,
     build_act3c_cinematic_sequence,
     build_act3c_epilogue_stats,
@@ -439,3 +442,73 @@ def test_run_game_uses_reload_helpers(game):
     assert "on_reload_end()" in source
     assert "on_rocket_reload_end()" in source
     assert 'start_new_campaign()' in source
+
+
+# ---------------------------------------------------------------- Task 7: 5C timer and 5B landing marker
+
+def test_extraction_timer_zone_is_clear():
+    rect = hud_layout.EXTRACTION_TIMER_RECT
+    assert rect in hud_layout.ALL_ZONES
+    for other in (hud_layout.WEAPON_PANEL, hud_layout.DANGER_BANNER_RECT,
+                  hud_layout.HERO_PANEL_RECT, hud_layout.MILESTONE_BANNER_RECT):
+        assert not rect.colliderect(other)
+    assert rect.top > hud_layout.CAMPAIGN_OBJECTIVE_Y + 22
+
+
+def test_draw_extraction_timer_pixels():
+    hud = HudRenderer(1280, 720)
+    rect = hud_layout.EXTRACTION_TIMER_RECT
+    surface = pygame.Surface((1280, 720))
+    surface.fill((0, 0, 0))
+    hud.draw_extraction_timer(surface, "00:08", True)
+    assert tuple(surface.get_at((rect.centerx, rect.centery)))[:3] != (0, 0, 0)
+    assert tuple(surface.get_at((rect.left, rect.centery)))[:3] == tuple(theme.DANGER)
+    blank = pygame.Surface((1280, 720))
+    blank.fill((0, 0, 0))
+    hud.draw_extraction_timer(blank, "", True)
+    assert tuple(blank.get_at((rect.centerx, rect.centery)))[:3] == (0, 0, 0)
+
+
+def test_draw_extraction_timer_uses_text_cache():
+    hud = HudRenderer(1280, 720)
+    surface = pygame.Surface((1280, 720))
+    hud.draw_extraction_timer(surface, "00:08", False)
+    size = len(hud._cache)
+    hud.draw_extraction_timer(surface, "00:08", False)
+    assert len(hud._cache) == size
+
+
+def test_game_draw_shows_timer_only_in_5c(game, monkeypatch):
+    shown = []
+    monkeypatch.setattr(game.hud_renderer, "draw_extraction_timer",
+                        lambda surface, text, urgent: shown.append((text, urgent)))
+    _pending(game, BRANCH_COLD_PROTOCOL, 55.0)
+    game.get_campaign_session().launch_sortie()
+    game.game_state = ""
+    game.draw(None)
+    assert shown and shown[-1] == ("00:45", False)
+    session = game.get_campaign_session()
+    session.abort_flight()
+    shown.clear()
+    _pending(game, BRANCH_OBEDIENCE_PURGE, 95.0)
+    session.launch_sortie()
+    game.draw(None)
+    assert shown == []
+
+
+def test_game_draw_landing_marker_ring(game, monkeypatch):
+    _pending(game, BRANCH_DISSIDENT_SURRENDER, 10.0)
+    session = game.get_campaign_session()
+    session.launch_sortie()
+    session.resolve_choice(SORTIE5B_SURRENDER_NODE_ID, "neutral", None, game.player)
+    real_circle = pygame.draw.circle
+    calls = []
+
+    def spy(surface, color, center, radius, width=0, *args, **kwargs):
+        calls.append((tuple(color), int(radius), width))
+        return real_circle(surface, color, center, radius, width, *args, **kwargs)
+
+    monkeypatch.setattr(pygame.draw, "circle", spy)
+    game.game_state = ""
+    game.draw(None)
+    assert (tuple(theme.SUCCESS), 220, 2) in calls

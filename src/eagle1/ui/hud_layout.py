@@ -20,6 +20,7 @@ DANGER_BANNER_RECT = pygame.Rect(420, 112, 440, 28)
 HERO_PANEL_RECT = pygame.Rect(430, 146, 420, 80)
 MILESTONE_BANNER_RECT = pygame.Rect(360, 232, 560, 65)
 WEAPON_PANEL = pygame.Rect(1280 - 16 - 200, 16, 200, 92)   # cannon ammo, rockets, radar
+EXTRACTION_TIMER_RECT = pygame.Rect(1280 - 16 - 200, 116, 200, 30)  # Sortie 5C countdown, below the weapon panel
 MINIMAP_RECT = pygame.Rect(16, 720 - 16 - 160, 160, 160)
 SPEED_RECT = pygame.Rect(16, MINIMAP_RECT.y - 34, 160, 26)
 WEAPON_DOCK_RECT = pygame.Rect(1280 - 460, 720 - 94, 444, 86)
@@ -44,4 +45,5 @@ ALL_ZONES = (
     WEAPON_DOCK_RECT,
     SCORE_RECT,
     CONTROLS_HINT_RECT,
+    EXTRACTION_TIMER_RECT,
 )

@@ -13,6 +13,7 @@ from eagle1.ui import hud_layout, theme, widgets
 from eagle1.ui.controls_reference import HUD_HINT_KEYS
 
 ADRENALINE_TEXT = "! ADRENALINE OVERDRIVE !"
+EXTRACTION_TIMER_LABEL = "PELICAN-1 DUST-OFF"
 ADRENALINE_PULSE_STEPS = 6
 ADRENALINE_PULSE_MS = 120
 
@@ -133,6 +134,18 @@ class HudRenderer:
         rect.centerx = self.width // 2
         widgets.draw_panel(surface, rect, theme.PANEL, theme.BORDER_STRONG, brackets=False)
         surface.blit(objective_surf, objective_surf.get_rect(center=rect.center))
+
+    def draw_extraction_timer(self, surface: pygame.Surface, text: str, urgent: bool) -> None:
+        """Sortie 5C extraction countdown panel (top right, below the weapon panel)."""
+        if not self._ready or not isinstance(text, str) or not text:
+            return
+        rect = hud_layout.EXTRACTION_TIMER_RECT
+        widgets.draw_panel(surface, rect, theme.PANEL, theme.DANGER if urgent else theme.BORDER_STRONG, brackets=False)
+        value = self._cache.render(self._font_mono, text, theme.DANGER if urgent else theme.ACCENT)
+        label = self._cache.render(self._font_small, EXTRACTION_TIMER_LABEL, theme.TEXT_MUTED)
+        if label.get_width() + value.get_width() + 24 <= rect.w:
+            surface.blit(label, (rect.x + 8, rect.centery - label.get_height() // 2))
+        surface.blit(value, value.get_rect(midright=(rect.right - 8, rect.centery)))
 
     def draw_score(self, surface: pygame.Surface, score: int, highscore: int) -> None:
         """Score and best score, stacked at the bottom center."""
