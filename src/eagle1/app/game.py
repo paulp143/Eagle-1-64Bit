@@ -46,7 +46,11 @@ from eagle1.story import (
     SuperDestroyerView,
     build_campaign_mission_config,
 )
-from eagle1.story.campaign_act3 import mark_campaign_finale_completed, restore_act3b_weapons
+from eagle1.story.campaign_act3 import (
+    PLAYER_WEAPONS_DISARMED_ATTR,
+    mark_campaign_finale_completed,
+    restore_act3b_weapons,
+)
 from eagle1.story.cinematic_player import CINEMATIC_ACTION_RETURN_MAIN_MENU, CinematicPlayer
 
 BASE_DIR = str(PROJECT_ROOT)
@@ -1187,6 +1191,8 @@ class Player(pygame.Rect):
     def set_shoot(self):
         if self.reloading:
             return
+        if getattr(self, PLAYER_WEAPONS_DISARMED_ATTR, False):
+            return
 
         if not self.shooting and self.used_bullets < self.max_bullets:
             self.shooting = True
@@ -1232,6 +1238,8 @@ class Player(pygame.Rect):
     def set_shoot_rocket(self, target=None):
         """Feuert eine zielsuchende Rakete ab."""
         if self.rocket_reloading:
+            return
+        if getattr(self, PLAYER_WEAPONS_DISARMED_ATTR, False):
             return
 
         if not self.rocket_shooting and self.used_rockets < self.max_rockets:
@@ -2223,6 +2231,7 @@ def respawn(mission_config=None, selected_stratagems=None):
     elif mission_config is None and session.is_flight_active:
         session.restart_flight()
 
+    restore_act3b_weapons(player, story_manager)
     player.pos_x = float(PLAYER_X)
     player.pos_y = float(PLAYER_Y)
     player.x = PLAYER_X
@@ -2864,6 +2873,8 @@ def enter_super_destroyer(debrief_results=None):
     ground_support_manager.stop_aiming()
     ground_support_manager.weapon_menu.is_open = False
     super_destroyer_view.on_enter_hub(debrief_results)
+    act3_cfg, act3_npc = get_campaign_session().get_act3_hub_briefing()
+    super_destroyer_view.set_act3_briefing(act3_cfg, act3_npc)
     game_state = "super_destroyer"
 
 
@@ -2877,6 +2888,14 @@ def return_to_super_destroyer_from_debrief():
     return progression
 
 
+def start_new_campaign():
+    """Reset the story campaign for a newly enlisted pilot (Act I, no finale, no Act III state)."""
+    story_manager.reset_campaign()
+    get_campaign_session().bind_story_manager(story_manager)
+    cinematic_player.reset()
+    super_destroyer_view.set_act3_briefing(None, None)
+
+
 def handle_super_destroyer_action(action):
     """Handle structured action payloads from SuperDestroyerView."""
     global game_state
@@ -2884,6 +2903,11 @@ def handle_super_destroyer_action(action):
         return None
     act_type = action.get("action")
     if act_type == "launch_sortie":
+        if get_campaign_session().should_skip_to_finale_cinematic():
+            super_destroyer_view.close_dialogue()
+            super_destroyer_view.launch_initiated = False
+            start_campaign_finale()
+            return action
         sortie_cfg = get_campaign_session().launch_sortie()
         mission_cfg = build_campaign_mission_config(sortie_cfg, MISSION_CONFIGS)
         super_destroyer_view.close_dialogue()
@@ -2906,6 +2930,8 @@ def handle_super_destroyer_action(action):
             pass
         respawn(mission_config=mission_cfg)
         game_state = ""
+    elif act_type == "dialogue_choice":
+        get_campaign_session().resolve_hub_choice(action.get("node_id"), action.get("stance"))
     elif act_type in ("main_menu", "exit_to_menu"):
         return_to_main_menu()
     return action
@@ -3025,6 +3051,20 @@ def show_menu_toast(text, duration_ms=1500):
     menu_toast_until = pygame.time.get_ticks() + duration_ms
 
 
+def on_reload_end():
+    """End the cannon reload; a disarmed Eagle-1 keeps an empty magazine (Sortie 5B)."""
+    if not getattr(player, PLAYER_WEAPONS_DISARMED_ATTR, False):
+        player.used_bullets = 0
+    player.reloading = False
+
+
+def on_rocket_reload_end():
+    """End the rocket reload; a disarmed Eagle-1 keeps an empty rack (Sortie 5B)."""
+    if not getattr(player, PLAYER_WEAPONS_DISARMED_ATTR, False):
+        player.used_rockets = 0
+    player.rocket_reloading = False
+
+
 def run_game():
     global window, game_state, previous_game_state, light_enemy, wave_manager, health_drops, ground_support_manager, pending_mission_config
     running = True
@@ -3055,11 +3095,9 @@ def run_game():
                         if not enemy.exploding and enemy.health > 0:
                             enemy.set_shoot(player)
             if event.type == RELOAD_END:
-                player.used_bullets = 0
-                player.reloading = False
+                on_reload_end()
             if event.type == ROCKET_RELOAD_END:
-                player.used_rockets = 0
-                player.rocket_reloading = False
+                on_rocket_reload_end()
             if event.type == LIGHT_ENEMY_EXPLOSION:
                 pass
             if event.type == INVINCIBLE_END:
@@ -3128,6 +3166,7 @@ def run_game():
                 elif game_state == "enlistment":
                     action = enlistment_screen.handle_event(event, canvas_mouse_pos)
                     if action == "start_academy":
+                        start_new_campaign()
                         respawn(mission_config=MISSION_CONFIGS[MissionType.ACADEMY_TUTORIAL])
                         game_state = ""
                     elif action == "back":
@@ -3244,6 +3283,7 @@ def run_game():
                 elif game_state == "enlistment":
                     action = enlistment_screen.handle_event(event, canvas_mouse_pos)
                     if action == "start_academy":
+                        start_new_campaign()
                         respawn(mission_config=MISSION_CONFIGS[MissionType.ACADEMY_TUTORIAL])
                         game_state = ""
                     elif action == "back":

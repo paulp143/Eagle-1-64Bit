@@ -2261,6 +2261,8 @@ class GroundSupportManager:
                 self._generate_next_hero_code()
 
     def trigger_eagle_rearm(self, player=None):
+        if getattr(player, "weapons_disarmed", False):  # mirrors campaign_act3.PLAYER_WEAPONS_DISARMED_ATTR
+            return False
         if self.weapon_menu.is_rearming or self.super_destroyer.is_active:
             return False
         can_rearm = any(self.weapon_menu.charges.get(st, 0) < AirStrikeType.DATA[st].get("max_charges", 1) for st in self.active_loadout)
@@ -2464,6 +2466,8 @@ class GroundSupportManager:
         return False
 
     def trigger_supply_drop(self, player):
+        if getattr(player, "weapons_disarmed", False):  # mirrors campaign_act3.PLAYER_WEAPONS_DISARMED_ATTR
+            return False
         if self.supply_cooldown > 0:
             return False
 
@@ -2756,7 +2760,7 @@ class GroundSupportManager:
                     if unit.is_alive and math.hypot(unit.pos_x - pod.x, unit.pos_y - pod.y) <= 45.0:
                         unit.heal(60.0)
 
-                if math.hypot(player.pos_x + 18 - pod.x, player.pos_y + 18 - pod.y) <= 60.0:
+                if math.hypot(player.pos_x + 18 - pod.x, player.pos_y + 18 - pod.y) <= 60.0 and not getattr(player, "weapons_disarmed", False):  # mirrors campaign_act3.PLAYER_WEAPONS_DISARMED_ATTR
                     player.used_bullets = 0
                     player.used_rockets = 0
                     player.health = min(player.max_health, player.health + 2)

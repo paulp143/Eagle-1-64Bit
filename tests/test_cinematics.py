@@ -1,4 +1,5 @@
 import inspect
+from types import SimpleNamespace
 
 import pygame
 import pytest
@@ -14,7 +15,8 @@ from eagle1.story.campaign_act3 import (
 )
 from eagle1.story.campaign_save import CampaignSaveManager
 from eagle1.story.cinematic_player import CINEMATIC_SKIP_AUDIO_FADE_MS, CinematicPlayer
-from eagle1.story.story_manager import BRANCH_COLD_PROTOCOL, BRANCH_OBEDIENCE_PURGE
+from eagle1.story.campaign_act3 import ACT3B_CONFRONTATION_NODE_ID, SORTIE_5C_CONFIG
+from eagle1.story.story_manager import BRANCH_COLD_PROTOCOL, BRANCH_DISSIDENT_SURRENDER, BRANCH_OBEDIENCE_PURGE
 from eagle1.systems.audio_manager import DEFAULT_CINEMATIC_FADE_MS, AudioManager
 
 
@@ -303,3 +305,137 @@ def test_run_game_routes_cinematic_state(game):
     assert "cinematic_player.update(1.0 / 60.0)" in source
     assert "cinematic_player.draw(canvas)" in source
     assert "check_act3_finale_transition()" in source
+
+
+# ---------------------------------------------------------------- Task 6: Act III flight wiring
+
+def _pending(game, branch, loyalty):
+    story = game.story_manager
+    story.loyalty = loyalty
+    story.extra["ending_branch"] = branch
+    return story
+
+
+def test_disarmed_player_cannot_fire(game):
+    player = game.player
+    player.weapons_disarmed = True
+    try:
+        bullets = len(player.bullets)
+        rockets = len(player.rockets)
+        player.set_shoot()
+        player.set_shoot_rocket([])
+        assert len(player.bullets) == bullets
+        assert len(player.rockets) == rockets
+    finally:
+        player.weapons_disarmed = False
+
+
+def test_reload_end_does_not_refill_disarmed_player(game):
+    player = game.player
+    player.used_bullets = 200
+    player.used_rockets = 4
+    player.weapons_disarmed = True
+    try:
+        game.on_reload_end()
+        game.on_rocket_reload_end()
+        assert player.used_bullets == 200
+        assert player.used_rockets == 4
+    finally:
+        player.weapons_disarmed = False
+    game.on_reload_end()
+    game.on_rocket_reload_end()
+    assert player.used_bullets == 0
+    assert player.used_rockets == 0
+
+
+def test_rearm_and_supply_blocked_while_disarmed(game):
+    gsm = game.ground_support_manager
+    disarmed = SimpleNamespace(pos_x=1500.0, pos_y=1500.0, weapons_disarmed=True)
+    assert gsm.trigger_eagle_rearm(disarmed) is False
+    assert gsm.trigger_supply_drop(disarmed) is False
+
+
+def test_respawn_restores_weapons(game):
+    story = game.story_manager
+    story.extra["weapons_disarmed"] = True
+    story.extra["act3b_ordnance_dumped"] = 6
+    game.player.weapons_disarmed = True
+    game.respawn()
+    assert game.player.weapons_disarmed is False
+    assert "weapons_disarmed" not in story.extra
+
+
+def test_enter_hub_sets_act3_briefing(game):
+    _pending(game, BRANCH_COLD_PROTOCOL, 55.0)
+    game.enter_super_destroyer()
+    assert game.super_destroyer_view.act3_sortie_config is SORTIE_5C_CONFIG
+    assert game.super_destroyer_view.act3_briefing_npc_id == "npc_vance"
+
+
+def test_enter_hub_without_finale_has_no_act3_briefing(game):
+    game.story_manager.extra.pop("act2_completed", None)
+    game.enter_super_destroyer()
+    assert game.super_destroyer_view.act3_sortie_config is None
+
+
+def test_hub_launch_opens_briefing_then_launches_branch_sortie(game):
+    _pending(game, BRANCH_DISSIDENT_SURRENDER, 10.0)
+    view = game.super_destroyer_view
+    game.enter_super_destroyer()
+    game.handle_super_destroyer_action(view.trigger_catapult_launch())
+    assert game.game_state == "super_destroyer"
+    assert view.select_dialogue_stance("neutral") is not None
+    game.handle_super_destroyer_action({
+        "action": "dialogue_choice",
+        "node_id": ACT3B_CONFRONTATION_NODE_ID,
+        "stance": "neutral",
+    })
+    assert game.story_manager.loyalty <= 15.0
+    view.close_dialogue()
+    game.handle_super_destroyer_action(view.trigger_catapult_launch())
+    assert game.game_state == ""
+    assert game.active_mission_config["campaign_sortie"] == 5
+    assert game.active_mission_config["max_waves"] == 99
+    assert game.get_campaign_session().is_act3_flight
+
+
+def test_hub_launch_with_resolved_flag_skips_to_cinematic(game):
+    story = _pending(game, BRANCH_OBEDIENCE_PURGE, 95.0)
+    story.extra["viper_squad_purged"] = True
+    game.enter_super_destroyer()
+    game.handle_super_destroyer_action({"action": "launch_sortie"})
+    assert game.game_state == "cinematic"
+
+
+def test_dissident_surrender_choice_disarms_game_player(game):
+    _pending(game, BRANCH_DISSIDENT_SURRENDER, 10.0)
+    session = game.get_campaign_session()
+    session.launch_sortie()
+    for _ in range(6000):
+        session.update(FRAME_DT, 1, 0, game.ground_support_manager)
+        game.comms_hud.update(FRAME_DT)
+        if game.story_manager.active_dialogue is not None and game.comms_hud.is_waiting_for_choice:
+            break
+    assert game.comms_hud.is_waiting_for_choice
+    session.handle_comms_keydown(_key(pygame.K_2), game.ground_support_manager)
+    assert game.player.weapons_disarmed is True
+    assert game.story_manager.extra["weapons_disarmed"] is True
+
+
+def test_start_new_campaign_resets_story_and_finale(game):
+    story = _pending(game, BRANCH_COLD_PROTOCOL, 55.0)
+    story.extra["campaign_finale_completed"] = True
+    story.advance_sortie(act=3, sortie=5)
+    game.start_new_campaign()
+    assert game.story_manager.current_act == 1
+    assert game.story_manager.current_sortie == 1
+    assert "campaign_finale_completed" not in game.story_manager.extra
+    assert game.get_campaign_session().is_flight_active is False
+    assert game.cinematic_player.phase == "idle"
+
+
+def test_run_game_uses_reload_helpers(game):
+    source = inspect.getsource(game.run_game)
+    assert "on_reload_end()" in source
+    assert "on_rocket_reload_end()" in source
+    assert 'start_new_campaign()' in source
