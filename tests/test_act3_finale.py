@@ -519,3 +519,15 @@ def test_hub_draw_with_act3_briefing_smoke(tmp_path):
     surface = pygame.Surface((1280, 720))
     view.draw(surface, (0, 0))
     view.draw(surface, (0, 0))
+
+
+def test_act3_finale_api_exported():
+    import eagle1.story as story_pkg
+    from eagle1.story import campaign_act3, cinematic_player
+
+    for name in ("ACT3_SORTIE_CONFIGS", "build_ending_cinematic", "get_locked_ending_branch",
+                 "is_act3_finale_pending", "mark_campaign_finale_completed", "resolve_act3_choice"):
+        assert name in story_pkg.__all__
+        assert getattr(story_pkg, name) is getattr(campaign_act3, name)
+    assert "CINEMATIC_SKIP_AUDIO_FADE_MS" in story_pkg.__all__
+    assert story_pkg.CINEMATIC_SKIP_AUDIO_FADE_MS is cinematic_player.CINEMATIC_SKIP_AUDIO_FADE_MS
