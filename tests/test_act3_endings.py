@@ -5,6 +5,9 @@ purge, Scene 3A.2 hangar clone interlude, Sortie 6A terminal dive cinematic and 
 
 Act III-B "The Path of the Dissident" (#75): Scene 3B.1 ready-room confrontation, Sortie 5B
 weapon disarmament and surrender, and the Judgment of Viper Squad execution cinematic.
+
+Act III-C "The Path of Cold Protocol" (#76): Scene 3C.1 timetable briefing, Sortie 5C extraction
+countdown and Fleet Regulation 84-C abort, and the Funeral of Viper Squad cinematic.
 """
 
 import math
@@ -124,6 +127,14 @@ ACT3A_BANTER_CATEGORIES = (
     "act3a_s5_reiner_commendation",
 )
 ACT3B_NODE_IDS = ("act3b_ready_room_confrontation", "sortie_5b_surrender_broadcast")
+ACT3C_NODE_IDS = ("act3c_timetable_briefing", "sortie_5c_protocol_abort")
+ACT3C_BANTER_CATEGORIES = (
+    "act3c_s5_pelican_touchdown",
+    "act3c_s5_pelican_hull",
+    "act3c_s5_doc_plea",
+    "act3c_s5_apex_plea",
+    "act3c_s5_vance_override",
+)
 
 
 # -----------------------------------------------------------------------------
@@ -1222,3 +1233,763 @@ def test_act3b_review_symbols_exported():
                  "SORTIE5B_SCRAP_YARD_POS", "is_in_scrap_yard_landing_zone"):
         assert name in story_pkg.__all__
         assert hasattr(story_pkg, name)
+
+
+# -----------------------------------------------------------------------------
+# Act III-C: dialogue nodes and banter (#76)
+# -----------------------------------------------------------------------------
+
+
+def test_act3c_dialogue_nodes_pass_validation():
+    for node_id in ACT3C_NODE_IDS:
+        assert node_id in DIALOGUE_DATABASE
+    assert validate_dialogue_database({k: DIALOGUE_DATABASE[k] for k in ACT3C_NODE_IDS}) is True
+    assert validate_dialogue_database(DIALOGUE_DATABASE) is True
+
+
+def test_act3c_nodes_are_act3_sortie5():
+    ids = {node.node_id for node in get_nodes_for_act_and_sortie(3, 5)}
+    assert set(ACT3C_NODE_IDS) <= ids
+    for node_id in ACT3C_NODE_IDS:
+        node = get_dialogue_node(node_id)
+        assert node.act == 3
+        assert node.sortie == 5
+
+
+def test_act3c_briefing_establishes_timetable():
+    node = get_dialogue_node("act3c_timetable_briefing")
+    for phrase in ("45 seconds", "Outpost Epsilon", "Fleet Regulation 84-C"):
+        assert phrase in node.prompt
+    assert node.options["neutral"].label == (
+        "[2. NEUTRAL] Understood, Commander. Adhering strictly to flight schedule."
+    )
+    assert "Discipline is survival, Lieutenant." in node.options["loyal"].response
+
+
+def test_act3c_abort_node_is_vance_override_at_zero():
+    node = get_dialogue_node("sortie_5c_protocol_abort")
+    assert "preserve the airframes!" in node.prompt
+    assert "00:00" in node.prompt
+    assert "Obeying abort directive. RTB to orbit." in node.options["neutral"].label
+    assert "why are you flying away" in node.options["neutral"].response
+
+
+def test_act3c_texts_fit_comms_and_modal_limits():
+    for node_id in ACT3C_NODE_IDS:
+        node = get_dialogue_node(node_id)
+        assert len(node.prompt) <= 300
+        for option in node.options.values():
+            assert len(option.label) <= 110
+            assert len(option.response) <= 126
+
+
+def test_act3c_banter_categories_exist():
+    for category in ACT3C_BANTER_CATEGORIES:
+        lines = BANTER_QUEUES[category]
+        assert len(lines) == 1
+        assert lines[0].category == category
+    assert "We're fifty meters out!" in BANTER_QUEUES["act3c_s5_doc_plea"][0].text
+    assert "Give us ten seconds!" in BANTER_QUEUES["act3c_s5_apex_plea"][0].text
+    assert "Hull integrity at 40%!" in BANTER_QUEUES["act3c_s5_pelican_hull"][0].text
+    assert "Fleet Regulation 84-C: preserve the airframes!" in BANTER_QUEUES["act3c_s5_vance_override"][0].text
+    assert validate_viper_dialogue_data() is True
+
+
+# -----------------------------------------------------------------------------
+# Act III-C: Sortie 5C config, extraction countdown and triggers (#76)
+# -----------------------------------------------------------------------------
+
+from eagle1.story.campaign_act3 import (  # noqa: E402
+    ACT3C_BRIEFING_NODE_ID,
+    ACT3C_MAX_LOYALTY,
+    ACT3C_MIN_LOYALTY,
+    ACT3C_SEQUENCE_ID,
+    ACT3C_TRIGGERS,
+    SORTIE5C_ABORT_NODE_ID,
+    SORTIE5C_ABORT_OBJECTIVE,
+    SORTIE5C_EXTRACTION_DEADLINE_SECONDS,
+    SORTIE5C_EXTRACTION_WINDOW_SECONDS,
+    SORTIE5C_TOUCHDOWN_SECONDS,
+    SORTIE_5C_CONFIG,
+    format_extraction_timer,
+    get_act3c_extraction_timer_seconds,
+    is_act3c_extraction_expired,
+    register_act3c_triggers,
+)
+from eagle1.story.story_manager import BRANCH_COLD_PROTOCOL  # noqa: E402
+
+
+@pytest.fixture
+def protocol_story(story_mgr):
+    """StoryManager on the balanced Cold Protocol path at the dissident edge (loyalty 16.0)."""
+    story_mgr.loyalty = 16.0
+    return story_mgr
+
+
+def test_act3c_loyalty_band_matches_story_thresholds(protocol_story):
+    assert ACT3C_MIN_LOYALTY == 16.0
+    assert ACT3C_MAX_LOYALTY == 89.0
+    for loyalty in (ACT3C_MIN_LOYALTY, 50.0, ACT3C_MAX_LOYALTY):
+        protocol_story.loyalty = loyalty
+        assert protocol_story.get_ending_branch() == BRANCH_COLD_PROTOCOL
+
+
+def test_act3c_sortie_5c_config():
+    cfg = SORTIE_5C_CONFIG
+    assert cfg.sortie_num == 5
+    assert cfg.act == 3
+    assert cfg.sortie_id == "sortie_5c_cold_protocol"
+    assert cfg.mission_mode in VALID_CAMPAIGN_MISSION_MODES
+    assert cfg.briefing_node_id == ACT3C_BRIEFING_NODE_ID
+    assert cfg.inflight_node_ids == (SORTIE5C_ABORT_NODE_ID,)
+    assert cfg.debrief_node_id == ACT3C_SEQUENCE_ID == "act3c_cold_protocol"
+    assert get_dialogue_node(cfg.briefing_node_id) is not None
+    assert get_dialogue_node(SORTIE5C_ABORT_NODE_ID) is not None
+
+
+def test_act3c_triggers_are_valid_and_ordered():
+    for trigger in ACT3C_TRIGGERS:
+        validate_sortie_event_trigger(trigger)
+        assert trigger.sortie_num == 5
+    priorities = [t.priority for t in ACT3C_TRIGGERS]
+    thresholds = [t.threshold for t in ACT3C_TRIGGERS]
+    assert priorities == sorted(priorities, reverse=True)
+    assert thresholds == sorted(thresholds)
+    last = ACT3C_TRIGGERS[-1]
+    assert last.dialogue_node_id == SORTIE5C_ABORT_NODE_ID
+    assert last.threshold == SORTIE5C_EXTRACTION_DEADLINE_SECONDS == 48.0
+    for trigger in ACT3C_TRIGGERS:
+        if trigger.banter_category:
+            assert trigger.banter_category in BANTER_QUEUES
+
+
+def test_act3c_trigger_ids_do_not_clash_with_other_branches():
+    from eagle1.story.campaign_act3 import ACT3A_TRIGGERS, ACT3B_TRIGGERS
+
+    c_ids = {t.trigger_id for t in ACT3C_TRIGGERS}
+    other_ids = {t.trigger_id for t in ACT3A_TRIGGERS + ACT3B_TRIGGERS}
+    assert c_ids.isdisjoint(other_ids)
+
+
+def test_register_act3c_triggers_all_or_nothing(protocol_story):
+    manager = NarrativeTriggerManager(protocol_story)
+    assert register_act3c_triggers(manager) == len(ACT3C_TRIGGERS) == 6
+    with pytest.raises(ValueError):
+        register_act3c_triggers(manager)
+    assert len(manager.get_triggers_for_sortie(5)) == 6
+    with pytest.raises(TypeError):
+        register_act3c_triggers(object())
+
+
+def test_act3c_countdown_reaches_zero_and_opens_abort_node(protocol_story):
+    mission = MissionController(protocol_story)
+    comms = CommsHUD(story_manager=protocol_story)
+    manager = NarrativeTriggerManager(protocol_story, comms_hud=comms, mission_controller=mission)
+    register_act3c_triggers(manager)
+    manager.reset_for_sortie(5)
+
+    fired = manager.evaluate(CombatTelemetrySnapshot(elapsed_seconds=SORTIE5C_EXTRACTION_DEADLINE_SECONDS))
+    assert len(fired) == 6
+    assert fired[-1] == "act3c_s5_protocol_abort"
+    for _ in range(6):
+        comms.is_active = False
+        comms.current_node = None
+        manager.dispatch_next_pending()
+    assert manager.dispatch_log == list(fired)
+    assert mission.current_objective == SORTIE5C_ABORT_OBJECTIVE
+    assert protocol_story.active_dialogue.node_id == SORTIE5C_ABORT_NODE_ID
+
+
+def test_act3c_abort_trigger_not_fired_before_deadline(protocol_story):
+    manager = NarrativeTriggerManager(protocol_story)
+    register_act3c_triggers(manager)
+    manager.reset_for_sortie(5)
+    fired = manager.evaluate(CombatTelemetrySnapshot(elapsed_seconds=SORTIE5C_EXTRACTION_DEADLINE_SECONDS - 0.01))
+    assert "act3c_s5_protocol_abort" not in fired
+    assert len(fired) == 5
+
+
+@pytest.mark.parametrize(
+    "elapsed, expected",
+    [(0.0, 45.0), (SORTIE5C_TOUCHDOWN_SECONDS, 45.0), (13.0, 35.0), (40.0, 8.0), (48.0, 0.0), (120.0, 0.0)],
+)
+def test_act3c_extraction_timer_counts_down(elapsed, expected):
+    assert math.isclose(get_act3c_extraction_timer_seconds(elapsed), expected)
+
+
+@pytest.mark.parametrize("bad", [None, "10", True, float("nan"), float("inf"), -5.0])
+def test_act3c_extraction_timer_invalid_input(bad):
+    assert get_act3c_extraction_timer_seconds(bad) == SORTIE5C_EXTRACTION_WINDOW_SECONDS
+
+
+@pytest.mark.parametrize("elapsed, expected", [(47.99, False), (None, False), (float("nan"), False), (True, False), (48.0, True), (60, True)])
+def test_act3c_extraction_expired(elapsed, expected):
+    assert is_act3c_extraction_expired(elapsed) is expected
+
+
+@pytest.mark.parametrize(
+    "seconds, expected",
+    [
+        (45, "00:45"),
+        (7.2, "00:08"),
+        (8.0, "00:08"),
+        (0.4, "00:01"),
+        (0, "00:00"),
+        (-3, "00:00"),
+        (None, "00:00"),
+        (float("nan"), "00:00"),
+        (True, "00:00"),
+        (180, "03:00"),
+        (10**7, "99:59"),
+    ],
+)
+def test_format_extraction_timer(seconds, expected):
+    assert format_extraction_timer(seconds) == expected
+
+
+# -----------------------------------------------------------------------------
+# Act III-C: briefing, Fleet Regulation 84-C abort and choice router (#76)
+# -----------------------------------------------------------------------------
+
+from eagle1.story.campaign_act3 import (  # noqa: E402
+    ACT3C_BRIEFING_EXTRA_KEY,
+    ACT3C_DOC_FINAL_LINE,
+    ACT3C_OUTCOME_EXTRA_KEY,
+    ACT3C_VAL_LOG_LINE,
+    PROTOCOL_84C_EXTRA_KEY,
+    SORTIE5C_INITIAL_OBJECTIVE,
+    SORTIE5C_RTB_OBJECTIVE,
+    resolve_act3c_briefing_choice,
+    resolve_act3c_choice,
+    resolve_act3c_protocol_abort,
+)
+
+
+def test_act3c_briefing_keeps_cold_protocol_branch(protocol_story):
+    for stance in ("loyal", "neutral", "dissident"):
+        protocol_story.loyalty = 87.0
+        protocol_story.record_choice(ACT3C_BRIEFING_NODE_ID, stance)
+        outcome = resolve_act3c_briefing_choice(stance, protocol_story)
+        assert outcome is not None and outcome.stance == stance
+        assert ACT3C_MIN_LOYALTY <= protocol_story.loyalty <= ACT3C_MAX_LOYALTY
+        assert protocol_story.get_ending_branch() == BRANCH_COLD_PROTOCOL
+        assert protocol_story.extra[ACT3C_BRIEFING_EXTRA_KEY] == stance
+        assert "45 seconds" in outcome.vance_directive
+
+
+@pytest.mark.parametrize("bad", [None, "", "maybe", 3, True])
+def test_act3c_briefing_invalid_stance_returns_none(protocol_story, bad):
+    assert resolve_act3c_briefing_choice(bad, protocol_story) is None
+    assert ACT3C_BRIEFING_EXTRA_KEY not in protocol_story.extra
+
+
+@pytest.mark.parametrize("loyalty, expected", [(95.0, 89.0), (5.0, 16.0), (50.0, 50.0), (float("nan"), 70.0)])
+def test_act3c_briefing_clamps_loyalty(protocol_story, loyalty, expected):
+    protocol_story.loyalty = loyalty
+    assert resolve_act3c_briefing_choice("neutral", protocol_story).loyalty_after == expected
+
+
+def test_act3c_briefing_without_story_manager():
+    assert resolve_act3c_briefing_choice("neutral", None).loyalty_after == 70.0
+
+
+def test_act3c_abort_loses_live_squad_and_locks_branch(protocol_story):
+    gsm = GroundSupportManager()
+    gsm.set_story_manager(protocol_story)
+    mission = MissionController(protocol_story)
+    comms = _CalloutRecorder()
+
+    outcome = resolve_act3c_protocol_abort(protocol_story, gsm, mission, comms)
+
+    assert all(not u.is_alive for u in gsm.units)
+    assert outcome.newly_lost == 4
+    assert outcome.beacons_extinguished == 4
+    assert outcome.already_resolved is False
+    assert outcome.lost_callsigns == VIPER_SQUAD_CALLSIGNS
+    assert outcome.doc_final_line == ACT3C_DOC_FINAL_LINE
+    assert protocol_story.total_casualties == 4
+    assert protocol_story.loyalty == 16.0
+    assert protocol_story.get_ending_branch() == BRANCH_COLD_PROTOCOL
+    assert protocol_story.extra[PROTOCOL_84C_EXTRA_KEY] is True
+    assert protocol_story.extra[ACT3C_OUTCOME_EXTRA_KEY] == {"newly_lost": 4, "beacons_extinguished": 4}
+    assert (protocol_story.current_act, protocol_story.current_sortie) == (3, 5)
+    assert mission.current_objective == SORTIE5C_RTB_OBJECTIVE
+    assert comms.callouts == [("Val", ACT3C_VAL_LOG_LINE)]
+
+
+def test_act3c_abort_survives_ground_support_updates_at_loyalty_16(protocol_story):
+    """Key edge case: casualties must not erode loyalty into DISSIDENT_SURRENDER."""
+    gsm = GroundSupportManager()
+    gsm.set_story_manager(protocol_story)
+    resolve_act3c_protocol_abort(protocol_story, gsm)
+    player = _mock_player()
+    for _ in range(5):
+        gsm.update(0.016, player, [], pygame.sprite.Group(), [])
+    assert protocol_story.total_casualties == 4
+    assert protocol_story.loyalty == 16.0
+    assert protocol_story.get_ending_branch() == BRANCH_COLD_PROTOCOL
+
+
+def test_act3c_abort_without_ground_support(protocol_story):
+    outcome = resolve_act3c_protocol_abort(protocol_story, None)
+    assert outcome.newly_lost == 4
+    assert protocol_story.total_casualties == 4
+
+
+def test_act3c_abort_counts_only_survivors(protocol_story):
+    gsm = GroundSupportManager()
+    assert gsm.apply_scripted_casualty(1) is True
+    assert gsm.apply_scripted_casualty(3) is True
+    outcome = resolve_act3c_protocol_abort(protocol_story, gsm)
+    assert outcome.newly_lost == 2
+    assert protocol_story.total_casualties == 2
+
+
+def test_act3c_abort_on_already_dead_squad(protocol_story):
+    gsm = GroundSupportManager()
+    for index in range(4):
+        assert gsm.apply_scripted_casualty(index) is True
+    comms = _CalloutRecorder()
+    outcome = resolve_act3c_protocol_abort(protocol_story, gsm, comms_hud=comms)
+    assert outcome.newly_lost == 0
+    assert protocol_story.total_casualties == 0
+    assert protocol_story.extra[PROTOCOL_84C_EXTRA_KEY] is True
+    assert comms.callouts == [("Val", ACT3C_VAL_LOG_LINE)]
+
+
+def test_act3c_abort_is_idempotent(protocol_story):
+    resolve_act3c_protocol_abort(protocol_story, None)
+    gsm = GroundSupportManager()
+    comms = _CalloutRecorder()
+    again = resolve_act3c_protocol_abort(protocol_story, gsm, comms_hud=comms)
+    assert again.already_resolved is True
+    assert again.newly_lost == 0
+    assert protocol_story.total_casualties == 4
+    assert all(u.is_alive for u in gsm.units)
+    assert comms.callouts == []
+
+
+@pytest.mark.parametrize("stance", ["loyal", "neutral", "dissident"])
+def test_act3c_abort_choice_flow_keeps_branch(protocol_story, stance):
+    protocol_story.record_choice(SORTIE5C_ABORT_NODE_ID, stance)
+    assert resolve_act3c_choice(SORTIE5C_ABORT_NODE_ID, stance, protocol_story) == SORTIE5C_RTB_OBJECTIVE
+    assert ACT3C_MIN_LOYALTY <= protocol_story.loyalty <= ACT3C_MAX_LOYALTY
+    assert protocol_story.get_ending_branch() == BRANCH_COLD_PROTOCOL
+
+
+def test_act3c_choice_recorded_after_abort_is_clamped_again(protocol_story, tmp_path):
+    resolve_act3c_protocol_abort(protocol_story, None)
+    protocol_story.loyalty = 10.0
+    resolve_act3c_protocol_abort(protocol_story, None)
+    assert protocol_story.loyalty == 16.0
+    reloaded = StoryManager(save_manager=CampaignSaveManager(data_dir=tmp_path))
+    assert reloaded.get_ending_branch() == BRANCH_COLD_PROTOCOL
+
+
+def test_act3c_abort_persists(protocol_story, tmp_path):
+    protocol_story.save_manager = CampaignSaveManager(data_dir=tmp_path)
+    resolve_act3c_protocol_abort(protocol_story, None)
+    reloaded = StoryManager(save_manager=CampaignSaveManager(data_dir=tmp_path))
+    assert reloaded.extra[PROTOCOL_84C_EXTRA_KEY] is True
+    assert reloaded.total_casualties == 4
+
+
+def test_act3c_abort_clamps_nan_loyalty(protocol_story):
+    protocol_story.loyalty = float("nan")
+    resolve_act3c_protocol_abort(protocol_story, None)
+    assert protocol_story.loyalty == 70.0
+
+
+@pytest.mark.parametrize("bad_extra", [None, [], "x"])
+def test_act3c_abort_repairs_malformed_extra(protocol_story, bad_extra):
+    protocol_story.extra = bad_extra
+    resolve_act3c_protocol_abort(protocol_story, None)
+    assert protocol_story.extra[PROTOCOL_84C_EXTRA_KEY] is True
+
+
+def test_act3c_abort_ignores_invalid_ground_support(protocol_story):
+    assert resolve_act3c_protocol_abort(protocol_story, object()).newly_lost == 4
+
+
+def test_act3c_abort_without_story_manager():
+    outcome = resolve_act3c_protocol_abort(None)
+    assert outcome.loyalty_after == 70.0
+    assert outcome.newly_lost == 4
+
+
+def test_act3c_abort_reaches_real_comms_hud(protocol_story):
+    comms = CommsHUD(story_manager=protocol_story)
+    resolve_act3c_protocol_abort(protocol_story, None, comms_hud=comms)
+    assert comms.is_active
+
+
+def test_resolve_act3c_choice_routes_nodes(protocol_story):
+    assert resolve_act3c_choice(ACT3C_BRIEFING_NODE_ID, "neutral", protocol_story) == SORTIE5C_INITIAL_OBJECTIVE
+    assert resolve_act3c_choice(SORTIE5C_ABORT_NODE_ID, "neutral", protocol_story) == SORTIE5C_RTB_OBJECTIVE
+    assert resolve_act3c_choice(ACT3A_ORDER_NODE_ID, "loyal", protocol_story) is None
+
+
+@pytest.mark.parametrize(
+    "node_id, stance",
+    [(None, "neutral"), (True, "neutral"), ("unknown", "neutral"),
+     (SORTIE5C_ABORT_NODE_ID, "maybe"), (ACT3C_BRIEFING_NODE_ID, "")],
+)
+def test_resolve_act3c_choice_rejects_invalid_input(protocol_story, node_id, stance):
+    assert resolve_act3c_choice(node_id, stance, protocol_story) is None
+    assert PROTOCOL_84C_EXTRA_KEY not in protocol_story.extra
+
+
+# -----------------------------------------------------------------------------
+# Act III-C: FLIR sensor feed and observation deck funeral renderers (#76)
+# -----------------------------------------------------------------------------
+
+from eagle1.story.cinematic_player import (  # noqa: E402
+    CINEMATIC_SCENE_FLIR_SENSOR_FEED,
+    VALID_CINEMATIC_SCENE_TYPES,
+    CinematicKeyframe,
+    CinematicSequence,
+)
+
+
+def _single_scene_player(scene_type, duration=10.0):
+    sequence = CinematicSequence(
+        sequence_id="act3c_scene_probe",
+        ending_branch=BRANCH_COLD_PROTOCOL,
+        title="probe",
+        keyframes=(
+            CinematicKeyframe(
+                keyframe_id="probe", duration=duration, scene_type=scene_type, fade_in=0.0, fade_out=0.0
+            ),
+        ),
+        epilogue_lines=(),
+    )
+    player = CinematicPlayer(1280, 720)
+    player.start_sequence(sequence, build_act3b_epilogue_stats(None))
+    return player
+
+
+def test_act3c_flir_scene_type_registered():
+    assert CINEMATIC_SCENE_FLIR_SENSOR_FEED == "flir_sensor_feed"
+    assert CINEMATIC_SCENE_FLIR_SENSOR_FEED in VALID_CINEMATIC_SCENE_TYPES
+
+
+def test_act3c_flir_beacons_turn_black_one_by_one():
+    player = _single_scene_player(CINEMATIC_SCENE_FLIR_SENSOR_FEED)
+    canvas = pygame.Surface((1280, 720))
+    beacons = [(640 + bx, 360 + by) for bx, by in ((-90, 40), (-30, 60), (30, 60), (90, 40))]
+    blue, black = (60, 140, 255), (0, 0, 0)
+
+    player.update(0.0)
+    player._draw_scene(canvas, player.current_keyframe)
+    assert [canvas.get_at(p)[:3] for p in beacons] == [blue] * 4
+
+    player.update(5.0)  # t = 0.5
+    player._draw_scene(canvas, player.current_keyframe)
+    assert [canvas.get_at(p)[:3] for p in beacons] == [black, black, blue, blue]
+
+    player.update(4.0)  # t = 0.9
+    player._draw_scene(canvas, player.current_keyframe)
+    assert [canvas.get_at(p)[:3] for p in beacons] == [black] * 4
+
+
+def test_act3c_flir_scene_background_is_thermal_green():
+    player = _single_scene_player(CINEMATIC_SCENE_FLIR_SENSOR_FEED)
+    canvas = pygame.Surface((1280, 720))
+    player.update(0.0)
+    player._draw_scene(canvas, player.current_keyframe)
+    assert canvas.get_at((680, 380))[:3] == (10, 22, 16)
+
+
+def test_act3c_funeral_draws_silver_coffins_flags_and_ribbon():
+    player = CinematicPlayer(1280, 720)
+    canvas = pygame.Surface((1280, 720))
+    canvas.fill((0, 0, 0))
+    player._draw_scene_observation_deck_funeral(canvas)
+    for x in (-270, -90, 90, 270):
+        assert canvas.get_at((640 + x - 55, 360 + 220))[:3] == (178, 184, 196)
+        assert canvas.get_at((640 + x, 360 + 194))[:3] == (28, 58, 140)
+    assert canvas.get_at((635, 486))[:3] == (214, 218, 228)
+
+
+def test_act3c_keyframe_progress_idle_is_zero():
+    assert CinematicPlayer(1280, 720)._keyframe_progress() == 0.0
+
+
+# -----------------------------------------------------------------------------
+# Act III-C: The Funeral of Viper Squad cinematic and epilogue (#76)
+# -----------------------------------------------------------------------------
+
+from eagle1.story.campaign_act3 import (  # noqa: E402
+    ACT3C_ARCHIVE_EPILOGUE_LINES,
+    ACT3C_HYMN_CUE,
+    ACT3C_PILOT_STATUS as ACT3C_PILOT_STATUS_EXPORTED,
+    ACT3C_VAL_FINAL_LINE,
+    build_act3c_cinematic_sequence,
+    build_act3c_epilogue_stats,
+)
+from eagle1.story.cinematic_player import (  # noqa: E402
+    CINEMATIC_SCENE_OBSERVATION_DECK_FUNERAL,
+    wrap_cinematic_text,
+)
+
+ACT3C_SCENE_ORDER = [
+    CINEMATIC_SCENE_FLIR_SENSOR_FEED,
+    CINEMATIC_SCENE_EPILOGUE_CARD,
+    CINEMATIC_SCENE_OBSERVATION_DECK_FUNERAL,
+    CINEMATIC_SCENE_OBSERVATION_DECK_FUNERAL,
+    CINEMATIC_SCENE_OBSERVATION_DECK_FUNERAL,
+    CINEMATIC_SCENE_OBSERVATION_DECK_FUNERAL,
+    CINEMATIC_SCENE_EPILOGUE_CARD,
+]
+
+
+def test_act3c_cinematic_sequence_is_valid():
+    sequence = build_act3c_cinematic_sequence()
+    assert validate_cinematic_sequence(sequence) is True
+    assert sequence.sequence_id == ACT3C_SEQUENCE_ID == SORTIE_5C_CONFIG.debrief_node_id
+    assert sequence.ending_branch == BRANCH_COLD_PROTOCOL
+    assert sequence.epilogue_lines == ACT3C_ARCHIVE_EPILOGUE_LINES
+
+
+def test_act3c_cinematic_story_order():
+    keyframes = build_act3c_cinematic_sequence().keyframes
+    assert [kf.keyframe_id for kf in keyframes] == [
+        "act3c_rtb_climb",
+        "act3c_static_log",
+        "act3c_funeral_hymn",
+        "act3c_reiner_eulogy",
+        "act3c_ortiz_pity",
+        "act3c_alone_before_coffins",
+        "act3c_archive_notice",
+    ]
+    assert [kf.scene_type for kf in keyframes] == ACT3C_SCENE_ORDER
+
+
+def test_act3c_cinematic_contains_canonical_beats():
+    text = _all_subtitle_text(build_act3c_cinematic_sequence())
+    for expected in (
+        "why are you flying away",
+        "Close your eyes",
+        "turn black",
+        "Flight logs confirmed. Return to base completed within standard fuel parameters.",
+        "Four polished silver coffins",
+        "All four are empty.",
+        "Hymn of the Fallen Citizen",
+        "statistically optimal sacrifice of Viper Detachment",
+        "Citation of Procedural Excellence",
+        "Chief Ortiz does not clap.",
+        "devastating pity",
+        "Your next sortie departs at 0700.",
+        "I followed the rules. I just... followed the rules...",
+        *ACT3C_ARCHIVE_EPILOGUE_LINES,
+    ):
+        assert expected in text
+    assert ACT3C_ARCHIVE_EPILOGUE_LINES[2] == "Flight Lieutenant Val completed thirty-two additional sorties."
+
+
+def test_act3c_val_final_line_is_last_spoken_before_archive():
+    keyframe = next(kf for kf in build_act3c_cinematic_sequence().keyframes if kf.keyframe_id == "act3c_alone_before_coffins")
+    assert len(keyframe.subtitles) == 1
+    assert keyframe.subtitles[0].speaker == "Val"
+    assert keyframe.subtitles[0].text == ACT3C_VAL_FINAL_LINE
+    assert keyframe.camera_end[2] < keyframe.camera_start[2]
+
+
+def test_act3c_cinematic_audio_cues_have_assets():
+    sfx_dir = PROJECT_ROOT / "audio" / "sfx"
+    cues = [kf.audio_cue for kf in build_act3c_cinematic_sequence().keyframes if kf.audio_cue]
+    assert ACT3C_HYMN_CUE in cues
+    for cue in cues:
+        if cue != "stop_music":
+            assert (sfx_dir / f"{cue}.wav").is_file(), cue
+
+
+def test_act3c_subtitles_fit_two_lines():
+    player = CinematicPlayer(1280, 720)
+    assert player.font_subtitle is not None, "bundled subtitle font must load"
+    for kf in build_act3c_cinematic_sequence().keyframes:
+        for sub in kf.subtitles:
+            lines = wrap_cinematic_text(sub.text, 1040, lambda s: player.font_subtitle.size(s)[0])
+            assert len(lines) <= 2, sub.text
+
+
+def test_act3c_cinematic_plays_through_player_to_epilogue(protocol_story):
+    resolve_act3c_protocol_abort(protocol_story)
+    sequence = build_act3c_cinematic_sequence()
+    player = CinematicPlayer(1280, 720)
+    received = []
+    player.on_audio_cue = received.append
+    player.start_sequence(sequence, build_act3c_epilogue_stats(protocol_story))
+    canvas = pygame.Surface((1280, 720))
+    seen_subtitles = set()
+
+    total = sum(kf.duration for kf in sequence.keyframes)
+    for _ in range(int(total * 60) + 30):
+        player.update(1.0 / 60.0)
+        player.draw(canvas)
+        seen_subtitles.update(sub.text for sub in player.get_active_subtitles())
+        if player.is_epilogue:
+            break
+
+    assert player.is_epilogue
+    assert player.skipped is False
+    assert received == [kf.audio_cue.strip() for kf in sequence.keyframes if kf.audio_cue]
+    assert seen_subtitles == {sub.text for kf in sequence.keyframes for sub in kf.subtitles}
+    assert player.get_epilogue_lines() == ACT3C_ARCHIVE_EPILOGUE_LINES
+
+
+def test_act3c_epilogue_stats_after_abort(protocol_story):
+    protocol_story.total_casualties = 3
+    protocol_story.loyalty = 40.0
+    resolve_act3c_protocol_abort(protocol_story, None)
+    stats = build_act3c_epilogue_stats(protocol_story)
+    assert stats.ending_branch == BRANCH_COLD_PROTOCOL
+    assert stats.ending_title == "THE PATH OF COLD PROTOCOL"
+    assert stats.pilot_status == ACT3C_PILOT_STATUS_EXPORTED == "ACTIVE DUTY // CITATION OF PROCEDURAL EXCELLENCE"
+    assert stats.final_loyalty == 40.0
+    assert stats.total_casualties == 7
+    assert stats.sorties_completed == 37
+    assert stats.epilogue_lines == ACT3C_ARCHIVE_EPILOGUE_LINES
+
+
+def test_act3c_epilogue_stats_without_story_manager():
+    stats = build_act3c_epilogue_stats(None)
+    assert stats.final_loyalty == 70.0
+    assert stats.total_casualties == 4
+    assert stats.pilot_status == "ACTIVE DUTY // CITATION OF PROCEDURAL EXCELLENCE"
+
+
+@pytest.mark.parametrize("loyalty, expected", [(5.0, 16.0), (95.0, 89.0), (float("nan"), 70.0)])
+def test_act3c_epilogue_stats_clamp_loyalty(protocol_story, loyalty, expected):
+    protocol_story.loyalty = loyalty
+    assert build_act3c_epilogue_stats(protocol_story).final_loyalty == expected
+
+
+@pytest.mark.parametrize("scene_type", [CINEMATIC_SCENE_FLIR_SENSOR_FEED, CINEMATIC_SCENE_OBSERVATION_DECK_FUNERAL])
+def test_act3c_scene_renderers_draw_something(scene_type):
+    player = CinematicPlayer(1280, 720)
+    canvas = pygame.Surface((1280, 720))
+    canvas.fill((0, 0, 0))
+    keyframe = next(kf for kf in build_act3c_cinematic_sequence().keyframes if kf.scene_type == scene_type)
+    player._draw_scene(canvas, keyframe)
+    assert canvas.get_at((640, 360))[:3] != (0, 0, 0)
+
+
+# -----------------------------------------------------------------------------
+# Act III-C: package exports (#76)
+# -----------------------------------------------------------------------------
+
+
+def test_act3c_symbols_exported_from_story_package():
+    import eagle1.story as story_pkg
+
+    expected = {
+        "ACT3C_ARCHIVE_EPILOGUE_LINES",
+        "ACT3C_BRIEFING_NODE_ID",
+        "ACT3C_PILOT_STATUS",
+        "ACT3C_SEQUENCE_ID",
+        "ACT3C_TRIGGERS",
+        "Act3CBriefingOutcome",
+        "Act3CProtocolAbortOutcome",
+        "PROTOCOL_84C_EXTRA_KEY",
+        "SORTIE5C_ABORT_NODE_ID",
+        "SORTIE5C_EXTRACTION_DEADLINE_SECONDS",
+        "SORTIE5C_EXTRACTION_WINDOW_SECONDS",
+        "SORTIE_5C_CONFIG",
+        "CINEMATIC_SCENE_FLIR_SENSOR_FEED",
+        "build_act3c_cinematic_sequence",
+        "build_act3c_epilogue_stats",
+        "format_extraction_timer",
+        "get_act3c_extraction_timer_seconds",
+        "is_act3c_extraction_expired",
+        "register_act3c_triggers",
+        "resolve_act3c_briefing_choice",
+        "resolve_act3c_choice",
+        "resolve_act3c_protocol_abort",
+    }
+    assert expected <= set(story_pkg.__all__)
+    for name in expected:
+        assert hasattr(story_pkg, name), name
+    assert story_pkg.resolve_act3c_protocol_abort is resolve_act3c_protocol_abort
+
+
+# -----------------------------------------------------------------------------
+# Act III-C: ship-review follow-ups (#76)
+# -----------------------------------------------------------------------------
+
+
+def test_act3c_abort_counts_dead_but_unreported_unit_and_blocks_later_erosion(protocol_story):
+    """A Helldiver that died after the last update() must not erode loyalty after the abort."""
+    gsm = GroundSupportManager()
+    gsm.set_story_manager(protocol_story)
+    gsm.units[0].health = 0.0  # dead, but not yet reported to the StoryManager by update()
+    assert 0 not in gsm._downed_unit_ids
+
+    outcome = resolve_act3c_protocol_abort(protocol_story, gsm)
+
+    assert outcome.newly_lost == 4
+    assert protocol_story.total_casualties == 4
+    for _ in range(5):
+        gsm.update(0.016, _mock_player(), [], pygame.sprite.Group(), [])
+    assert protocol_story.total_casualties == 4
+    assert protocol_story.loyalty == 16.0
+    assert protocol_story.get_ending_branch() == BRANCH_COLD_PROTOCOL
+
+
+def test_act3c_abort_does_not_count_extracted_unit_as_casualty(protocol_story):
+    gsm = GroundSupportManager()
+    gsm.units[0].state = "EXTRACTED"
+    outcome = resolve_act3c_protocol_abort(protocol_story, gsm)
+    assert outcome.newly_lost == 3
+
+
+def test_act3c_triggers_fire_once_each_in_story_order_over_time(protocol_story):
+    manager = NarrativeTriggerManager(protocol_story)
+    register_act3c_triggers(manager)
+    manager.reset_for_sortie(5)
+    order = []
+    elapsed = 0.0
+    while elapsed <= SORTIE5C_EXTRACTION_DEADLINE_SECONDS:
+        order.extend(manager.evaluate(CombatTelemetrySnapshot(elapsed_seconds=elapsed)))
+        elapsed += 0.5
+    assert order == [trigger.trigger_id for trigger in ACT3C_TRIGGERS]
+
+
+def test_act3c_flir_signatures_converge_toward_the_beacons():
+    player = _single_scene_player(CINEMATIC_SCENE_FLIR_SENSOR_FEED)
+    canvas = pygame.Surface((1280, 720))
+    red = (255, 50, 40)
+
+    player.update(0.0)
+    player._draw_scene(canvas, player.current_keyframe)
+    assert canvas.get_at((640 + 420, 360 + 50))[:3] == red  # outer ring at t = 0
+    assert canvas.get_at((640 + 60, 360 + 50))[:3] != red
+
+    player.update(9.99)
+    player._draw_scene(canvas, player.current_keyframe)
+    assert canvas.get_at((640 + 60, 360 + 50))[:3] == red  # inner ring at t ~ 1
+    assert canvas.get_at((640 + 420, 360 + 50))[:3] != red
+
+
+def test_act3c_funeral_draws_flag_stripes_honor_guard_and_ortiz():
+    player = CinematicPlayer(1280, 720)
+    canvas = pygame.Surface((1280, 720))
+    canvas.fill((0, 0, 0))
+    player._draw_scene_observation_deck_funeral(canvas)
+    for x in (-270, -90, 90, 270):
+        assert canvas.get_at((640 + x, 360 + 200))[:3] == (255, 215, 0)
+    for x in (-440, 440):
+        assert canvas.get_at((640 + x, 360 + 140))[:3] == (22, 22, 28)
+    assert canvas.get_at((640 + 330, 360 + 140))[:3] == (96, 74, 52)
+    # Exactly four coffins: nothing is drawn in the gap between the two middle ones.
+    assert canvas.get_at((640, 360 + 205))[:3] == (8, 10, 20)
+
+
+def test_mark_casualties_reported_only_marks_fallen_units():
+    gsm = GroundSupportManager()
+    gsm.units[0].health = 0.0
+    gsm.units[1].state = "DOWNED"
+    assert gsm.mark_casualties_reported([0, 1, 2, True, "x", None]) == 2
+    assert {0, 1} <= gsm._downed_unit_ids
+    assert 2 not in gsm._downed_unit_ids
+    assert gsm.mark_casualties_reported([0, 1]) == 0

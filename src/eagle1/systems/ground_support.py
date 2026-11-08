@@ -2513,6 +2513,29 @@ class GroundSupportManager:
         """
         self._squad_wipe_reported = True
 
+    def mark_casualties_reported(self, indices) -> int:
+        """Mark fallen Helldivers as already reported for a scripted story event.
+
+        A unit that died after the last update() (health <= 0 or DOWNED) but was not yet
+        reported would otherwise cost the StoryManager loyalty on the next update(), after
+        the story event already recorded the casualties itself. Living and extracted units
+        are left untouched.
+
+        Args:
+            indices: Unit indices (ints) to consider; anything else is ignored.
+
+        Returns:
+            Number of fallen units newly marked as reported.
+        """
+        wanted = {i for i in indices if isinstance(i, int) and not isinstance(i, bool)}
+        newly_marked = 0
+        for unit in self.units:
+            fallen = unit.state == "DOWNED" or unit.health <= 0
+            if unit.index in wanted and fallen and unit.index not in self._downed_unit_ids:
+                self._downed_unit_ids.add(unit.index)
+                newly_marked += 1
+        return newly_marked
+
     def add_combat_popup(self, text, x, y, color=(255, 255, 255)):
         self.floating_popups.append({
             "text": text,

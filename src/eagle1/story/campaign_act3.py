@@ -8,9 +8,14 @@ Act III-B "The Path of the Dissident" (DISSIDENT_SURRENDER, docs/story.md Sectio
 Scene 3B.1 ready-room confrontation, Sortie 5B weapon disarmament and surrender broadcast,
 and the Judgment of Viper Squad execution cinematic in the Automaton scrap yard.
 
-Both endings are tragedies without an exit: whatever the pilot answers, the resolvers keep
-loyalty at zealot level (>= THRESHOLD_OBEDIENCE_PURGE) or dissident level
-(<= THRESHOLD_DISSIDENT_SURRENDER) so the branch can never flip.
+Act III-C "The Path of Cold Protocol" (COLD_PROTOCOL, docs/story.md Section 8):
+Scene 3C.1 timetable briefing, the Sortie 5C 45-second extraction countdown, the Fleet
+Regulation 84-C abort at 00:00 with the FLIR beacon loss, and the Funeral of Viper Squad.
+
+All three endings are tragedies without an exit: whatever the pilot answers, the resolvers keep
+loyalty at zealot level (>= THRESHOLD_OBEDIENCE_PURGE), dissident level
+(<= THRESHOLD_DISSIDENT_SURRENDER) or inside the Cold Protocol band ([16.0, 89.0]) so the
+branch can never flip.
 """
 
 from dataclasses import dataclass
@@ -21,7 +26,9 @@ from typing import TYPE_CHECKING, Any, Optional, Tuple
 from eagle1.story.cinematic_player import (
     CINEMATIC_SCENE_EPILOGUE_CARD,
     CINEMATIC_SCENE_HANGAR_CLONES,
+    CINEMATIC_SCENE_FLIR_SENSOR_FEED,
     CINEMATIC_SCENE_HELLPOD_DROP,
+    CINEMATIC_SCENE_OBSERVATION_DECK_FUNERAL,
     CINEMATIC_SCENE_SCRAP_PLAIN,
     CINEMATIC_SCENE_SCRAP_YARD_EXECUTION,
     CINEMATIC_SCENE_SUICIDE_DIVE,
@@ -45,8 +52,10 @@ from eagle1.story.narrative_trigger_manager import (
     SortieEventTrigger,
 )
 from eagle1.story.story_manager import (
+    BRANCH_COLD_PROTOCOL,
     BRANCH_DISSIDENT_SURRENDER,
     BRANCH_OBEDIENCE_PURGE,
+    DEFAULT_LOYALTY,
     MAX_LOYALTY,
     MIN_LOYALTY,
     THRESHOLD_DISSIDENT_SURRENDER,
@@ -1092,4 +1101,511 @@ def build_act3b_epilogue_stats(story_manager: Optional[StoryManager]) -> Epilogu
         sorties_completed=ACT3B_SORTIES_COMPLETED,
         pilot_status=ACT3B_PILOT_STATUS,
         epilogue_lines=ACT3B_EXECUTION_NOTICE_LINES,
+    )
+
+
+# -----------------------------------------------------------------------------
+# Act III-C: Scene 3C.1 timetable briefing and Sortie 5C overrun extraction
+# -----------------------------------------------------------------------------
+
+SORTIE5C_NUM: int = 5
+
+ACT3C_SEQUENCE_ID: str = "act3c_cold_protocol"
+ACT3C_BRIEFING_NODE_ID: str = "act3c_timetable_briefing"
+SORTIE5C_ABORT_NODE_ID: str = "sortie_5c_protocol_abort"
+
+# Balanced (bureaucrat) band from docs/story.md Section 8: 16.0 <= loyalty <= 89.0.
+ACT3C_MIN_LOYALTY: float = THRESHOLD_DISSIDENT_SURRENDER + 1.0
+ACT3C_MAX_LOYALTY: float = THRESHOLD_OBEDIENCE_PURGE - 1.0
+
+PROTOCOL_84C_EXTRA_KEY: str = "protocol_84c_enforced"
+ACT3C_OUTCOME_EXTRA_KEY: str = "act3c_protocol_abort"
+ACT3C_BRIEFING_EXTRA_KEY: str = "act3c_briefing_stance"
+
+# Pelican-1 touches down at T-zero and holds the deck for exactly 45 seconds.
+SORTIE5C_TOUCHDOWN_SECONDS: float = 3.0
+SORTIE5C_EXTRACTION_WINDOW_SECONDS: float = 45.0
+SORTIE5C_EXTRACTION_DEADLINE_SECONDS: float = SORTIE5C_TOUCHDOWN_SECONDS + SORTIE5C_EXTRACTION_WINDOW_SECONDS
+# Radio beats in the final seconds, as remaining-window seconds before 00:00.
+SORTIE5C_HULL_REMAINING: float = 5.0
+SORTIE5C_DOC_REMAINING: float = 4.0
+SORTIE5C_APEX_REMAINING: float = 3.0
+SORTIE5C_VANCE_REMAINING: float = 2.0
+SORTIE5C_TIMER_MAX_TEXT: str = "99:59"
+
+SORTIE5C_INITIAL_OBJECTIVE: str = (
+    "Outpost Epsilon: Pelican-1 holds the deck for 45 seconds. Fly covering sweep over the extraction zone."
+)
+SORTIE5C_ABORT_OBJECTIVE: str = "00:00 // Fleet Regulation 84-C: Abort the attack run. Respond to Command."
+SORTIE5C_RTB_OBJECTIVE: str = "Abort directive confirmed. Climb through the cloud layer and return to orbit."
+
+SORTIE_5C_CONFIG: CampaignSortieConfig = CampaignSortieConfig(
+    sortie_num=SORTIE5C_NUM,
+    act=ACT3_NUM,
+    sortie_id="sortie_5c_cold_protocol",
+    title="SORTIE 5C // THE OVERRUN EXTRACTION",
+    operation_name="FLEET REGULATION 84-C",
+    mission_mode="base_defense",
+    threat_level="EXTREME // EXTRACTION ZONE OVERRUN",
+    target_waves=2,
+    required_fabricators=0,
+    has_boss_strider=False,
+    initial_objective=SORTIE5C_INITIAL_OBJECTIVE,
+    extraction_objective=SORTIE5C_RTB_OBJECTIVE,
+    briefing_node_id=ACT3C_BRIEFING_NODE_ID,
+    inflight_node_ids=(SORTIE5C_ABORT_NODE_ID,),
+    # The Funeral of Viper Squad is a cinematic, not a dialogue node.
+    debrief_node_id=ACT3C_SEQUENCE_ID,
+)
+
+# Shares sortie 5 with ACT3A_TRIGGERS / ACT3B_TRIGGERS: register only the triggers of the active branch.
+# Priorities strictly decrease in story order.
+ACT3C_TRIGGERS: Tuple[SortieEventTrigger, ...] = (
+    SortieEventTrigger(
+        trigger_id="act3c_s5_pelican_touchdown",
+        sortie_num=SORTIE5C_NUM,
+        priority=100,
+        condition_type=CONDITION_ELAPSED_TIME,
+        threshold=SORTIE5C_TOUCHDOWN_SECONDS,
+        banter_category="act3c_s5_pelican_touchdown",
+        objective_update=SORTIE5C_INITIAL_OBJECTIVE,
+    ),
+    SortieEventTrigger(
+        trigger_id="act3c_s5_pelican_hull",
+        sortie_num=SORTIE5C_NUM,
+        priority=90,
+        condition_type=CONDITION_ELAPSED_TIME,
+        threshold=SORTIE5C_EXTRACTION_DEADLINE_SECONDS - SORTIE5C_HULL_REMAINING,
+        banter_category="act3c_s5_pelican_hull",
+    ),
+    SortieEventTrigger(
+        trigger_id="act3c_s5_doc_plea",
+        sortie_num=SORTIE5C_NUM,
+        priority=80,
+        condition_type=CONDITION_ELAPSED_TIME,
+        threshold=SORTIE5C_EXTRACTION_DEADLINE_SECONDS - SORTIE5C_DOC_REMAINING,
+        banter_category="act3c_s5_doc_plea",
+    ),
+    SortieEventTrigger(
+        trigger_id="act3c_s5_apex_plea",
+        sortie_num=SORTIE5C_NUM,
+        priority=70,
+        condition_type=CONDITION_ELAPSED_TIME,
+        threshold=SORTIE5C_EXTRACTION_DEADLINE_SECONDS - SORTIE5C_APEX_REMAINING,
+        banter_category="act3c_s5_apex_plea",
+    ),
+    SortieEventTrigger(
+        trigger_id="act3c_s5_vance_override",
+        sortie_num=SORTIE5C_NUM,
+        priority=60,
+        condition_type=CONDITION_ELAPSED_TIME,
+        threshold=SORTIE5C_EXTRACTION_DEADLINE_SECONDS - SORTIE5C_VANCE_REMAINING,
+        banter_category="act3c_s5_vance_override",
+    ),
+    SortieEventTrigger(
+        trigger_id="act3c_s5_protocol_abort",
+        sortie_num=SORTIE5C_NUM,
+        priority=50,
+        condition_type=CONDITION_ELAPSED_TIME,
+        threshold=SORTIE5C_EXTRACTION_DEADLINE_SECONDS,
+        dialogue_node_id=SORTIE5C_ABORT_NODE_ID,
+        objective_update=SORTIE5C_ABORT_OBJECTIVE,
+    ),
+)
+
+
+def register_act3c_triggers(manager: NarrativeTriggerManager) -> int:
+    """Register every Act III-C trigger with the given manager (all-or-nothing).
+
+    Returns:
+        Number of triggers registered.
+
+    Raises:
+        TypeError: If manager is not a NarrativeTriggerManager.
+        ValueError: If any Act III-C trigger id is already registered with the manager.
+    """
+    return _register_trigger_set(manager, ACT3C_TRIGGERS, "Act III-C")
+
+
+def _finite_seconds(value: Any) -> Optional[float]:
+    """Return value as a finite float, or None for bools, NaN, inf and non-numbers."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return None
+    return float(value)
+
+
+def get_act3c_extraction_timer_seconds(elapsed_seconds: Any) -> float:
+    """Return the Sortie 5C extraction_timer_seconds left on Pelican-1's 45-second window.
+
+    Before touchdown the full window is shown; afterwards it counts down to 0.0 at
+    SORTIE5C_EXTRACTION_DEADLINE_SECONDS and never goes negative. Invalid or negative
+    elapsed time is treated as 0.0 (full window).
+    """
+    elapsed = _finite_seconds(elapsed_seconds)
+    if elapsed is None or elapsed <= SORTIE5C_TOUCHDOWN_SECONDS:
+        return SORTIE5C_EXTRACTION_WINDOW_SECONDS
+    return max(0.0, SORTIE5C_EXTRACTION_DEADLINE_SECONDS - elapsed)
+
+
+def is_act3c_extraction_expired(elapsed_seconds: Any) -> bool:
+    """Return True once the extraction countdown has reached 00:00."""
+    elapsed = _finite_seconds(elapsed_seconds)
+    return elapsed is not None and elapsed >= SORTIE5C_EXTRACTION_DEADLINE_SECONDS
+
+
+def format_extraction_timer(seconds: Any) -> str:
+    """Format remaining seconds as the HUD countdown "MM:SS", rounding partial seconds up.
+
+    7.2 -> "00:08", 45 -> "00:45", 0 -> "00:00". Negative or invalid input -> "00:00";
+    anything above 99:59 is capped at SORTIE5C_TIMER_MAX_TEXT.
+    """
+    value = _finite_seconds(seconds)
+    if value is None or value <= 0.0:
+        return "00:00"
+    whole = int(math.ceil(value))
+    if whole > 99 * 60 + 59:
+        return SORTIE5C_TIMER_MAX_TEXT
+    return f"{whole // 60:02d}:{whole % 60:02d}"
+
+
+ACT3C_VAL_SPEAKER: str = "Val"
+ACT3C_VANCE_DIRECTIVE: str = (
+    "Pelican-1 will hold the deck for exactly 45 seconds. No loitering. "
+    "No deviations from the timeline. Fleet regulations are non-negotiable."
+)
+ACT3C_DOC_FINAL_LINE: str = "Val... you're flying away... why are you flying away...?"
+ACT3C_BRAKER_FINAL_LINE: str = "Don't look at them, Doc. Just close your eyes. Close your eyes..."
+ACT3C_VAL_LOG_LINE: str = "Flight logs confirmed. Return to base completed within standard fuel parameters."
+
+
+@dataclass(frozen=True)
+class Act3CBriefingOutcome:
+    """Result of the pilot's answer to the Scene 3C.1 timetable briefing."""
+
+    stance: str
+    loyalty_after: float
+    vance_directive: str
+
+
+@dataclass(frozen=True)
+class Act3CProtocolAbortOutcome:
+    """Result of the Fleet Regulation 84-C abort at 00:00 over Outpost Epsilon."""
+
+    lost_callsigns: Tuple[str, ...]
+    newly_lost: int
+    beacons_extinguished: int
+    already_resolved: bool
+    loyalty_after: float
+    doc_final_line: str
+    val_log_line: str
+    objective: str
+
+
+def _clamp_protocol(value: Any) -> float:
+    """Clamp loyalty into [ACT3C_MIN_LOYALTY, ACT3C_MAX_LOYALTY]; bools, NaN, inf and garbage become DEFAULT_LOYALTY."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return DEFAULT_LOYALTY
+    return min(ACT3C_MAX_LOYALTY, max(ACT3C_MIN_LOYALTY, float(value)))
+
+
+def resolve_act3c_briefing_choice(stance: str, story_manager: Optional[StoryManager]) -> Optional[Act3CBriefingOutcome]:
+    """Apply the outcome of Scene 3C.1 after StoryManager.record_choice().
+
+    Vance's timetable stands whatever Val answers; loyalty is clamped back into the
+    Cold Protocol band so the briefing choice cannot flip the ending branch.
+
+    Returns:
+        The outcome, or None if stance is invalid.
+    """
+    canonical = _normalize_stance(stance)
+    if canonical is None:
+        logger.warning("Ignoring invalid stance %r for Act III-C node '%s'", stance, ACT3C_BRIEFING_NODE_ID)
+        return None
+
+    story = _as_story(story_manager)
+    if story is None:
+        loyalty_after = DEFAULT_LOYALTY
+    else:
+        story.loyalty = _clamp_protocol(story.loyalty)
+        loyalty_after = story.loyalty
+        story.extra[ACT3C_BRIEFING_EXTRA_KEY] = canonical
+        story.save_campaign_state()
+
+    logger.info("Act III-C briefing resolved: stance=%s loyalty=%.1f", canonical, loyalty_after)
+    return Act3CBriefingOutcome(stance=canonical, loyalty_after=loyalty_after, vance_directive=ACT3C_VANCE_DIRECTIVE)
+
+
+def resolve_act3c_protocol_abort(
+    story_manager: Optional[StoryManager],
+    ground_support_manager: Optional["GroundSupportManager"] = None,
+    mission_controller: Optional[MissionController] = None,
+    comms_hud: Optional["CommsHUD"] = None,
+) -> Act3CProtocolAbortOutcome:
+    """Enforce Fleet Regulation 84-C at 00:00: Eagle-1 climbs to orbit and Viper Squad is lost.
+
+    Every Helldiver still alive is downed via GroundSupportManager.apply_scripted_casualty()
+    and the automatic squad-wipe report is suppressed. Without a ground support manager all
+    four are assumed alive. Casualties go straight into StoryManager.total_casualties (not
+    on_helldiver_death()/on_squad_wipe(), whose loyalty erosion would push 16.0 into
+    DISSIDENT_SURRENDER); loyalty is clamped into [16.0, 89.0] so the COLD_PROTOCOL branch
+    is locked, and story.extra["protocol_84c_enforced"] is set. A second call only
+    re-applies the clamp (already_resolved=True). The sortie is not advanced: the Funeral
+    of Viper Squad cinematic follows (wired in #77).
+    """
+    story = _as_story(story_manager)
+    gsm = _as_ground_support(ground_support_manager)
+
+    if story is not None and story.extra.get(PROTOCOL_84C_EXTRA_KEY) is True:
+        logger.info("Act III-C protocol abort already resolved; ignoring repeat call")
+        clamped = _clamp_protocol(story.loyalty)
+        if clamped != story.loyalty:
+            story.loyalty = clamped
+            story.save_campaign_state()
+        return Act3CProtocolAbortOutcome(
+            lost_callsigns=VIPER_SQUAD_CALLSIGNS,
+            newly_lost=0,
+            beacons_extinguished=VIPER_SQUAD_SIZE,
+            already_resolved=True,
+            loyalty_after=story.loyalty,
+            doc_final_line=ACT3C_DOC_FINAL_LINE,
+            val_log_line=ACT3C_VAL_LOG_LINE,
+            objective=SORTIE5C_RTB_OBJECTIVE,
+        )
+
+    if gsm is None:
+        newly_lost = VIPER_SQUAD_SIZE
+    else:
+        newly_lost = sum(1 for index in VIPER_SQUAD_INDICES if gsm.apply_scripted_casualty(index))
+        # A Helldiver that fell after the last update() is lost too; without this mark the next
+        # update() would report it via on_helldiver_death() (-3.5) and flip the branch at 16.0.
+        mark_fallen = getattr(gsm, "mark_casualties_reported", None)
+        if callable(mark_fallen):
+            newly_lost += mark_fallen(VIPER_SQUAD_INDICES)
+        # Scripted squad wipe; on_squad_wipe() (-8.0) would push loyalty at 16.0 into DISSIDENT_SURRENDER.
+        mark_wipe = getattr(gsm, "mark_squad_wipe_reported", None)
+        if callable(mark_wipe):
+            mark_wipe()
+
+    if story is None:
+        loyalty_after = DEFAULT_LOYALTY
+    else:
+        story.total_casualties += newly_lost
+        story.loyalty = _clamp_protocol(story.loyalty)
+        loyalty_after = story.loyalty
+        story.extra[PROTOCOL_84C_EXTRA_KEY] = True
+        story.extra[ACT3C_OUTCOME_EXTRA_KEY] = {"newly_lost": newly_lost, "beacons_extinguished": VIPER_SQUAD_SIZE}
+        story.save_campaign_state()
+
+    if isinstance(mission_controller, MissionController):
+        mission_controller.set_active_objective_text(SORTIE5C_RTB_OBJECTIVE)
+
+    if comms_hud is not None:
+        comms_hud.trigger_callout(ACT3C_VAL_SPEAKER, ACT3C_VAL_LOG_LINE, portrait=None)
+
+    logger.info("Act III-C protocol abort resolved: newly_lost=%d loyalty=%.1f", newly_lost, loyalty_after)
+    return Act3CProtocolAbortOutcome(
+        lost_callsigns=VIPER_SQUAD_CALLSIGNS,
+        newly_lost=newly_lost,
+        beacons_extinguished=VIPER_SQUAD_SIZE,
+        already_resolved=False,
+        loyalty_after=loyalty_after,
+        doc_final_line=ACT3C_DOC_FINAL_LINE,
+        val_log_line=ACT3C_VAL_LOG_LINE,
+        objective=SORTIE5C_RTB_OBJECTIVE,
+    )
+
+
+def resolve_act3c_choice(
+    node_id: str,
+    stance: str,
+    story_manager: Optional[StoryManager],
+    ground_support_manager: Optional["GroundSupportManager"] = None,
+    mission_controller: Optional[MissionController] = None,
+    comms_hud: Optional["CommsHUD"] = None,
+) -> Optional[str]:
+    """Route a recorded Act III-C choice to its effect.
+
+    Every answer at 00:00 ends in the abort: Command slaves the autopilot to the RTB vector.
+    Call after StoryManager.record_choice().
+
+    Returns:
+        The HUD objective text that follows the choice, or None if node_id is not an
+        Act III-C node or the stance is invalid.
+    """
+    if isinstance(node_id, bool) or not isinstance(node_id, str):
+        return None
+    clean_id = node_id.strip()
+    if clean_id == ACT3C_BRIEFING_NODE_ID:
+        outcome = resolve_act3c_briefing_choice(stance, story_manager)
+        return SORTIE5C_INITIAL_OBJECTIVE if outcome is not None else None
+    if clean_id == SORTIE5C_ABORT_NODE_ID:
+        if _normalize_stance(stance) is None:
+            logger.warning("Ignoring invalid stance %r for Act III-C node '%s'", stance, clean_id)
+            return None
+        return resolve_act3c_protocol_abort(
+            story_manager, ground_support_manager, mission_controller, comms_hud
+        ).objective
+    return None
+
+
+# -----------------------------------------------------------------------------
+# Act III-C cinematic epilogue: The Funeral of Viper Squad
+# -----------------------------------------------------------------------------
+
+ACT3C_ENDING_TITLE: str = "THE PATH OF COLD PROTOCOL"
+ACT3C_SEQUENCE_TITLE: str = "ACT III-C: " + ACT3C_ENDING_TITLE
+ACT3C_ADDITIONAL_SORTIES: int = 32
+ACT3C_SORTIES_COMPLETED: int = SORTIE5C_NUM + ACT3C_ADDITIONAL_SORTIES
+ACT3C_PILOT_STATUS: str = "ACTIVE DUTY // CITATION OF PROCEDURAL EXCELLENCE"
+ACT3C_HYMN_CUE: str = "ceremony_fanfare"
+ACT3C_FLIR_NARRATION: str = (
+    "Red machine signatures converge over the four blue beacons. One by one, the pings flicker... and turn black."
+)
+ACT3C_STATIC_NARRATION: str = "Static fills the cockpit speakers."
+ACT3C_COFFINS_NARRATION: str = (
+    "Four polished silver coffins, each draped in the flag of Super Earth. All four are empty."
+)
+ACT3C_HYMN_NARRATION: str = "The Hymn of the Fallen Citizen plays over the observation deck speakers."
+ACT3C_REINER_EULOGY_LINES: Tuple[str, ...] = (
+    "Citizens of the Fleet! Today we commemorate the glorious, statistically optimal sacrifice of Viper Detachment.",
+    "They held the line with unwavering democratic obedience, allowing our valuable airframes to withdraw fully intact.",
+)
+ACT3C_CITATION_LINE: str = "The Federation hereby awards Flight Lieutenant Val the Citation of Procedural Excellence."
+ACT3C_ORTIZ_NARRATION: str = (
+    "Chief Ortiz does not clap. He looks at the silver ribbon on Val's chest, then into her eyes, "
+    "with quiet, devastating pity."
+)
+ACT3C_ORTIZ_EXIT_NARRATION: str = "He shakes his head once and walks away."
+ACT3C_REINER_WHISPER_LINE: str = "You did the right thing, Lieutenant. A disciplined pilot is an investment."
+ACT3C_NEXT_SORTIE_LINE: str = "Your next sortie departs at 0700."
+ACT3C_VAL_FINAL_LINE: str = "I followed the rules. I just... followed the rules..."
+ACT3C_ARCHIVE_EPILOGUE_LINES: Tuple[str, ...] = (
+    "Sector 7 was declared pacified.",
+    "The names of Viper Squad were entered into the archives of the Ministry of Defense.",
+    "Flight Lieutenant Val completed thirty-two additional sorties.",
+    "She never spoke of Viper Squad again.",
+)
+_REINER: str = "Officer Reiner"
+
+
+def build_act3c_cinematic_sequence() -> CinematicSequence:
+    """Return the Act III-C cutscene: FLIR beacon loss on the RTB climb and the Funeral of Viper Squad."""
+    keyframes = (
+        CinematicKeyframe(
+            keyframe_id="act3c_rtb_climb",
+            duration=11.0,
+            scene_type=CINEMATIC_SCENE_FLIR_SENSOR_FEED,
+            title_caption="SORTIE 5C // DOWNWARD SENSOR FEED",
+            fade_in=0.5,
+            fade_out=0.5,
+            audio_cue="radio_chatter",
+            subtitles=(
+                _sub(0.5, 3.4, _DOC, ACT3C_DOC_FINAL_LINE, _ECHO_COLOR),
+                _sub(3.6, 6.4, _BRAKER, ACT3C_BRAKER_FINAL_LINE, _ECHO_COLOR),
+                _sub(6.6, 10.4, "", ACT3C_FLIR_NARRATION, _ALERT_COLOR),
+            ),
+        ),
+        CinematicKeyframe(
+            keyframe_id="act3c_static_log",
+            duration=6.0,
+            scene_type=CINEMATIC_SCENE_EPILOGUE_CARD,
+            fade_in=0.0,
+            fade_out=1.0,
+            audio_cue="radio_squelch",
+            subtitles=(
+                _sub(0.3, 2.2, "", ACT3C_STATIC_NARRATION, _ECHO_COLOR),
+                _sub(2.4, 4.9, ACT3C_VAL_SPEAKER, ACT3C_VAL_LOG_LINE),
+            ),
+        ),
+        CinematicKeyframe(
+            keyframe_id="act3c_funeral_hymn",
+            duration=9.0,
+            scene_type=CINEMATIC_SCENE_OBSERVATION_DECK_FUNERAL,
+            title_caption="THE FUNERAL OF VIPER SQUAD",
+            camera_start=(0.0, -60.0, 0.9),
+            camera_end=(0.0, 40.0, 1.0),
+            fade_in=1.0,
+            fade_out=0.5,
+            audio_cue=ACT3C_HYMN_CUE,
+            subtitles=(
+                _sub(1.0, 4.6, "", ACT3C_COFFINS_NARRATION, _ECHO_COLOR),
+                _sub(4.8, 8.4, "", ACT3C_HYMN_NARRATION, _ECHO_COLOR),
+            ),
+        ),
+        CinematicKeyframe(
+            keyframe_id="act3c_reiner_eulogy",
+            duration=12.0,
+            scene_type=CINEMATIC_SCENE_OBSERVATION_DECK_FUNERAL,
+            title_caption="CITATION OF PROCEDURAL EXCELLENCE",
+            camera_start=(0.0, 40.0, 1.0),
+            camera_end=(0.0, 80.0, 1.2),
+            subtitles=(
+                _sub(0.4, 3.8, _REINER, ACT3C_REINER_EULOGY_LINES[0]),
+                _sub(4.0, 7.6, _REINER, ACT3C_REINER_EULOGY_LINES[1]),
+                _sub(7.8, 11.4, _REINER, ACT3C_CITATION_LINE),
+            ),
+        ),
+        CinematicKeyframe(
+            keyframe_id="act3c_ortiz_pity",
+            duration=11.0,
+            scene_type=CINEMATIC_SCENE_OBSERVATION_DECK_FUNERAL,
+            camera_start=(120.0, 80.0, 1.2),
+            camera_end=(0.0, 100.0, 1.4),
+            subtitles=(
+                _sub(0.4, 3.8, "", ACT3C_ORTIZ_NARRATION, _ECHO_COLOR),
+                _sub(4.0, 5.6, "", ACT3C_ORTIZ_EXIT_NARRATION, _ECHO_COLOR),
+                _sub(5.8, 8.4, _REINER, ACT3C_REINER_WHISPER_LINE),
+                _sub(8.6, 10.4, _REINER, ACT3C_NEXT_SORTIE_LINE),
+            ),
+        ),
+        CinematicKeyframe(
+            keyframe_id="act3c_alone_before_coffins",
+            duration=9.0,
+            scene_type=CINEMATIC_SCENE_OBSERVATION_DECK_FUNERAL,
+            camera_start=(0.0, 120.0, 1.4),
+            camera_end=(0.0, 0.0, 0.6),
+            fade_in=0.5,
+            fade_out=2.0,
+            audio_cue="stop_music",
+            subtitles=(_sub(0.6, 5.0, ACT3C_VAL_SPEAKER, ACT3C_VAL_FINAL_LINE),),
+        ),
+        CinematicKeyframe(
+            keyframe_id="act3c_archive_notice",
+            duration=11.0,
+            scene_type=CINEMATIC_SCENE_EPILOGUE_CARD,
+            title_caption="MINISTRY OF DEFENSE // ARCHIVE ENTRY",
+            fade_in=1.0,
+            fade_out=1.0,
+            subtitles=(
+                _sub(1.0, 3.2, "", ACT3C_ARCHIVE_EPILOGUE_LINES[0]),
+                _sub(3.3, 5.6, "", ACT3C_ARCHIVE_EPILOGUE_LINES[1]),
+                _sub(5.7, 8.0, "", ACT3C_ARCHIVE_EPILOGUE_LINES[2]),
+                _sub(8.1, 10.0, "", ACT3C_ARCHIVE_EPILOGUE_LINES[3]),
+            ),
+        ),
+    )
+    return CinematicSequence(
+        sequence_id=ACT3C_SEQUENCE_ID,
+        ending_branch=BRANCH_COLD_PROTOCOL,
+        title=ACT3C_SEQUENCE_TITLE,
+        keyframes=keyframes,
+        epilogue_lines=ACT3C_ARCHIVE_EPILOGUE_LINES,
+    )
+
+
+def build_act3c_epilogue_stats(story_manager: Optional[StoryManager]) -> EpilogueSummaryStats:
+    """Return the Act III-C epilogue statistics with the Ministry of Defense archive entry.
+
+    Without a StoryManager the canonical path is assumed: loyalty DEFAULT_LOYALTY and the
+    four lost Viper Squad members as casualties.
+    """
+    story = story_manager if isinstance(story_manager, StoryManager) else None
+    return EpilogueSummaryStats(
+        ending_branch=BRANCH_COLD_PROTOCOL,
+        ending_title=ACT3C_ENDING_TITLE,
+        final_loyalty=_clamp_protocol(story.loyalty) if story is not None else DEFAULT_LOYALTY,
+        total_casualties=story.total_casualties if story is not None else VIPER_SQUAD_SIZE,
+        sorties_completed=ACT3C_SORTIES_COMPLETED,
+        pilot_status=ACT3C_PILOT_STATUS,
+        epilogue_lines=ACT3C_ARCHIVE_EPILOGUE_LINES,
     )

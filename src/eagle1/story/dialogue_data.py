@@ -640,6 +640,60 @@ BANTER_QUEUES: Dict[str, List[BanterLine]] = {
             portrait_path="",
         ),
     ],
+    # Act III-C Sortie 5C "The Overrun Extraction" (#76).
+    "act3c_s5_pelican_touchdown": [
+        BanterLine(
+            line_id="act3c_s5_pelican_touchdown_01",
+            member_id="pelican_1",
+            speaker="Pelican-1",
+            category="act3c_s5_pelican_touchdown",
+            text="Pelican-1 on the deck at Outpost Epsilon. Holding for forty-five seconds. Not one second more.",
+            portrait_path="",
+        ),
+    ],
+    "act3c_s5_pelican_hull": [
+        BanterLine(
+            line_id="act3c_s5_pelican_hull_01",
+            member_id="pelican_1",
+            speaker="Pelican-1",
+            category="act3c_s5_pelican_hull",
+            text="LZ is burning! We are taking direct heavy fire! Hull integrity at 40%! Extraction window expiring in five seconds!",
+            portrait_path="",
+        ),
+    ],
+    "act3c_s5_doc_plea": [
+        BanterLine(
+            line_id="act3c_s5_doc_plea_01",
+            member_id="viper_4",
+            speaker='Viper-4 "Doc"',
+            category="act3c_s5_doc_plea",
+            text="Pelican! Wait! We're fifty meters out! Braker took a hit to the knee—I'm dragging him! Don't leave us!",
+            portrait_path="images/portraits/viper_4_doc.png",
+        ),
+    ],
+    "act3c_s5_apex_plea": [
+        BanterLine(
+            line_id="act3c_s5_apex_plea_01",
+            member_id="viper_1",
+            speaker='Viper-1 "Apex"',
+            category="act3c_s5_apex_plea",
+            text="Eagle-1! Dive! Lay down a wall of napalm between us and the Berserkers! Give us ten seconds!",
+            portrait_path="images/portraits/viper_1_apex.png",
+        ),
+    ],
+    "act3c_s5_vance_override": [
+        BanterLine(
+            line_id="act3c_s5_vance_override_01",
+            member_id="vance",
+            speaker="Ship Master Vance",
+            category="act3c_s5_vance_override",
+            text=(
+                "Eagle-1, abort! Your fuel margins do not support another attack run! "
+                "Pelican-1, dust off immediately! Fleet Regulation 84-C: preserve the airframes!"
+            ),
+            portrait_path="",
+        ),
+    ],
 }
 
 

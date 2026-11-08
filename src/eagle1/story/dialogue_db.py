@@ -711,6 +711,93 @@ DIALOGUE_DATABASE: Dict[str, DialogueNode] = {
         act=3,
         sortie=5,
     ),
+    "act3c_timetable_briefing": DialogueNode(
+        node_id="act3c_timetable_briefing",
+        speaker="Ship Master Cynthia Vance",
+        location="SES Leviathan of Truth - Briefing Room (0500 Hours)",
+        portrait="images/portraits/npc_vance.png",
+        prompt=(
+            "Pelican-1 touches down at Outpost Epsilon at T-zero and holds the deck for exactly 45 seconds. "
+            "If the zone is compromised, it dusts off immediately. Eagle-1 flies covering sweep, then returns "
+            "to orbit. No loitering. Fleet Regulation 84-C is non-negotiable."
+        ),
+        options={
+            "loyal": DialogueOption(
+                stance="loyal",
+                key_name="1",
+                key_code=pygame.K_1,
+                label="[1. LOYAL] Discipline is survival, Commander. Eagle-1 will keep the timetable to the second.",
+                loyalty_delta=+8.0,
+                response=(
+                    "Reiner: 'Discipline is survival, Lieutenant. Every second beyond the flight manual "
+                    "wastes Super Earth fuel.'"
+                ),
+            ),
+            "neutral": DialogueOption(
+                stance="neutral",
+                key_name="2",
+                key_code=pygame.K_2,
+                label="[2. NEUTRAL] Understood, Commander. Adhering strictly to flight schedule.",
+                loyalty_delta=0.0,
+                response="Vance: 'Good. Forty-five seconds on the deck, then wheels up. The clock does not negotiate.'",
+            ),
+            "dissident": DialogueOption(
+                stance="dissident",
+                key_name="3",
+                key_code=pygame.K_3,
+                label="[3. DISSIDENT] And if Viper Squad is still fifty meters out when the clock runs dry?",
+                loyalty_delta=-8.0,
+                response=(
+                    "Vance: 'Then the clock runs dry, Lieutenant. Fleet Regulation 84-C: preserve the "
+                    "airframes. Dismissed.'"
+                ),
+            ),
+        },
+        act=3,
+        sortie=5,
+    ),
+    "sortie_5c_protocol_abort": DialogueNode(
+        node_id="sortie_5c_protocol_abort",
+        speaker="Ship Master Vance vs Eagle-1",
+        location="In-Flight Radio Comms - Outpost Epsilon",
+        portrait="images/portraits/npc_vance.png",
+        prompt=(
+            "Vance: 'Eagle-1, abort! Your fuel margins do not support another attack run! Pelican-1, dust off "
+            "immediately! Fleet Regulation 84-C: preserve the airframes!' The countdown hits 00:00. "
+            "Viper Squad is alone on the pad."
+        ),
+        options={
+            "loyal": DialogueOption(
+                stance="loyal",
+                key_name="1",
+                key_code=pygame.K_1,
+                label="[1. LOYAL] Copy, Command. Fleet Regulation 84-C acknowledged. Climbing to orbit.",
+                loyalty_delta=+8.0,
+                response="Reiner: 'Exemplary discipline, Eagle-1. The airframe is preserved.'",
+                speaker_reaction="Val: 'Flight logs confirmed. Return to base completed within standard fuel parameters.'",
+            ),
+            "neutral": DialogueOption(
+                stance="neutral",
+                key_name="2",
+                key_code=pygame.K_2,
+                label="[2. NEUTRAL] Command, this is Eagle-1. Obeying abort directive. RTB to orbit.",
+                loyalty_delta=0.0,
+                response="Doc: 'Val... you're flying away... why are you flying away...?'",
+                speaker_reaction="Braker: 'Don't look at them, Doc. Just close your eyes. Close your eyes...'",
+            ),
+            "dissident": DialogueOption(
+                stance="dissident",
+                key_name="3",
+                key_code=pygame.K_3,
+                label="[3. DISSIDENT] Apex, hold on! I'm coming around for one more napalm run!",
+                loyalty_delta=-8.0,
+                response="Vance: 'Negative, Eagle-1. Flight control has slaved your autopilot to the RTB vector.'",
+                speaker_reaction="Doc: 'Val... you're flying away... why are you flying away...?'",
+            ),
+        },
+        act=3,
+        sortie=5,
+    ),
     "bridge_vance_logistics": DialogueNode(
         node_id="bridge_vance_logistics",
         speaker="Ship Master Cynthia Vance",

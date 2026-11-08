@@ -44,6 +44,7 @@ CINEMATIC_SCENE_TRENCH_STRIKE: str = "trench_strike"
 CINEMATIC_SCENE_WHITE_FLASH: str = "white_flash"
 CINEMATIC_SCENE_SCRAP_PLAIN: str = "scrap_plain"
 CINEMATIC_SCENE_HELLPOD_DROP: str = "hellpod_drop"
+CINEMATIC_SCENE_FLIR_SENSOR_FEED: str = "flir_sensor_feed"
 
 VALID_CINEMATIC_SCENE_TYPES: Tuple[str, ...] = (
     CINEMATIC_SCENE_SUICIDE_DIVE,
@@ -55,6 +56,7 @@ VALID_CINEMATIC_SCENE_TYPES: Tuple[str, ...] = (
     CINEMATIC_SCENE_WHITE_FLASH,
     CINEMATIC_SCENE_SCRAP_PLAIN,
     CINEMATIC_SCENE_HELLPOD_DROP,
+    CINEMATIC_SCENE_FLIR_SENSOR_FEED,
 )
 
 DEFAULT_SUBTITLE_COLOR: Tuple[int, int, int] = (235, 240, 250)
@@ -334,6 +336,31 @@ _STAR_COUNT: int = 140
 _STAR_SEED: int = 73
 _SURFACE_TYPE = pygame.Surface
 
+# FLIR sensor feed (Act III-C RTB climb): four Viper beacons, converging machine signatures.
+FLIR_BEACON_POSITIONS: Tuple[Tuple[float, float], ...] = ((-90.0, 40.0), (-30.0, 60.0), (30.0, 60.0), (90.0, 40.0))
+FLIR_SIGNATURE_COUNT: int = 16
+FLIR_SIGNATURE_START_RADIUS: float = 420.0
+FLIR_SIGNATURE_END_RADIUS: float = 60.0
+_COLOR_FLIR_BG: Tuple[int, int, int] = (10, 22, 16)
+_COLOR_FLIR_GRID: Tuple[int, int, int] = (34, 70, 48)
+_COLOR_FLIR_BEACON: Tuple[int, int, int] = (60, 140, 255)
+_COLOR_FLIR_BEACON_DEAD: Tuple[int, int, int] = (0, 0, 0)
+_COLOR_FLIR_BEACON_RING: Tuple[int, int, int] = (90, 110, 100)
+_COLOR_FLIR_SIGNATURE: Tuple[int, int, int] = (255, 50, 40)
+_COLOR_FLIR_RETICLE: Tuple[int, int, int] = (200, 230, 210)
+# Observation deck funeral (Act III-C).
+_COLOR_COFFIN_SILVER: Tuple[int, int, int] = (178, 184, 196)
+_COLOR_FLAG_BLUE: Tuple[int, int, int] = (28, 58, 140)
+_COLOR_FLAG_GOLD: Tuple[int, int, int] = (255, 215, 0)
+_COLOR_HONOR_GUARD: Tuple[int, int, int] = (22, 22, 28)
+_COLOR_HONOR_GUARD_TRIM: Tuple[int, int, int] = (200, 170, 60)
+_COLOR_VAL_DRESS: Tuple[int, int, int] = (44, 50, 70)
+_COLOR_VAL_FACE: Tuple[int, int, int] = (226, 226, 232)
+_COLOR_CITATION_RIBBON: Tuple[int, int, int] = (214, 218, 228)
+_COLOR_ORTIZ: Tuple[int, int, int] = (96, 74, 52)
+FUNERAL_COFFIN_XS: Tuple[float, ...] = (-270.0, -90.0, 90.0, 270.0)
+FUNERAL_VAL_POS: Tuple[float, float] = (0.0, 120.0)
+
 
 class CinematicPlayer:
     """Plays a CinematicSequence at 60 FPS and finishes on the epilogue statistics screen."""
@@ -379,6 +406,7 @@ class CinematicPlayer:
             CINEMATIC_SCENE_WHITE_FLASH: self._draw_scene_white_flash,
             CINEMATIC_SCENE_SCRAP_PLAIN: self._draw_scene_scrap_plain,
             CINEMATIC_SCENE_HELLPOD_DROP: self._draw_scene_hellpod_drop,
+            CINEMATIC_SCENE_FLIR_SENSOR_FEED: self._draw_scene_flir_sensor_feed,
         }
 
         self._init_fonts()
@@ -766,6 +794,13 @@ class CinematicPlayer:
     def _scale(self, length: float) -> int:
         return max(1, int(length * self.camera[2]))
 
+    def _keyframe_progress(self) -> float:
+        """Return the current keyframe's progress in [0.0, 1.0]; 0.0 when nothing is playing."""
+        kf = self.current_keyframe
+        if kf is None or not _is_finite_number(kf.duration) or kf.duration <= 0:
+            return 0.0
+        return max(0.0, min(1.0, self.keyframe_elapsed / float(kf.duration)))
+
     def _draw_starfield(self, surface: pygame.Surface, parallax: float) -> None:
         for sx, sy, radius in self._stars:
             x = int((sx - self.camera[0] * parallax) % self.screen_w)
@@ -815,6 +850,7 @@ class CinematicPlayer:
             pygame.draw.circle(surface, (255, 40, 30), self._project(x, -28), self._scale(4))
 
     def _draw_scene_observation_deck_funeral(self, surface: pygame.Surface) -> None:
+        """Observation deck in cold starlight: four empty flag-draped silver coffins, honor guard, Val and Ortiz."""
         surface.fill((8, 10, 20))
         self._draw_starfield(surface, 0.15)
         pygame.draw.circle(surface, (40, 70, 120), self._project(260, -120), self._scale(120))
@@ -823,11 +859,28 @@ class CinematicPlayer:
             surface, (60, 70, 85), (*frame_pos, self._scale(1120), self._scale(380)), width=self._scale(6)
         )
         pygame.draw.line(surface, (60, 70, 85), self._project(0, -220), self._project(0, 160), self._scale(6))
-        for x in (-270, -90, 90, 270):
+        for x in (-500.0, -440.0, -380.0, 380.0, 440.0, 500.0):
+            guard_pos = self._project(x - 10, 110)
+            pygame.draw.rect(surface, _COLOR_HONOR_GUARD, (*guard_pos, self._scale(20), self._scale(56)))
+            trim_pos = self._project(x - 10, 112)
+            pygame.draw.rect(surface, _COLOR_HONOR_GUARD_TRIM, (*trim_pos, self._scale(20), self._scale(4)))
+            pygame.draw.circle(surface, _COLOR_HONOR_GUARD, self._project(x, 100), self._scale(9))
+        for x in FUNERAL_COFFIN_XS:
             coffin_pos = self._project(x - 60, 190)
-            pygame.draw.rect(surface, (70, 60, 50), (*coffin_pos, self._scale(120), self._scale(36)))
-            flag_pos = self._project(x - 60, 202)
-            pygame.draw.rect(surface, (255, 215, 0), (*flag_pos, self._scale(120), self._scale(8)))
+            pygame.draw.rect(surface, _COLOR_COFFIN_SILVER, (*coffin_pos, self._scale(120), self._scale(36)))
+            flag_pos = self._project(x - 44, 190)
+            pygame.draw.rect(surface, _COLOR_FLAG_BLUE, (*flag_pos, self._scale(88), self._scale(22)))
+            stripe_pos = self._project(x - 44, 199)
+            pygame.draw.rect(surface, _COLOR_FLAG_GOLD, (*stripe_pos, self._scale(88), self._scale(4)))
+        vx, vy = FUNERAL_VAL_POS
+        pygame.draw.circle(surface, _COLOR_VAL_FACE, self._project(vx, vy - 14), self._scale(10))
+        body_pos = self._project(vx - 12, vy - 4)
+        pygame.draw.rect(surface, _COLOR_VAL_DRESS, (*body_pos, self._scale(24), self._scale(44)))
+        ribbon_pos = self._project(vx - 8, vy + 4)
+        pygame.draw.rect(surface, _COLOR_CITATION_RIBBON, (*ribbon_pos, self._scale(6), self._scale(8)))
+        pygame.draw.circle(surface, _COLOR_ORTIZ, self._project(330, 108), self._scale(10))
+        ortiz_pos = self._project(318, 118)
+        pygame.draw.rect(surface, _COLOR_ORTIZ, (*ortiz_pos, self._scale(24), self._scale(44)))
 
     def _draw_scene_epilogue_card(self, surface: pygame.Surface) -> None:
         surface.fill((5, 5, 8))
@@ -874,6 +927,30 @@ class CinematicPlayer:
             pygame.draw.circle(surface, (255, 140, 40), self._project(x, y + 18), self._scale(34), max(1, self._scale(3)))
             pod = [self._project(px, py) for px, py in [(x, y - 50), (x - 18, y - 20), (x - 18, y + 18), (x + 18, y + 18), (x + 18, y - 20)]]
             pygame.draw.polygon(surface, (12, 12, 14), pod)
+
+    def _draw_scene_flir_sensor_feed(self, surface: pygame.Surface) -> None:
+        """Downward FLIR feed: machine signatures converge and the four blue beacons go black one by one."""
+        surface.fill(_COLOR_FLIR_BG)
+        for offset in range(-640, 641, 80):
+            pygame.draw.line(surface, _COLOR_FLIR_GRID, self._project(offset, -400), self._project(offset, 400), 1)
+            pygame.draw.line(surface, _COLOR_FLIR_GRID, self._project(-640, offset), self._project(640, offset), 1)
+        t = self._keyframe_progress()
+        radius = FLIR_SIGNATURE_START_RADIUS + (FLIR_SIGNATURE_END_RADIUS - FLIR_SIGNATURE_START_RADIUS) * t
+        for i in range(FLIR_SIGNATURE_COUNT):
+            angle = (2.0 * math.pi * i) / FLIR_SIGNATURE_COUNT
+            sx, sy = math.cos(angle) * radius, 50.0 + math.sin(angle) * radius * 0.6
+            pygame.draw.circle(surface, _COLOR_FLIR_SIGNATURE, self._project(sx, sy), self._scale(5))
+        beacon_count = len(FLIR_BEACON_POSITIONS)
+        for index, (bx, by) in enumerate(FLIR_BEACON_POSITIONS):
+            dead = t >= (index + 1) / (beacon_count + 1)
+            color = _COLOR_FLIR_BEACON_DEAD if dead else _COLOR_FLIR_BEACON
+            pygame.draw.circle(surface, color, self._project(bx, by), self._scale(8))
+            pygame.draw.circle(surface, _COLOR_FLIR_BEACON_RING, self._project(bx, by), self._scale(12), 1)
+        cx, cy = self.screen_w // 2, self.screen_h // 2
+        pygame.draw.line(surface, _COLOR_FLIR_RETICLE, (cx - 30, cy), (cx - 10, cy), 1)
+        pygame.draw.line(surface, _COLOR_FLIR_RETICLE, (cx + 10, cy), (cx + 30, cy), 1)
+        pygame.draw.line(surface, _COLOR_FLIR_RETICLE, (cx, cy - 30), (cx, cy - 10), 1)
+        pygame.draw.line(surface, _COLOR_FLIR_RETICLE, (cx, cy + 10), (cx, cy + 30), 1)
 
     def _draw_letterbox_and_subtitles(self, surface: pygame.Surface) -> None:
         h = CINEMATIC_LETTERBOX_HEIGHT
