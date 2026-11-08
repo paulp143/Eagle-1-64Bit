@@ -1290,3 +1290,155 @@ def test_act3c_banter_categories_exist():
     assert "Hull integrity at 40%!" in BANTER_QUEUES["act3c_s5_pelican_hull"][0].text
     assert "Fleet Regulation 84-C: preserve the airframes!" in BANTER_QUEUES["act3c_s5_vance_override"][0].text
     assert validate_viper_dialogue_data() is True
+
+
+# -----------------------------------------------------------------------------
+# Act III-C: Sortie 5C config, extraction countdown and triggers (#76)
+# -----------------------------------------------------------------------------
+
+from eagle1.story.campaign_act3 import (  # noqa: E402
+    ACT3C_BRIEFING_NODE_ID,
+    ACT3C_MAX_LOYALTY,
+    ACT3C_MIN_LOYALTY,
+    ACT3C_SEQUENCE_ID,
+    ACT3C_TRIGGERS,
+    SORTIE5C_ABORT_NODE_ID,
+    SORTIE5C_ABORT_OBJECTIVE,
+    SORTIE5C_EXTRACTION_DEADLINE_SECONDS,
+    SORTIE5C_EXTRACTION_WINDOW_SECONDS,
+    SORTIE5C_TOUCHDOWN_SECONDS,
+    SORTIE_5C_CONFIG,
+    format_extraction_timer,
+    get_act3c_extraction_timer_seconds,
+    is_act3c_extraction_expired,
+    register_act3c_triggers,
+)
+from eagle1.story.story_manager import BRANCH_COLD_PROTOCOL  # noqa: E402
+
+
+@pytest.fixture
+def protocol_story(story_mgr):
+    """StoryManager on the balanced Cold Protocol path at the dissident edge (loyalty 16.0)."""
+    story_mgr.loyalty = 16.0
+    return story_mgr
+
+
+def test_act3c_loyalty_band_matches_story_thresholds(protocol_story):
+    assert ACT3C_MIN_LOYALTY == 16.0
+    assert ACT3C_MAX_LOYALTY == 89.0
+    for loyalty in (ACT3C_MIN_LOYALTY, 50.0, ACT3C_MAX_LOYALTY):
+        protocol_story.loyalty = loyalty
+        assert protocol_story.get_ending_branch() == BRANCH_COLD_PROTOCOL
+
+
+def test_act3c_sortie_5c_config():
+    cfg = SORTIE_5C_CONFIG
+    assert cfg.sortie_num == 5
+    assert cfg.act == 3
+    assert cfg.sortie_id == "sortie_5c_cold_protocol"
+    assert cfg.mission_mode in VALID_CAMPAIGN_MISSION_MODES
+    assert cfg.briefing_node_id == ACT3C_BRIEFING_NODE_ID
+    assert cfg.inflight_node_ids == (SORTIE5C_ABORT_NODE_ID,)
+    assert cfg.debrief_node_id == ACT3C_SEQUENCE_ID == "act3c_cold_protocol"
+    assert get_dialogue_node(cfg.briefing_node_id) is not None
+    assert get_dialogue_node(SORTIE5C_ABORT_NODE_ID) is not None
+
+
+def test_act3c_triggers_are_valid_and_ordered():
+    for trigger in ACT3C_TRIGGERS:
+        validate_sortie_event_trigger(trigger)
+        assert trigger.sortie_num == 5
+    priorities = [t.priority for t in ACT3C_TRIGGERS]
+    thresholds = [t.threshold for t in ACT3C_TRIGGERS]
+    assert priorities == sorted(priorities, reverse=True)
+    assert thresholds == sorted(thresholds)
+    last = ACT3C_TRIGGERS[-1]
+    assert last.dialogue_node_id == SORTIE5C_ABORT_NODE_ID
+    assert last.threshold == SORTIE5C_EXTRACTION_DEADLINE_SECONDS == 48.0
+    for trigger in ACT3C_TRIGGERS:
+        if trigger.banter_category:
+            assert trigger.banter_category in BANTER_QUEUES
+
+
+def test_act3c_trigger_ids_do_not_clash_with_other_branches():
+    from eagle1.story.campaign_act3 import ACT3A_TRIGGERS, ACT3B_TRIGGERS
+
+    c_ids = {t.trigger_id for t in ACT3C_TRIGGERS}
+    other_ids = {t.trigger_id for t in ACT3A_TRIGGERS + ACT3B_TRIGGERS}
+    assert c_ids.isdisjoint(other_ids)
+
+
+def test_register_act3c_triggers_all_or_nothing(protocol_story):
+    manager = NarrativeTriggerManager(protocol_story)
+    assert register_act3c_triggers(manager) == len(ACT3C_TRIGGERS) == 6
+    with pytest.raises(ValueError):
+        register_act3c_triggers(manager)
+    assert len(manager.get_triggers_for_sortie(5)) == 6
+    with pytest.raises(TypeError):
+        register_act3c_triggers(object())
+
+
+def test_act3c_countdown_reaches_zero_and_opens_abort_node(protocol_story):
+    mission = MissionController(protocol_story)
+    comms = CommsHUD(story_manager=protocol_story)
+    manager = NarrativeTriggerManager(protocol_story, comms_hud=comms, mission_controller=mission)
+    register_act3c_triggers(manager)
+    manager.reset_for_sortie(5)
+
+    fired = manager.evaluate(CombatTelemetrySnapshot(elapsed_seconds=SORTIE5C_EXTRACTION_DEADLINE_SECONDS))
+    assert len(fired) == 6
+    assert fired[-1] == "act3c_s5_protocol_abort"
+    for _ in range(6):
+        comms.is_active = False
+        comms.current_node = None
+        manager.dispatch_next_pending()
+    assert manager.dispatch_log == list(fired)
+    assert mission.current_objective == SORTIE5C_ABORT_OBJECTIVE
+    assert protocol_story.active_dialogue.node_id == SORTIE5C_ABORT_NODE_ID
+
+
+def test_act3c_abort_trigger_not_fired_before_deadline(protocol_story):
+    manager = NarrativeTriggerManager(protocol_story)
+    register_act3c_triggers(manager)
+    manager.reset_for_sortie(5)
+    fired = manager.evaluate(CombatTelemetrySnapshot(elapsed_seconds=SORTIE5C_EXTRACTION_DEADLINE_SECONDS - 0.01))
+    assert "act3c_s5_protocol_abort" not in fired
+    assert len(fired) == 5
+
+
+@pytest.mark.parametrize(
+    "elapsed, expected",
+    [(0.0, 45.0), (SORTIE5C_TOUCHDOWN_SECONDS, 45.0), (13.0, 35.0), (40.0, 8.0), (48.0, 0.0), (120.0, 0.0)],
+)
+def test_act3c_extraction_timer_counts_down(elapsed, expected):
+    assert math.isclose(get_act3c_extraction_timer_seconds(elapsed), expected)
+
+
+@pytest.mark.parametrize("bad", [None, "10", True, float("nan"), float("inf"), -5.0])
+def test_act3c_extraction_timer_invalid_input(bad):
+    assert get_act3c_extraction_timer_seconds(bad) == SORTIE5C_EXTRACTION_WINDOW_SECONDS
+
+
+@pytest.mark.parametrize("elapsed, expected", [(47.99, False), (None, False), (float("nan"), False), (True, False), (48.0, True), (60, True)])
+def test_act3c_extraction_expired(elapsed, expected):
+    assert is_act3c_extraction_expired(elapsed) is expected
+
+
+@pytest.mark.parametrize(
+    "seconds, expected",
+    [
+        (45, "00:45"),
+        (7.2, "00:08"),
+        (8.0, "00:08"),
+        (0.4, "00:01"),
+        (0, "00:00"),
+        (-3, "00:00"),
+        (None, "00:00"),
+        (float("nan"), "00:00"),
+        (True, "00:00"),
+        (180, "03:00"),
+        (10**7, "99:59"),
+    ],
+)
+def test_format_extraction_timer(seconds, expected):
+    assert format_extraction_timer(seconds) == expected

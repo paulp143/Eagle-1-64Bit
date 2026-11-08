@@ -1093,3 +1093,167 @@ def build_act3b_epilogue_stats(story_manager: Optional[StoryManager]) -> Epilogu
         pilot_status=ACT3B_PILOT_STATUS,
         epilogue_lines=ACT3B_EXECUTION_NOTICE_LINES,
     )
+
+
+# -----------------------------------------------------------------------------
+# Act III-C: Scene 3C.1 timetable briefing and Sortie 5C overrun extraction
+# -----------------------------------------------------------------------------
+
+SORTIE5C_NUM: int = 5
+
+ACT3C_SEQUENCE_ID: str = "act3c_cold_protocol"
+ACT3C_BRIEFING_NODE_ID: str = "act3c_timetable_briefing"
+SORTIE5C_ABORT_NODE_ID: str = "sortie_5c_protocol_abort"
+
+# Balanced (bureaucrat) band from docs/story.md Section 8: 16.0 <= loyalty <= 89.0.
+ACT3C_MIN_LOYALTY: float = THRESHOLD_DISSIDENT_SURRENDER + 1.0
+ACT3C_MAX_LOYALTY: float = THRESHOLD_OBEDIENCE_PURGE - 1.0
+
+PROTOCOL_84C_EXTRA_KEY: str = "protocol_84c_enforced"
+ACT3C_OUTCOME_EXTRA_KEY: str = "act3c_protocol_abort"
+ACT3C_BRIEFING_EXTRA_KEY: str = "act3c_briefing_stance"
+
+# Pelican-1 touches down at T-zero and holds the deck for exactly 45 seconds.
+SORTIE5C_TOUCHDOWN_SECONDS: float = 3.0
+SORTIE5C_EXTRACTION_WINDOW_SECONDS: float = 45.0
+SORTIE5C_EXTRACTION_DEADLINE_SECONDS: float = SORTIE5C_TOUCHDOWN_SECONDS + SORTIE5C_EXTRACTION_WINDOW_SECONDS
+# Radio beats in the final seconds, as remaining-window seconds before 00:00.
+SORTIE5C_HULL_REMAINING: float = 8.0
+SORTIE5C_DOC_REMAINING: float = 6.0
+SORTIE5C_APEX_REMAINING: float = 4.0
+SORTIE5C_VANCE_REMAINING: float = 2.0
+SORTIE5C_TIMER_MAX_TEXT: str = "99:59"
+
+SORTIE5C_INITIAL_OBJECTIVE: str = (
+    "Outpost Epsilon: Pelican-1 holds the deck for 45 seconds. Fly covering sweep over the extraction zone."
+)
+SORTIE5C_ABORT_OBJECTIVE: str = "00:00 // Fleet Regulation 84-C: Abort the attack run. Respond to Command."
+SORTIE5C_RTB_OBJECTIVE: str = "Abort directive confirmed. Climb through the cloud layer and return to orbit."
+
+SORTIE_5C_CONFIG: CampaignSortieConfig = CampaignSortieConfig(
+    sortie_num=SORTIE5C_NUM,
+    act=ACT3_NUM,
+    sortie_id="sortie_5c_cold_protocol",
+    title="SORTIE 5C // THE OVERRUN EXTRACTION",
+    operation_name="FLEET REGULATION 84-C",
+    mission_mode="base_defense",
+    threat_level="EXTREME // EXTRACTION ZONE OVERRUN",
+    target_waves=2,
+    required_fabricators=0,
+    has_boss_strider=False,
+    initial_objective=SORTIE5C_INITIAL_OBJECTIVE,
+    extraction_objective=SORTIE5C_RTB_OBJECTIVE,
+    briefing_node_id=ACT3C_BRIEFING_NODE_ID,
+    inflight_node_ids=(SORTIE5C_ABORT_NODE_ID,),
+    # The Funeral of Viper Squad is a cinematic, not a dialogue node.
+    debrief_node_id=ACT3C_SEQUENCE_ID,
+)
+
+# Shares sortie 5 with ACT3A_TRIGGERS / ACT3B_TRIGGERS: register only the triggers of the active branch.
+# Priorities strictly decrease in story order.
+ACT3C_TRIGGERS: Tuple[SortieEventTrigger, ...] = (
+    SortieEventTrigger(
+        trigger_id="act3c_s5_pelican_touchdown",
+        sortie_num=SORTIE5C_NUM,
+        priority=100,
+        condition_type=CONDITION_ELAPSED_TIME,
+        threshold=SORTIE5C_TOUCHDOWN_SECONDS,
+        banter_category="act3c_s5_pelican_touchdown",
+        objective_update=SORTIE5C_INITIAL_OBJECTIVE,
+    ),
+    SortieEventTrigger(
+        trigger_id="act3c_s5_pelican_hull",
+        sortie_num=SORTIE5C_NUM,
+        priority=90,
+        condition_type=CONDITION_ELAPSED_TIME,
+        threshold=SORTIE5C_EXTRACTION_DEADLINE_SECONDS - SORTIE5C_HULL_REMAINING,
+        banter_category="act3c_s5_pelican_hull",
+    ),
+    SortieEventTrigger(
+        trigger_id="act3c_s5_doc_plea",
+        sortie_num=SORTIE5C_NUM,
+        priority=80,
+        condition_type=CONDITION_ELAPSED_TIME,
+        threshold=SORTIE5C_EXTRACTION_DEADLINE_SECONDS - SORTIE5C_DOC_REMAINING,
+        banter_category="act3c_s5_doc_plea",
+    ),
+    SortieEventTrigger(
+        trigger_id="act3c_s5_apex_plea",
+        sortie_num=SORTIE5C_NUM,
+        priority=70,
+        condition_type=CONDITION_ELAPSED_TIME,
+        threshold=SORTIE5C_EXTRACTION_DEADLINE_SECONDS - SORTIE5C_APEX_REMAINING,
+        banter_category="act3c_s5_apex_plea",
+    ),
+    SortieEventTrigger(
+        trigger_id="act3c_s5_vance_override",
+        sortie_num=SORTIE5C_NUM,
+        priority=60,
+        condition_type=CONDITION_ELAPSED_TIME,
+        threshold=SORTIE5C_EXTRACTION_DEADLINE_SECONDS - SORTIE5C_VANCE_REMAINING,
+        banter_category="act3c_s5_vance_override",
+    ),
+    SortieEventTrigger(
+        trigger_id="act3c_s5_protocol_abort",
+        sortie_num=SORTIE5C_NUM,
+        priority=50,
+        condition_type=CONDITION_ELAPSED_TIME,
+        threshold=SORTIE5C_EXTRACTION_DEADLINE_SECONDS,
+        dialogue_node_id=SORTIE5C_ABORT_NODE_ID,
+        objective_update=SORTIE5C_ABORT_OBJECTIVE,
+    ),
+)
+
+
+def register_act3c_triggers(manager: NarrativeTriggerManager) -> int:
+    """Register every Act III-C trigger with the given manager (all-or-nothing).
+
+    Returns:
+        Number of triggers registered.
+
+    Raises:
+        TypeError: If manager is not a NarrativeTriggerManager.
+        ValueError: If any Act III-C trigger id is already registered with the manager.
+    """
+    return _register_trigger_set(manager, ACT3C_TRIGGERS, "Act III-C")
+
+
+def _finite_seconds(value: Any) -> Optional[float]:
+    """Return value as a finite float, or None for bools, NaN, inf and non-numbers."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return None
+    return float(value)
+
+
+def get_act3c_extraction_timer_seconds(elapsed_seconds: Any) -> float:
+    """Return the Sortie 5C extraction_timer_seconds left on Pelican-1's 45-second window.
+
+    Before touchdown the full window is shown; afterwards it counts down to 0.0 at
+    SORTIE5C_EXTRACTION_DEADLINE_SECONDS and never goes negative. Invalid or negative
+    elapsed time is treated as 0.0 (full window).
+    """
+    elapsed = _finite_seconds(elapsed_seconds)
+    if elapsed is None or elapsed <= SORTIE5C_TOUCHDOWN_SECONDS:
+        return SORTIE5C_EXTRACTION_WINDOW_SECONDS
+    return max(0.0, SORTIE5C_EXTRACTION_DEADLINE_SECONDS - elapsed)
+
+
+def is_act3c_extraction_expired(elapsed_seconds: Any) -> bool:
+    """Return True once the extraction countdown has reached 00:00."""
+    elapsed = _finite_seconds(elapsed_seconds)
+    return elapsed is not None and elapsed >= SORTIE5C_EXTRACTION_DEADLINE_SECONDS
+
+
+def format_extraction_timer(seconds: Any) -> str:
+    """Format remaining seconds as the HUD countdown "MM:SS", rounding partial seconds up.
+
+    7.2 -> "00:08", 45 -> "00:45", 0 -> "00:00". Negative or invalid input -> "00:00";
+    anything above 99:59 is capped at SORTIE5C_TIMER_MAX_TEXT.
+    """
+    value = _finite_seconds(seconds)
+    if value is None or value <= 0.0:
+        return "00:00"
+    whole = int(math.ceil(value))
+    if whole > 99 * 60 + 59:
+        return SORTIE5C_TIMER_MAX_TEXT
+    return f"{whole // 60:02d}:{whole % 60:02d}"
