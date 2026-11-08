@@ -67,6 +67,7 @@ SOUND_CHANNELS = {
     "ceremony_fanfare": [CH_TACTICAL],
     "radio_squelch": [CH_TACTICAL],
     "radio_beep": [CH_UI, CH_TACTICAL],
+    "gunshot": [CH_IMPACTS],
 }
 
 # Minimum cooldown interval (in ms) to prevent ear-piercing volume stacking / clipping
@@ -92,6 +93,7 @@ SOUND_MIN_INTERVALS = {
     "ceremony_fanfare": 500,
     "radio_squelch": 80,
     "radio_beep": 60,
+    "gunshot": 500,
 }
 
 

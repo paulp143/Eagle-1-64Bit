@@ -630,6 +630,16 @@ BANTER_QUEUES: Dict[str, List[BanterLine]] = {
             portrait_path="",
         ),
     ],
+    "act3b_s5_reiner_pursuit": [
+        BanterLine(
+            line_id="act3b_s5_reiner_pursuit_01",
+            member_id="reiner",
+            speaker="Officer Reiner",
+            category="act3b_s5_reiner_pursuit",
+            text="Eagle-1, you are flagged as a deserter. Return to the Leviathan or be shot down.",
+            portrait_path="",
+        ),
+    ],
 }
 
 

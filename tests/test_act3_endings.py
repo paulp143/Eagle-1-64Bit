@@ -2,14 +2,53 @@
 
 Act III-A "The Path of Blind Obedience" (#74): Scene 3A.1 encrypted order, Sortie 5A trench
 purge, Scene 3A.2 hangar clone interlude, Sortie 6A terminal dive cinematic and epilogue.
+
+Act III-B "The Path of the Dissident" (#75): Scene 3B.1 ready-room confrontation, Sortie 5B
+weapon disarmament and surrender, and the Judgment of Viper Squad execution cinematic.
 """
 
 import math
+import wave
 
 import pygame
 import pytest
 
 from eagle1.story.campaign_act3 import (
+    ACT3B_APEX_FINAL_LINE,
+    ACT3B_APEX_TRAITOR_LINE,
+    ACT3B_DOC_LINE,
+    ACT3B_EXECUTION_NOTICE_LINES,
+    ACT3B_GUNSHOT_CUE,
+    ACT3B_PILOT_STATUS,
+    ACT3B_SEQUENCE_ID,
+    ACT3B_VAL_FINAL_LINE,
+    ACT3B_VAL_RELIEF_LINE,
+    build_act3b_cinematic_sequence,
+    build_act3b_epilogue_stats,
+    ACT3B_CONFRONTATION_EXTRA_KEY,
+    ACT3B_CONFRONTATION_NODE_ID,
+    ACT3B_MAX_LOYALTY,
+    ACT3B_ORDNANCE_DUMPED_EXTRA_KEY,
+    ACT3B_REINER_CURSE,
+    ACT3B_SURRENDER_BROADCAST,
+    ACT3B_TRIGGERS,
+    ACT3B_VANCE_ALARM,
+    PLAYER_WEAPONS_DISARMED_ATTR,
+    SORTIE5B_INITIAL_OBJECTIVE,
+    SORTIE5B_SCRAP_YARD_OBJECTIVE,
+    SORTIE5B_SURRENDER_NODE_ID,
+    SORTIE5B_SURRENDER_OBJECTIVE,
+    SORTIE5B_SURRENDER_SECONDS,
+    SORTIE_5B_CONFIG,
+    SORTIE5B_LANDING_RADIUS,
+    SORTIE5B_SCRAP_YARD_POS,
+    WEAPONS_DISARMED_EXTRA_KEY,
+    apply_act3b_weapon_disarmament,
+    is_in_scrap_yard_landing_zone,
+    register_act3b_triggers,
+    resolve_act3b_choice,
+    resolve_act3b_confrontation_choice,
+    restore_act3b_weapons,
     ACT3A_CLONE_GREETING,
     ACT3A_DIVE_THROTTLE,
     ACT3A_MINISTRY_OBITUARY_LINES,
@@ -41,10 +80,14 @@ from eagle1.story.campaign_act3 import (
     resolve_act3a_order_choice,
     resolve_act3a_trench_strike,
 )
+from eagle1.paths import PROJECT_ROOT
 from eagle1.story.campaign_save import CampaignSaveManager
 from eagle1.story.cinematic_player import (
     CINEMATIC_SCENE_EPILOGUE_CARD,
     CINEMATIC_SCENE_HANGAR_CLONES,
+    CINEMATIC_SCENE_HELLPOD_DROP,
+    CINEMATIC_SCENE_SCRAP_PLAIN,
+    CINEMATIC_SCENE_SCRAP_YARD_EXECUTION,
     CINEMATIC_SCENE_SUICIDE_DIVE,
     CINEMATIC_SCENE_TRENCH_STRIKE,
     CINEMATIC_SCENE_WHITE_FLASH,
@@ -65,8 +108,13 @@ from eagle1.story.narrative_trigger_manager import (
     NarrativeTriggerManager,
     validate_sortie_event_trigger,
 )
-from eagle1.story.story_manager import BRANCH_OBEDIENCE_PURGE, MAX_LOYALTY, StoryManager
-from eagle1.systems.ground_support import GroundSupportManager
+from eagle1.story.story_manager import (
+    BRANCH_DISSIDENT_SURRENDER,
+    BRANCH_OBEDIENCE_PURGE,
+    MAX_LOYALTY,
+    StoryManager,
+)
+from eagle1.systems.ground_support import EAGLE_REARM_TIME, GroundSupportManager
 
 ACT3A_NODE_IDS = ("act3a_encrypted_order", "sortie_5a_trench_lock")
 ACT3A_BANTER_CATEGORIES = (
@@ -75,6 +123,7 @@ ACT3A_BANTER_CATEGORIES = (
     "act3a_s5_apex_final",
     "act3a_s5_reiner_commendation",
 )
+ACT3B_NODE_IDS = ("act3b_ready_room_confrontation", "sortie_5b_surrender_broadcast")
 
 
 # -----------------------------------------------------------------------------
@@ -595,3 +644,581 @@ def test_act3a_choice_recorded_after_strike_is_clamped_again(story_mgr, tmp_path
     assert story_mgr.total_casualties == 4
     reloaded = StoryManager(save_manager=CampaignSaveManager(data_dir=tmp_path))
     assert reloaded.get_ending_branch() == BRANCH_OBEDIENCE_PURGE
+
+
+# -----------------------------------------------------------------------------
+# Act III-B: dialogue nodes and banter
+# -----------------------------------------------------------------------------
+
+
+def test_act3b_dialogue_nodes_pass_validation():
+    for node_id in ACT3B_NODE_IDS:
+        assert node_id in DIALOGUE_DATABASE
+    assert validate_dialogue_database({k: DIALOGUE_DATABASE[k] for k in ACT3B_NODE_IDS}) is True
+    assert validate_dialogue_database(DIALOGUE_DATABASE) is True
+
+
+def test_act3b_nodes_are_act3_sortie5():
+    ids = {node.node_id for node in get_nodes_for_act_and_sortie(3, 5)}
+    assert set(ACT3B_NODE_IDS) <= ids
+    for node_id in ACT3B_NODE_IDS:
+        node = get_dialogue_node(node_id)
+        assert node.act == 3
+        assert node.sortie == 5
+
+
+def test_act3b_confrontation_prompt_and_vance_alarm():
+    node = get_dialogue_node("act3b_ready_room_confrontation")
+    for phrase in ("transponder key", "Irredeemably Defective", "Penal Labor Battalion"):
+        assert phrase in node.prompt
+    for option in node.options.values():
+        assert "Scramble Eagle-1!" in option.response
+        assert "General quarters!" in option.response
+    assert "If the bots don't grind you into grease" in node.options["dissident"].speaker_reaction
+
+
+def test_act3b_surrender_dissident_option_is_canonical_broadcast():
+    node = get_dialogue_node("sortie_5b_surrender_broadcast")
+    dissident = node.options["dissident"]
+    assert "This is Eagle-1 to all frequencies. Disarming quad-cannons." in dissident.label
+    assert "I surrender." in dissident.label
+    assert "Dumping bomb racks into the sea" in dissident.response
+    assert "I am terminating my commission with Super Earth" in dissident.response
+
+
+def test_act3b_texts_fit_comms_and_modal_limits():
+    for node_id in ACT3B_NODE_IDS:
+        node = get_dialogue_node(node_id)
+        assert len(node.prompt) <= 300
+        for option in node.options.values():
+            assert len(option.label) <= 110
+            assert len(option.response) <= 126
+
+
+def test_act3b_banter_category_exists():
+    lines = BANTER_QUEUES["act3b_s5_reiner_pursuit"]
+    assert len(lines) == 1
+    assert lines[0].category == "act3b_s5_reiner_pursuit"
+    assert "deserter" in lines[0].text
+    assert validate_viper_dialogue_data() is True
+
+
+# -----------------------------------------------------------------------------
+# Act III-B: Sortie 5B config, triggers, resolvers and weapon disarmament
+# -----------------------------------------------------------------------------
+
+
+@pytest.fixture
+def dissident_story(story_mgr):
+    story_mgr.loyalty = 10.0
+    return story_mgr
+
+
+class _DisarmPlayer:
+    """Duck-typed stand-in for eagle1.app.game.Player's weapon state."""
+
+    def __init__(self):
+        self.max_bullets = 200
+        self.used_bullets = 17
+        self.max_rockets = 4
+        self.used_rockets = 1
+        self.shooting = True
+        self.rocket_shooting = True
+        self.reloading = False
+        self.rocket_reloading = False
+
+
+class _SlottedPlayer:
+    __slots__ = ("used_bullets", "max_bullets")
+
+    def __init__(self):
+        self.used_bullets = 0
+        self.max_bullets = 200
+
+
+def test_act3b_sortie_5b_config():
+    cfg = SORTIE_5B_CONFIG
+    assert cfg.sortie_num == 5
+    assert cfg.act == 3
+    assert cfg.sortie_id == "sortie_5b_dissident_surrender"
+    assert cfg.mission_mode in VALID_CAMPAIGN_MISSION_MODES
+    assert cfg.briefing_node_id == ACT3B_CONFRONTATION_NODE_ID
+    assert cfg.inflight_node_ids == (SORTIE5B_SURRENDER_NODE_ID,)
+    assert cfg.extraction_objective == SORTIE5B_SCRAP_YARD_OBJECTIVE
+    for node_id in (cfg.briefing_node_id, *cfg.inflight_node_ids):
+        assert get_dialogue_node(node_id) is not None
+
+
+def test_act3b_triggers_are_valid_and_ordered():
+    for trigger in ACT3B_TRIGGERS:
+        validate_sortie_event_trigger(trigger)
+        assert trigger.sortie_num == 5
+    priorities = [t.priority for t in ACT3B_TRIGGERS]
+    assert priorities == sorted(priorities, reverse=True)
+    assert not {t.trigger_id for t in ACT3B_TRIGGERS} & {t.trigger_id for t in ACT3A_TRIGGERS}
+
+
+def test_register_act3b_triggers_all_or_nothing(dissident_story):
+    manager = NarrativeTriggerManager(dissident_story)
+    assert register_act3b_triggers(manager) == len(ACT3B_TRIGGERS) == 2
+    with pytest.raises(ValueError, match="Act III-B"):
+        register_act3b_triggers(manager)
+    assert len(manager.get_triggers_for_sortie(5)) == 2
+    with pytest.raises(TypeError):
+        register_act3b_triggers(object())
+
+
+def test_act3b_surrender_trigger_opens_broadcast_node(dissident_story):
+    mission = MissionController(dissident_story)
+    comms = CommsHUD(story_manager=dissident_story)
+    manager = NarrativeTriggerManager(dissident_story, comms_hud=comms, mission_controller=mission)
+    register_act3b_triggers(manager)
+    manager.reset_for_sortie(5)
+
+    fired = manager.evaluate(CombatTelemetrySnapshot(elapsed_seconds=SORTIE5B_SURRENDER_SECONDS))
+    assert fired == ("act3b_s5_reiner_pursuit", "act3b_s5_surrender_broadcast")
+    for _ in range(2):
+        comms.is_active = False
+        comms.current_node = None
+        manager.dispatch_next_pending()
+    assert manager.dispatch_log == ["act3b_s5_reiner_pursuit", "act3b_s5_surrender_broadcast"]
+    assert mission.current_objective == SORTIE5B_SURRENDER_OBJECTIVE
+    assert dissident_story.active_dialogue.node_id == SORTIE5B_SURRENDER_NODE_ID
+
+
+def test_act3b_vance_alarm_matches_confrontation_responses():
+    node = get_dialogue_node(ACT3B_CONFRONTATION_NODE_ID)
+    for option in node.options.values():
+        assert option.response == ACT3B_VANCE_ALARM
+
+
+@pytest.mark.parametrize("stance", ["loyal", "neutral", "dissident", "[LOYAL]", "2"])
+def test_act3b_confrontation_keeps_dissident_branch(dissident_story, stance):
+    dissident_story.loyalty = 15.0
+    canonical = {"[LOYAL]": "loyal", "2": "neutral"}.get(stance, stance)
+    dissident_story.record_choice(ACT3B_CONFRONTATION_NODE_ID, canonical)
+    outcome = resolve_act3b_confrontation_choice(stance, dissident_story)
+    assert outcome.stance == canonical
+    assert outcome.loyalty_after <= ACT3B_MAX_LOYALTY
+    assert outcome.reiner_response == ACT3B_REINER_CURSE
+    assert outcome.alarm == ACT3B_VANCE_ALARM
+    assert dissident_story.get_ending_branch() == BRANCH_DISSIDENT_SURRENDER
+    assert dissident_story.extra[ACT3B_CONFRONTATION_EXTRA_KEY] == canonical
+
+
+@pytest.mark.parametrize("bad", [None, True, "", "maybe", 1])
+def test_act3b_confrontation_invalid_stance_returns_none(dissident_story, bad):
+    assert resolve_act3b_confrontation_choice(bad, dissident_story) is None
+    assert dissident_story.loyalty == 10.0
+    assert ACT3B_CONFRONTATION_EXTRA_KEY not in dissident_story.extra
+
+
+@pytest.mark.parametrize(
+    "loyalty, expected",
+    [(-5.0, 0.0), (7.5, 7.5), (40.0, 15.0), (float("nan"), 15.0), (True, 15.0),
+     (float("inf"), 15.0), (float("-inf"), 0.0)],
+)
+def test_act3b_confrontation_clamps_loyalty(dissident_story, loyalty, expected):
+    dissident_story.loyalty = loyalty
+    resolve_act3b_confrontation_choice("neutral", dissident_story)
+    assert dissident_story.loyalty == expected
+
+
+def test_act3b_confrontation_without_story_manager():
+    assert resolve_act3b_confrontation_choice("loyal", None).loyalty_after == ACT3B_MAX_LOYALTY
+
+
+def test_act3b_disarmament_disables_player_and_dumps_ordnance(dissident_story):
+    player = _DisarmPlayer()
+    gsm = GroundSupportManager()
+    gsm.set_story_manager(dissident_story)
+    gsm.aiming_active = True
+    gsm.weapon_menu.is_open = True
+    charges_before = sum(gsm.weapon_menu.charges.values())
+    assert charges_before > 0
+    mission = MissionController(dissident_story)
+    comms = _CalloutRecorder()
+
+    outcome = apply_act3b_weapon_disarmament(player, gsm, dissident_story, mission, comms)
+
+    assert outcome.player_disarmed is True
+    assert outcome.already_disarmed is False
+    assert outcome.ordnance_dumped == charges_before
+    assert player.used_bullets == player.max_bullets
+    assert player.used_rockets == player.max_rockets
+    assert player.shooting is False and player.rocket_shooting is False
+    assert getattr(player, PLAYER_WEAPONS_DISARMED_ATTR) is True
+    assert all(value == 0 for value in gsm.weapon_menu.charges.values())
+    assert not any(gsm.weapon_menu.is_ready(st) for st in gsm.active_loadout)
+    assert gsm.aiming_active is False
+    assert gsm.weapon_menu.is_open is False
+    assert dissident_story.extra[WEAPONS_DISARMED_EXTRA_KEY] is True
+    assert dissident_story.extra[ACT3B_ORDNANCE_DUMPED_EXTRA_KEY] == charges_before
+    assert mission.current_objective == SORTIE5B_SCRAP_YARD_OBJECTIVE
+    assert outcome.objective == SORTIE5B_SCRAP_YARD_OBJECTIVE
+    assert comms.callouts == [("Val", ACT3B_SURRENDER_BROADCAST)]
+    assert dissident_story.get_ending_branch() == BRANCH_DISSIDENT_SURRENDER
+
+
+def test_act3b_broadcast_is_canonical_text():
+    assert ACT3B_SURRENDER_BROADCAST == (
+        "This is Eagle-1 to all frequencies. Disarming quad-cannons. Dumping bomb racks into the sea. "
+        "I am terminating my commission with Super Earth. I surrender."
+    )
+
+
+def test_act3b_disarmament_handles_none_everything():
+    outcome = apply_act3b_weapon_disarmament(None, None)
+    assert outcome.player_disarmed is False
+    assert outcome.ordnance_dumped == 0
+    assert outcome.loyalty_after == ACT3B_MAX_LOYALTY
+    assert outcome.objective == SORTIE5B_SCRAP_YARD_OBJECTIVE
+
+
+@pytest.mark.parametrize("player", [object(), _SlottedPlayer(), "pilot"])
+def test_act3b_disarmament_tolerates_odd_objects(dissident_story, player):
+    outcome = apply_act3b_weapon_disarmament(player, object(), dissident_story)
+    assert outcome.player_disarmed is False
+    assert outcome.ordnance_dumped == 0
+    assert dissident_story.extra[WEAPONS_DISARMED_EXTRA_KEY] is True
+
+
+def test_act3b_disarmament_skips_garbage_charges(dissident_story):
+    class _Menu:
+        charges = {"a": 2, "b": True, "c": -1, "d": "x"}
+
+    class _GSM:
+        weapon_menu = _Menu()
+
+    outcome = apply_act3b_weapon_disarmament(None, _GSM(), dissident_story)
+    assert outcome.ordnance_dumped == 2
+    assert all(value == 0 for value in _Menu.charges.values())
+
+
+def test_act3b_disarmament_is_idempotent(dissident_story):
+    comms = _CalloutRecorder()
+    gsm = GroundSupportManager()
+    first = apply_act3b_weapon_disarmament(_DisarmPlayer(), gsm, dissident_story, comms_hud=comms)
+    second = apply_act3b_weapon_disarmament(_DisarmPlayer(), gsm, dissident_story, comms_hud=comms)
+    assert second.already_disarmed is True
+    assert second.ordnance_dumped == 0
+    assert len(comms.callouts) == 1
+    assert dissident_story.extra[ACT3B_ORDNANCE_DUMPED_EXTRA_KEY] == first.ordnance_dumped
+
+
+def test_act3b_disarmament_persists(dissident_story, tmp_path):
+    apply_act3b_weapon_disarmament(None, GroundSupportManager(), dissident_story)
+    reloaded = StoryManager(save_manager=CampaignSaveManager(data_dir=tmp_path))
+    assert reloaded.extra[WEAPONS_DISARMED_EXTRA_KEY] is True
+    assert reloaded.get_ending_branch() == BRANCH_DISSIDENT_SURRENDER
+
+
+def test_act3b_disarmament_reaches_real_comms_hud(dissident_story):
+    comms = CommsHUD(story_manager=dissident_story)
+    apply_act3b_weapon_disarmament(None, None, dissident_story, comms_hud=comms)
+    assert comms.is_active
+
+
+def test_act3b_restore_weapons_reverses_disarmament(dissident_story, tmp_path):
+    player = _DisarmPlayer()
+    apply_act3b_weapon_disarmament(player, None, dissident_story)
+    assert restore_act3b_weapons(player, dissident_story) is True
+    assert player.used_bullets == 0 and player.used_rockets == 0
+    assert getattr(player, PLAYER_WEAPONS_DISARMED_ATTR) is False
+    assert WEAPONS_DISARMED_EXTRA_KEY not in dissident_story.extra
+    reloaded = StoryManager(save_manager=CampaignSaveManager(data_dir=tmp_path))
+    assert WEAPONS_DISARMED_EXTRA_KEY not in reloaded.extra
+    assert restore_act3b_weapons(player, dissident_story) is False
+    assert restore_act3b_weapons(None, None) is False
+
+
+def test_act3b_disarmament_reversed_by_campaign_and_mission_reset(dissident_story):
+    gsm = GroundSupportManager()
+    apply_act3b_weapon_disarmament(None, gsm, dissident_story)
+    dissident_story.reset_campaign()
+    assert WEAPONS_DISARMED_EXTRA_KEY not in dissident_story.extra
+    gsm.reset()
+    assert all(value > 0 for value in gsm.weapon_menu.charges.values())
+
+
+def test_resolve_act3b_choice_routes_nodes(dissident_story):
+    player = _DisarmPlayer()
+    assert resolve_act3b_choice(ACT3B_CONFRONTATION_NODE_ID, "dissident", dissident_story) == SORTIE5B_INITIAL_OBJECTIVE
+    objective = resolve_act3b_choice(f" {SORTIE5B_SURRENDER_NODE_ID} ", "loyal", dissident_story, player=player)
+    assert objective == SORTIE5B_SCRAP_YARD_OBJECTIVE
+    assert getattr(player, PLAYER_WEAPONS_DISARMED_ATTR) is True
+
+
+@pytest.mark.parametrize(
+    "node_id, stance",
+    [(None, "loyal"), (5, "loyal"), (True, "loyal"), ("unknown_node", "loyal"),
+     (ACT3B_CONFRONTATION_NODE_ID, "maybe"), (SORTIE5B_SURRENDER_NODE_ID, None)],
+)
+def test_resolve_act3b_choice_rejects_invalid_input(dissident_story, node_id, stance):
+    assert resolve_act3b_choice(node_id, stance, dissident_story) is None
+    assert WEAPONS_DISARMED_EXTRA_KEY not in dissident_story.extra
+
+
+def test_act3b_surrender_after_loyal_answer_keeps_branch(dissident_story):
+    dissident_story.loyalty = 15.0
+    dissident_story.record_choice(SORTIE5B_SURRENDER_NODE_ID, "loyal")
+    assert dissident_story.loyalty == 25.0
+    resolve_act3b_choice(SORTIE5B_SURRENDER_NODE_ID, "loyal", dissident_story)
+    assert dissident_story.loyalty == ACT3B_MAX_LOYALTY
+    assert dissident_story.get_ending_branch() == BRANCH_DISSIDENT_SURRENDER
+
+
+def test_act3b_gunshot_sfx_asset_exists():
+    path = PROJECT_ROOT / "audio" / "sfx" / "gunshot.wav"
+    assert path.is_file()
+    with wave.open(str(path), "rb") as wav:
+        assert wav.getframerate() == 44100
+        assert wav.getnchannels() == 2
+        assert wav.getnframes() > 0
+
+
+
+# -----------------------------------------------------------------------------
+# Act III-B: The Judgment of Viper Squad cinematic and epilogue
+# -----------------------------------------------------------------------------
+
+
+def test_act3b_cinematic_sequence_is_valid():
+    sequence = build_act3b_cinematic_sequence()
+    assert validate_cinematic_sequence(sequence) is True
+    assert sequence.sequence_id == ACT3B_SEQUENCE_ID == SORTIE_5B_CONFIG.debrief_node_id
+    assert sequence.ending_branch == BRANCH_DISSIDENT_SURRENDER
+    assert sequence.epilogue_lines == ACT3B_EXECUTION_NOTICE_LINES
+
+
+def test_act3b_cinematic_story_order():
+    ids = [kf.keyframe_id for kf in build_act3b_cinematic_sequence().keyframes]
+    assert ids == [
+        "act3b_surrender_glide",
+        "act3b_scrap_plain",
+        "act3b_hellpod_drop",
+        "act3b_viper_confrontation",
+        "act3b_braker_doc",
+        "act3b_for_democracy",
+        "act3b_gunshot_cut",
+        "act3b_ministry_notice",
+    ]
+    scenes = [kf.scene_type for kf in build_act3b_cinematic_sequence().keyframes]
+    assert scenes[:3] == [CINEMATIC_SCENE_SCRAP_PLAIN, CINEMATIC_SCENE_SCRAP_PLAIN, CINEMATIC_SCENE_HELLPOD_DROP]
+    assert scenes[3:6] == [CINEMATIC_SCENE_SCRAP_YARD_EXECUTION] * 3
+    assert scenes[6:] == [CINEMATIC_SCENE_EPILOGUE_CARD] * 2
+
+
+def test_act3b_cinematic_contains_canonical_beats():
+    text = _all_subtitle_text(build_act3b_cinematic_sequence())
+    for expected in (
+        "Disarming quad-cannons",
+        "Landing gear deployed. Coming down in the scrap yard.",
+        "red-eyed Automaton Troopers stand motionless",
+        "Four black Hellpods",
+        ACT3B_VAL_RELIEF_LINE,
+        ACT3B_APEX_TRAITOR_LINE,
+        ACT3B_DOC_LINE,
+        ACT3B_VAL_FINAL_LINE,
+        ACT3B_APEX_FINAL_LINE,
+        "You left us in the mud, Val.",
+        *ACT3B_EXECUTION_NOTICE_LINES,
+    ):
+        assert expected in text
+    assert ACT3B_EXECUTION_NOTICE_LINES[0] == (
+        "Dissident Element 'Eagle-1' neutralized by Helldiver detachment Viper-1."
+    )
+
+
+def test_act3b_gunshot_cuts_to_black_before_notice():
+    keyframes = build_act3b_cinematic_sequence().keyframes
+    gunshot = keyframes[-2]
+    assert gunshot.audio_cue == ACT3B_GUNSHOT_CUE == "gunshot"
+    assert gunshot.scene_type == CINEMATIC_SCENE_EPILOGUE_CARD
+    assert gunshot.subtitles == ()
+    assert gunshot.fade_in == 0.0
+    assert keyframes[-3].subtitles[-1].text == "For Democracy."
+    assert keyframes[-1].title_caption == "MINISTRY OF DEFENSE // OFFICIAL NOTICE"
+
+
+def test_act3b_cinematic_audio_cues_have_assets():
+    sfx_dir = PROJECT_ROOT / "audio" / "sfx"
+    for kf in build_act3b_cinematic_sequence().keyframes:
+        if kf.audio_cue and kf.audio_cue != "stop_music":
+            assert (sfx_dir / f"{kf.audio_cue}.wav").is_file(), kf.audio_cue
+
+
+def test_act3b_cinematic_plays_through_player_to_epilogue(dissident_story):
+    apply_act3b_weapon_disarmament(None, None, dissident_story)
+    sequence = build_act3b_cinematic_sequence()
+    player = CinematicPlayer(1280, 720)
+    received = []
+    player.on_audio_cue = received.append
+    player.start_sequence(sequence, build_act3b_epilogue_stats(dissident_story))
+    canvas = pygame.Surface((1280, 720))
+    seen_subtitles = set()
+
+    total = sum(kf.duration for kf in sequence.keyframes)
+    for _ in range(int(total * 60) + 30):
+        player.update(1.0 / 60.0)
+        player.draw(canvas)
+        seen_subtitles.update(sub.text for sub in player.get_active_subtitles())
+        if player.is_epilogue:
+            break
+
+    assert player.is_epilogue
+    assert player.skipped is False
+    assert received == [kf.audio_cue.strip() for kf in sequence.keyframes if kf.audio_cue]
+    assert seen_subtitles == {sub.text for kf in sequence.keyframes for sub in kf.subtitles}
+    assert player.get_epilogue_lines() == ACT3B_EXECUTION_NOTICE_LINES
+
+
+def test_act3b_epilogue_stats_after_surrender(dissident_story):
+    dissident_story.total_casualties = 2
+    apply_act3b_weapon_disarmament(None, None, dissident_story)
+    stats = build_act3b_epilogue_stats(dissident_story)
+    assert stats.ending_branch == BRANCH_DISSIDENT_SURRENDER
+    assert stats.ending_title == "THE PATH OF THE DISSIDENT"
+    assert stats.pilot_status == ACT3B_PILOT_STATUS == "KIA // EXECUTED FOR TREASON"
+    assert stats.final_loyalty == 10.0
+    assert stats.total_casualties == 2
+    assert stats.sorties_completed == 5
+    assert stats.epilogue_lines == ACT3B_EXECUTION_NOTICE_LINES
+
+
+def test_act3b_epilogue_stats_without_story_manager():
+    stats = build_act3b_epilogue_stats(None)
+    assert stats.final_loyalty == 0.0
+    assert stats.total_casualties == 0
+    assert stats.pilot_status == ACT3B_PILOT_STATUS
+
+
+@pytest.mark.parametrize("scene_type", [CINEMATIC_SCENE_SCRAP_PLAIN, CINEMATIC_SCENE_HELLPOD_DROP])
+def test_act3b_scene_renderers_draw_something(scene_type):
+    player = CinematicPlayer(1280, 720)
+    canvas = pygame.Surface((1280, 720))
+    canvas.fill((0, 0, 0))
+    keyframe = next(kf for kf in build_act3b_cinematic_sequence().keyframes if kf.scene_type == scene_type)
+    player._draw_scene(canvas, keyframe)
+    assert canvas.get_at((640, 360))[:3] != (0, 0, 0)
+
+
+def test_act3b_symbols_exported_from_story_package():
+    import eagle1.story as story_pkg
+
+    expected = {
+        "SORTIE_5B_CONFIG",
+        "ACT3B_TRIGGERS",
+        "register_act3b_triggers",
+        "resolve_act3b_confrontation_choice",
+        "apply_act3b_weapon_disarmament",
+        "restore_act3b_weapons",
+        "resolve_act3b_choice",
+        "build_act3b_cinematic_sequence",
+        "build_act3b_epilogue_stats",
+    }
+    assert expected <= set(story_pkg.__all__)
+    for name in expected:
+        assert hasattr(story_pkg, name)
+    assert story_pkg.apply_act3b_weapon_disarmament is apply_act3b_weapon_disarmament
+
+
+
+# -----------------------------------------------------------------------------
+# Act III-B: review follow-ups (rearm, lifecycle, persistence, landing zone, audio)
+# -----------------------------------------------------------------------------
+
+
+def test_act3b_disarmament_cancels_pending_rearm(dissident_story):
+    gsm = GroundSupportManager()
+    gsm.weapon_menu.charges[gsm.active_loadout[0]] = 0
+    assert gsm.weapon_menu.trigger_rearm()
+    apply_act3b_weapon_disarmament(None, gsm, dissident_story)
+    assert gsm.weapon_menu.is_rearming is False
+    gsm.weapon_menu.update(EAGLE_REARM_TIME + 1.0)
+    assert all(value == 0 for value in gsm.weapon_menu.charges.values())
+
+
+def test_act3b_retry_after_restore_replays_broadcast_without_double_count(dissident_story):
+    comms = _CalloutRecorder()
+    player = _DisarmPlayer()
+    first = apply_act3b_weapon_disarmament(player, GroundSupportManager(), dissident_story, comms_hud=comms)
+    restore_act3b_weapons(player, dissident_story)
+    second = apply_act3b_weapon_disarmament(player, GroundSupportManager(), dissident_story, comms_hud=comms)
+    assert second.already_disarmed is False
+    assert len(comms.callouts) == 2
+    assert dissident_story.extra[ACT3B_ORDNANCE_DUMPED_EXTRA_KEY] == second.ordnance_dumped == first.ordnance_dumped
+
+
+def test_act3b_restore_keeps_confrontation_stance(dissident_story):
+    resolve_act3b_confrontation_choice("dissident", dissident_story)
+    apply_act3b_weapon_disarmament(None, None, dissident_story)
+    restore_act3b_weapons(None, dissident_story)
+    assert dissident_story.extra[ACT3B_CONFRONTATION_EXTRA_KEY] == "dissident"
+
+
+@pytest.mark.parametrize("node_id", [ACT3B_CONFRONTATION_NODE_ID, SORTIE5B_SURRENDER_NODE_ID])
+def test_act3b_loyal_answer_clamp_survives_reload(dissident_story, tmp_path, node_id):
+    dissident_story.loyalty = 15.0
+    dissident_story.record_choice(node_id, "loyal")
+    resolve_act3b_choice(node_id, "loyal", dissident_story)
+    reloaded = StoryManager(save_manager=CampaignSaveManager(data_dir=tmp_path))
+    assert reloaded.loyalty <= ACT3B_MAX_LOYALTY
+    assert reloaded.get_ending_branch() == BRANCH_DISSIDENT_SURRENDER
+
+
+def test_act3b_resolver_must_follow_record_choice(dissident_story):
+    """Contract for #77: record_choice() first, then the resolver (the reverse order flips the branch)."""
+    dissident_story.loyalty = 15.0
+    resolve_act3b_confrontation_choice("loyal", dissident_story)
+    dissident_story.record_choice(ACT3B_CONFRONTATION_NODE_ID, "loyal")
+    assert dissident_story.get_ending_branch() != BRANCH_DISSIDENT_SURRENDER
+    resolve_act3b_confrontation_choice("loyal", dissident_story)
+    assert dissident_story.get_ending_branch() == BRANCH_DISSIDENT_SURRENDER
+
+
+@pytest.mark.parametrize(
+    "disarmed, dumped", [("true", 3.0), (1, True), (None, "x"), ([1], -4)]
+)
+def test_act3b_disarmament_with_malformed_saved_extra(dissident_story, tmp_path, disarmed, dumped):
+    dissident_story.extra[WEAPONS_DISARMED_EXTRA_KEY] = disarmed
+    dissident_story.extra[ACT3B_ORDNANCE_DUMPED_EXTRA_KEY] = dumped
+    dissident_story.save_campaign_state()
+    reloaded = StoryManager(save_manager=CampaignSaveManager(data_dir=tmp_path))
+    outcome = apply_act3b_weapon_disarmament(None, GroundSupportManager(), reloaded)
+    assert outcome.already_disarmed is False
+    assert reloaded.extra[WEAPONS_DISARMED_EXTRA_KEY] is True
+    assert reloaded.extra[ACT3B_ORDNANCE_DUMPED_EXTRA_KEY] == outcome.ordnance_dumped
+
+
+@pytest.mark.parametrize("loyalty, expected", [(90.0, 15.0), (-5.0, 0.0), (float("nan"), 15.0)])
+def test_act3b_epilogue_stats_clamp_loyalty(dissident_story, loyalty, expected):
+    dissident_story.loyalty = loyalty
+    assert build_act3b_epilogue_stats(dissident_story).final_loyalty == expected
+
+
+def test_act3b_scrap_yard_landing_zone():
+    cx, cy = SORTIE5B_SCRAP_YARD_POS
+    assert is_in_scrap_yard_landing_zone(cx, cy)
+    assert is_in_scrap_yard_landing_zone(cx + SORTIE5B_LANDING_RADIUS, cy)
+    assert not is_in_scrap_yard_landing_zone(cx + SORTIE5B_LANDING_RADIUS + 1.0, cy)
+    for bad in (None, True, "1500", float("nan"), float("inf")):
+        assert not is_in_scrap_yard_landing_zone(bad, cy)
+        assert not is_in_scrap_yard_landing_zone(cx, bad)
+    assert 0.0 <= cx <= 3000.0 and 0.0 <= cy <= 3000.0
+
+
+def test_act3b_gunshot_has_dedicated_channel():
+    from eagle1.systems.audio_manager import SOUND_CHANNELS, SOUND_MIN_INTERVALS
+
+    assert "gunshot" in SOUND_CHANNELS
+    assert "gunshot" in SOUND_MIN_INTERVALS
+
+
+def test_act3b_review_symbols_exported():
+    import eagle1.story as story_pkg
+
+    for name in ("PLAYER_WEAPONS_DISARMED_ATTR", "SORTIE5B_SCRAP_YARD_OBJECTIVE",
+                 "SORTIE5B_SCRAP_YARD_POS", "is_in_scrap_yard_landing_zone"):
+        assert name in story_pkg.__all__
+        assert hasattr(story_pkg, name)

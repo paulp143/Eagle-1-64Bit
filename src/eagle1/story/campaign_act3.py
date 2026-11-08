@@ -4,8 +4,13 @@ Act III-A "The Path of Blind Obedience" (OBEDIENCE_PURGE, docs/story.md Section 
 Scene 3A.1 encrypted Priority Red order (Vermilion-Nine), Sortie 5A trench purge of
 Viper Squad, Scene 3A.2 hangar clone interlude and the Sortie 6A terminal dive.
 
-The ending is a tragedy without an exit: whatever the pilot answers, the resolvers keep
-loyalty at zealot level (>= THRESHOLD_OBEDIENCE_PURGE) so the branch can never flip.
+Act III-B "The Path of the Dissident" (DISSIDENT_SURRENDER, docs/story.md Section 7):
+Scene 3B.1 ready-room confrontation, Sortie 5B weapon disarmament and surrender broadcast,
+and the Judgment of Viper Squad execution cinematic in the Automaton scrap yard.
+
+Both endings are tragedies without an exit: whatever the pilot answers, the resolvers keep
+loyalty at zealot level (>= THRESHOLD_OBEDIENCE_PURGE) or dissident level
+(<= THRESHOLD_DISSIDENT_SURRENDER) so the branch can never flip.
 """
 
 from dataclasses import dataclass
@@ -16,6 +21,9 @@ from typing import TYPE_CHECKING, Any, Optional, Tuple
 from eagle1.story.cinematic_player import (
     CINEMATIC_SCENE_EPILOGUE_CARD,
     CINEMATIC_SCENE_HANGAR_CLONES,
+    CINEMATIC_SCENE_HELLPOD_DROP,
+    CINEMATIC_SCENE_SCRAP_PLAIN,
+    CINEMATIC_SCENE_SCRAP_YARD_EXECUTION,
     CINEMATIC_SCENE_SUICIDE_DIVE,
     CINEMATIC_SCENE_TRENCH_STRIKE,
     CINEMATIC_SCENE_WHITE_FLASH,
@@ -37,8 +45,11 @@ from eagle1.story.narrative_trigger_manager import (
     SortieEventTrigger,
 )
 from eagle1.story.story_manager import (
+    BRANCH_DISSIDENT_SURRENDER,
     BRANCH_OBEDIENCE_PURGE,
     MAX_LOYALTY,
+    MIN_LOYALTY,
+    THRESHOLD_DISSIDENT_SURRENDER,
     THRESHOLD_OBEDIENCE_PURGE,
     VALID_STANCES,
     StoryManager,
@@ -177,6 +188,13 @@ def register_act3a_triggers(manager: NarrativeTriggerManager) -> int:
         TypeError: If manager is not a NarrativeTriggerManager.
         ValueError: If any Act III-A trigger id is already registered with the manager.
     """
+    return _register_trigger_set(manager, ACT3A_TRIGGERS, "Act III-A")
+
+
+def _register_trigger_set(
+    manager: NarrativeTriggerManager, triggers: Tuple[SortieEventTrigger, ...], label: str
+) -> int:
+    """Register a set of triggers all-or-nothing; raises TypeError/ValueError like the public wrappers."""
     if not isinstance(manager, NarrativeTriggerManager):
         raise TypeError("manager must be a NarrativeTriggerManager instance")
 
@@ -185,13 +203,13 @@ def register_act3a_triggers(manager: NarrativeTriggerManager) -> int:
         for sortie_num in range(MIN_SORTIE_NUM, MAX_STORY_SORTIE_NUM + 1)
         for trigger in manager.get_triggers_for_sortie(sortie_num)
     }
-    clashes = sorted(registered_ids.intersection(trigger.trigger_id for trigger in ACT3A_TRIGGERS))
+    clashes = sorted(registered_ids.intersection(trigger.trigger_id for trigger in triggers))
     if clashes:
-        raise ValueError(f"Act III-A triggers already registered: {', '.join(clashes)}")
+        raise ValueError(f"{label} triggers already registered: {', '.join(clashes)}")
 
-    manager.register_triggers(ACT3A_TRIGGERS)
-    logger.debug("Registered %d Act III-A narrative triggers", len(ACT3A_TRIGGERS))
-    return len(ACT3A_TRIGGERS)
+    manager.register_triggers(triggers)
+    logger.debug("Registered %d %s narrative triggers", len(triggers), label)
+    return len(triggers)
 
 
 def _normalize_stance(stance: object) -> Optional[str]:
@@ -565,4 +583,513 @@ def build_act3a_epilogue_stats(story_manager: Optional[StoryManager]) -> Epilogu
         sorties_completed=ACT3A_SORTIES_COMPLETED,
         pilot_status=ACT3A_PILOT_STATUS,
         epilogue_lines=ACT3A_MINISTRY_OBITUARY_LINES,
+    )
+
+
+# -----------------------------------------------------------------------------
+# Act III-B: Scene 3B.1 confrontation and Sortie 5B surrender
+# -----------------------------------------------------------------------------
+
+SORTIE5B_NUM: int = 5
+
+ACT3B_SEQUENCE_ID: str = "act3b_dissident_surrender"
+ACT3B_CONFRONTATION_NODE_ID: str = "act3b_ready_room_confrontation"
+SORTIE5B_SURRENDER_NODE_ID: str = "sortie_5b_surrender_broadcast"
+
+ACT3B_MAX_LOYALTY: float = THRESHOLD_DISSIDENT_SURRENDER
+
+ACT3B_VANCE_ALARM: str = (
+    "Vance (P.A.): 'General quarters! Automaton battery has locked onto our orbital drive! Scramble Eagle-1!'"
+)
+ACT3B_REINER_CURSE: str = (
+    "You will die down there, traitor. If the bots don't grind you into grease, Super Earth will."
+)
+ACT3B_SURRENDER_BROADCAST: str = (
+    "This is Eagle-1 to all frequencies. Disarming quad-cannons. Dumping bomb racks into the sea. "
+    "I am terminating my commission with Super Earth. I surrender."
+)
+ACT3B_LANDING_LINE: str = "Landing gear deployed. Coming down in the scrap yard."
+ACT3B_VAL_SPEAKER: str = "Val"
+
+WEAPONS_DISARMED_EXTRA_KEY: str = "weapons_disarmed"
+ACT3B_ORDNANCE_DUMPED_EXTRA_KEY: str = "act3b_ordnance_dumped"
+ACT3B_CONFRONTATION_EXTRA_KEY: str = "act3b_confrontation_stance"
+# Duck-typed flag set on the player; the game loop (#77) gates fire input on it.
+PLAYER_WEAPONS_DISARMED_ATTR: str = "weapons_disarmed"
+
+SORTIE5B_PURSUIT_SECONDS: float = 2.0
+SORTIE5B_SURRENDER_SECONDS: float = 7.0
+
+SORTIE5B_INITIAL_OBJECTIVE: str = (
+    "Emergency launch override: Eagle-1 is airborne without clearance. The Automaton battery is tracking you."
+)
+SORTIE5B_SURRENDER_OBJECTIVE: str = "Reiner is on the open channel. Answer him, Eagle-1."
+SORTIE5B_SCRAP_YARD_OBJECTIVE: str = "Weapons cold. Glide to the central Automaton scrap yard and land."
+
+# Central Automaton scrap yard in world space (map centre of the 3000x3000 battlefield).
+SORTIE5B_SCRAP_YARD_POS: Tuple[float, float] = (1500.0, 1500.0)
+SORTIE5B_LANDING_RADIUS: float = 220.0
+
+SORTIE_5B_CONFIG: CampaignSortieConfig = CampaignSortieConfig(
+    sortie_num=SORTIE5B_NUM,
+    act=ACT3_NUM,
+    sortie_id="sortie_5b_dissident_surrender",
+    title="SORTIE 5B // THE SURRENDER OF EAGLE-1",
+    operation_name="EMERGENCY LAUNCH OVERRIDE",
+    mission_mode="air_superiority",
+    threat_level="UNSANCTIONED // DESERTION",
+    target_waves=1,
+    required_fabricators=0,
+    has_boss_strider=False,
+    initial_objective=SORTIE5B_INITIAL_OBJECTIVE,
+    extraction_objective=SORTIE5B_SCRAP_YARD_OBJECTIVE,
+    briefing_node_id=ACT3B_CONFRONTATION_NODE_ID,
+    inflight_node_ids=(SORTIE5B_SURRENDER_NODE_ID,),
+    # The Judgment of Viper Squad is a cinematic, not a dialogue node.
+    debrief_node_id=ACT3B_SEQUENCE_ID,
+)
+
+# Shares sortie 5 with ACT3A_TRIGGERS: register only the triggers of the active branch.
+ACT3B_TRIGGERS: Tuple[SortieEventTrigger, ...] = (
+    SortieEventTrigger(
+        trigger_id="act3b_s5_reiner_pursuit",
+        sortie_num=SORTIE5B_NUM,
+        priority=100,
+        condition_type=CONDITION_ELAPSED_TIME,
+        threshold=SORTIE5B_PURSUIT_SECONDS,
+        banter_category="act3b_s5_reiner_pursuit",
+        objective_update=SORTIE5B_INITIAL_OBJECTIVE,
+    ),
+    SortieEventTrigger(
+        trigger_id="act3b_s5_surrender_broadcast",
+        sortie_num=SORTIE5B_NUM,
+        priority=90,
+        condition_type=CONDITION_ELAPSED_TIME,
+        threshold=SORTIE5B_SURRENDER_SECONDS,
+        dialogue_node_id=SORTIE5B_SURRENDER_NODE_ID,
+        objective_update=SORTIE5B_SURRENDER_OBJECTIVE,
+    ),
+)
+
+
+@dataclass(frozen=True)
+class Act3BConfrontationOutcome:
+    """Result of the pilot's answer to Reiner in the 0300-hours ready room."""
+
+    stance: str
+    loyalty_after: float
+    reiner_response: str
+    alarm: str
+
+
+@dataclass(frozen=True)
+class Act3BDisarmamentOutcome:
+    """Result of Eagle-1 powering down its weapons and dumping its ordnance."""
+
+    player_disarmed: bool
+    ordnance_dumped: int
+    already_disarmed: bool
+    loyalty_after: float
+    objective: str
+    broadcast: str
+
+
+def register_act3b_triggers(manager: NarrativeTriggerManager) -> int:
+    """Register every Act III-B trigger with the given manager (all-or-nothing).
+
+    Returns:
+        Number of triggers registered.
+
+    Raises:
+        TypeError: If manager is not a NarrativeTriggerManager.
+        ValueError: If any Act III-B trigger id is already registered with the manager.
+    """
+    return _register_trigger_set(manager, ACT3B_TRIGGERS, "Act III-B")
+
+
+def _clamp_dissident(value: Any) -> float:
+    """Clamp loyalty into [MIN_LOYALTY, ACT3B_MAX_LOYALTY]; bools, NaN and garbage become the maximum."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or math.isnan(value):
+        return ACT3B_MAX_LOYALTY
+    return min(ACT3B_MAX_LOYALTY, max(MIN_LOYALTY, float(value)))
+
+
+def _is_count(value: Any) -> bool:
+    """Return True for non-negative ints (bools excluded)."""
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def _set_attr(obj: Any, name: str, value: Any) -> bool:
+    """Set an attribute on a duck-typed object; returns False (and logs) if the object refuses it."""
+    try:
+        setattr(obj, name, value)
+    except (AttributeError, TypeError) as exc:
+        logger.warning("Cannot set %s on %r: %s", name, type(obj).__name__, exc)
+        return False
+    return True
+
+
+def _set_existing_attr(obj: Any, name: str, value: Any) -> None:
+    """Set an attribute only if the object already has it."""
+    if hasattr(obj, name):
+        _set_attr(obj, name, value)
+
+
+def resolve_act3b_confrontation_choice(
+    stance: str, story_manager: Optional[StoryManager]
+) -> Optional[Act3BConfrontationOutcome]:
+    """Apply the outcome of Scene 3B.1 after StoryManager.record_choice().
+
+    Whatever Val answers, Vance's general-quarters alarm interrupts and she escapes to the
+    hangar, so loyalty is clamped back to <= THRESHOLD_DISSIDENT_SURRENDER (the branch cannot flip).
+
+    Returns:
+        The outcome, or None if stance is invalid.
+    """
+    canonical = _normalize_stance(stance)
+    if canonical is None:
+        logger.warning("Ignoring invalid stance %r for Act III-B node '%s'", stance, ACT3B_CONFRONTATION_NODE_ID)
+        return None
+
+    story = _as_story(story_manager)
+    if story is None:
+        loyalty_after = ACT3B_MAX_LOYALTY
+    else:
+        story.loyalty = _clamp_dissident(story.loyalty)
+        loyalty_after = story.loyalty
+        story.extra[ACT3B_CONFRONTATION_EXTRA_KEY] = canonical
+        story.save_campaign_state()
+
+    logger.info("Act III-B confrontation resolved: stance=%s loyalty=%.1f", canonical, loyalty_after)
+    return Act3BConfrontationOutcome(
+        stance=canonical,
+        loyalty_after=loyalty_after,
+        reiner_response=ACT3B_REINER_CURSE,
+        alarm=ACT3B_VANCE_ALARM,
+    )
+
+
+def _disarm_player(player: Any) -> bool:
+    """Exhaust the player's cannon and rocket magazines and flag the weapons as disarmed."""
+    for used_name, max_name in (("used_bullets", "max_bullets"), ("used_rockets", "max_rockets")):
+        capacity = getattr(player, max_name, None)
+        if _is_count(capacity):
+            _set_attr(player, used_name, capacity)
+    for name in ("shooting", "rocket_shooting"):
+        _set_existing_attr(player, name, False)
+    return _set_attr(player, PLAYER_WEAPONS_DISARMED_ATTR, True)
+
+
+def _dump_ordnance(ground_support_manager: Any) -> int:
+    """Cancel aiming and any pending Eagle rearm, empty every stratagem charge and close the arsenal.
+
+    Returns:
+        Number of stratagem charges dumped.
+    """
+    stop_aiming = getattr(ground_support_manager, "stop_aiming", None)
+    if callable(stop_aiming):
+        stop_aiming()
+    menu = getattr(ground_support_manager, "weapon_menu", None)
+    if menu is None:
+        return 0
+    dumped = 0
+    charges = getattr(menu, "charges", None)
+    if isinstance(charges, dict):
+        dumped = sum(value for value in charges.values() if _is_count(value))
+        for key in list(charges):
+            charges[key] = 0
+    # A rearm already in progress would refill every charge when its timer runs out.
+    _set_existing_attr(menu, "is_rearming", False)
+    _set_existing_attr(menu, "rearm_timer", 0.0)
+    _set_existing_attr(menu, "is_open", False)
+    return dumped
+
+
+def apply_act3b_weapon_disarmament(
+    player: Optional[Any] = None,
+    ground_support_manager: Optional["GroundSupportManager"] = None,
+    story_manager: Optional[StoryManager] = None,
+    mission_controller: Optional[MissionController] = None,
+    comms_hud: Optional["CommsHUD"] = None,
+) -> Act3BDisarmamentOutcome:
+    """Sortie 5B surrender: power down Eagle-1's weapons and dump the bomb racks.
+
+    Duck-typed against Player (used/max bullets and rockets) and GroundSupportManager
+    (stop_aiming(), weapon_menu.charges); every argument may be None. Records
+    story.extra["weapons_disarmed"], keeps loyalty <= THRESHOLD_DISSIDENT_SURRENDER, sets the
+    HUD objective to the scrap yard landing zone and plays Val's broadcast once per attempt.
+    Calling it again with the same StoryManager re-applies the disarmament without repeating
+    the broadcast (already_disarmed=True).
+
+    This only empties the magazines and stratagem charges once. Keeping the ship cold is the
+    game loop's job (#77): it must gate fire input, RELOAD_END / ROCKET_RELOAD_END, Eagle
+    rearm and supply-pod resupply on PLAYER_WEAPONS_DISARMED_ATTR, pacify the Automaton wave
+    and complete the sortie on landing (is_in_scrap_yard_landing_zone()).
+
+    Reversal: neither game.respawn() nor GroundSupportManager.reset() clears the player flag or
+    the persisted story flag, so #77 must call restore_act3b_weapons() on every respawn and on
+    every Sortie 5B (re)start. StoryManager.reset_campaign() also drops the story flag.
+    """
+    story = _as_story(story_manager)
+    already = story is not None and story.extra.get(WEAPONS_DISARMED_EXTRA_KEY) is True
+
+    player_disarmed = _disarm_player(player) if player is not None else False
+    dumped = _dump_ordnance(ground_support_manager) if ground_support_manager is not None else 0
+
+    if story is None:
+        loyalty_after = ACT3B_MAX_LOYALTY
+    else:
+        previous = story.extra.get(ACT3B_ORDNANCE_DUMPED_EXTRA_KEY, 0)
+        story.extra[WEAPONS_DISARMED_EXTRA_KEY] = True
+        story.extra[ACT3B_ORDNANCE_DUMPED_EXTRA_KEY] = (previous if _is_count(previous) else 0) + dumped
+        story.loyalty = _clamp_dissident(story.loyalty)
+        loyalty_after = story.loyalty
+        story.save_campaign_state()
+
+    if isinstance(mission_controller, MissionController):
+        mission_controller.set_active_objective_text(SORTIE5B_SCRAP_YARD_OBJECTIVE)
+
+    if comms_hud is not None and not already:
+        comms_hud.trigger_callout(ACT3B_VAL_SPEAKER, ACT3B_SURRENDER_BROADCAST, portrait=None)
+
+    logger.info(
+        "Act III-B weapons disarmed: player=%s ordnance_dumped=%d already=%s loyalty=%.1f",
+        player_disarmed, dumped, already, loyalty_after,
+    )
+    return Act3BDisarmamentOutcome(
+        player_disarmed=player_disarmed,
+        ordnance_dumped=dumped,
+        already_disarmed=already,
+        loyalty_after=loyalty_after,
+        objective=SORTIE5B_SCRAP_YARD_OBJECTIVE,
+        broadcast=ACT3B_SURRENDER_BROADCAST,
+    )
+
+
+def restore_act3b_weapons(player: Optional[Any] = None, story_manager: Optional[StoryManager] = None) -> bool:
+    """Undo apply_act3b_weapon_disarmament() for the player and the story flags.
+
+    Call on every respawn and Sortie 5B (re)start so a retry replays the broadcast and an
+    Arcade mission never starts disarmed. Stratagem charges are refilled by
+    GroundSupportManager.reset(); the Scene 3B.1 stance is kept (it is campaign history).
+
+    Returns:
+        True if anything was restored.
+    """
+    changed = False
+    if player is not None and getattr(player, PLAYER_WEAPONS_DISARMED_ATTR, False) is True:
+        for name in ("used_bullets", "used_rockets"):
+            _set_existing_attr(player, name, 0)
+        for name in ("reloading", "rocket_reloading"):
+            _set_existing_attr(player, name, False)
+        changed = _set_attr(player, PLAYER_WEAPONS_DISARMED_ATTR, False)
+
+    story = _as_story(story_manager)
+    if story is not None:
+        popped = [story.extra.pop(key, None) for key in (WEAPONS_DISARMED_EXTRA_KEY, ACT3B_ORDNANCE_DUMPED_EXTRA_KEY)]
+        if any(value is not None for value in popped):
+            story.save_campaign_state()
+            changed = True
+    return changed
+
+
+def is_in_scrap_yard_landing_zone(x: Any, y: Any) -> bool:
+    """Return True if the world position lies within the Sortie 5B scrap yard landing zone."""
+    for value in (x, y):
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            return False
+    cx, cy = SORTIE5B_SCRAP_YARD_POS
+    return math.hypot(float(x) - cx, float(y) - cy) <= SORTIE5B_LANDING_RADIUS
+
+
+def resolve_act3b_choice(
+    node_id: str,
+    stance: str,
+    story_manager: Optional[StoryManager],
+    player: Optional[Any] = None,
+    ground_support_manager: Optional["GroundSupportManager"] = None,
+    mission_controller: Optional[MissionController] = None,
+    comms_hud: Optional["CommsHUD"] = None,
+) -> Optional[str]:
+    """Route a recorded Act III-B choice to its effect.
+
+    Every answer on the surrender channel ends in the disarmament: Reiner rejects the loyal
+    answer and denies the neutral one. Call after StoryManager.record_choice(): the resolver
+    re-clamps (and saves) the loyalty that record_choice() may have raised.
+
+    Returns:
+        The HUD objective text that follows the choice, or None if node_id is not an
+        Act III-B node or the stance is invalid.
+    """
+    if isinstance(node_id, bool) or not isinstance(node_id, str):
+        return None
+    clean_id = node_id.strip()
+    if clean_id == ACT3B_CONFRONTATION_NODE_ID:
+        outcome = resolve_act3b_confrontation_choice(stance, story_manager)
+        return SORTIE5B_INITIAL_OBJECTIVE if outcome is not None else None
+    if clean_id == SORTIE5B_SURRENDER_NODE_ID:
+        if _normalize_stance(stance) is None:
+            logger.warning("Ignoring invalid stance %r for Act III-B node '%s'", stance, clean_id)
+            return None
+        return apply_act3b_weapon_disarmament(
+            player, ground_support_manager, story_manager, mission_controller, comms_hud
+        ).objective
+    return None
+
+
+# -----------------------------------------------------------------------------
+# Act III-B cinematic epilogue: The Judgment of Viper Squad
+# -----------------------------------------------------------------------------
+
+ACT3B_ENDING_TITLE: str = "THE PATH OF THE DISSIDENT"
+ACT3B_SEQUENCE_TITLE: str = "ACT III-B: " + ACT3B_ENDING_TITLE
+ACT3B_SORTIES_COMPLETED: int = SORTIE5B_NUM
+ACT3B_PILOT_STATUS: str = "KIA // EXECUTED FOR TREASON"
+ACT3B_GUNSHOT_CUE: str = "gunshot"
+ACT3B_WATCHERS_NARRATION: str = "Dozens of red-eyed Automaton Troopers stand motionless in the fog, watching."
+ACT3B_HELLPOD_NARRATION: str = "Sonic boom. Four black Hellpods slam into the rusted dirt around Eagle-1."
+ACT3B_VAL_RELIEF_LINE: str = "At least... it's over."
+ACT3B_APEX_TRAITOR_LINE: str = "The Helldivers do not leave traitors behind, Lieutenant."
+ACT3B_DOC_LINE: str = "Why did you do it, Val? Why couldn't you just follow orders like the rest of us...?"
+ACT3B_VAL_FINAL_LINE: str = "Because someone had to say no."
+ACT3B_APEX_FINAL_LINE: str = "For Democracy."
+ACT3B_EXECUTION_NOTICE_LINES: Tuple[str, ...] = (
+    "Dissident Element 'Eagle-1' neutralized by Helldiver detachment Viper-1.",
+    "Order has been restored to Sector 7.",
+    "Victory is ours.",
+)
+
+_APEX: str = 'Viper-1 "Apex"'
+_BRAKER: str = 'Viper-2 "Braker"'
+_DOC: str = 'Viper-4 "Doc"'
+
+
+def build_act3b_cinematic_sequence() -> CinematicSequence:
+    """Return the Act III-B cutscene: surrender glide, scrap-plain landing, Hellpod drop and execution."""
+    keyframes = (
+        CinematicKeyframe(
+            keyframe_id="act3b_surrender_glide",
+            duration=9.0,
+            scene_type=CINEMATIC_SCENE_SCRAP_PLAIN,
+            title_caption="SORTIE 5B // THE SURRENDER OF EAGLE-1",
+            camera_start=(0.0, -160.0, 0.8),
+            camera_end=(0.0, -40.0, 1.0),
+            audio_cue="radio_squelch",
+            subtitles=(
+                _sub(0.5, 3.0, ACT3B_VAL_SPEAKER, "This is Eagle-1 to all frequencies. Disarming quad-cannons."),
+                _sub(3.1, 6.2, ACT3B_VAL_SPEAKER, "Dumping bomb racks into the sea. I am terminating my commission with Super Earth. I surrender."),
+                _sub(6.4, 8.4, ACT3B_VAL_SPEAKER, ACT3B_LANDING_LINE),
+            ),
+        ),
+        CinematicKeyframe(
+            keyframe_id="act3b_scrap_plain",
+            duration=8.0,
+            scene_type=CINEMATIC_SCENE_SCRAP_PLAIN,
+            title_caption="THE SCRAP PLAIN",
+            camera_start=(0.0, -40.0, 1.0),
+            camera_end=(0.0, 20.0, 1.2),
+            audio_cue="rearm_crane",
+            subtitles=(
+                _sub(0.6, 4.0, "", ACT3B_WATCHERS_NARRATION, _ECHO_COLOR),
+                _sub(4.6, 7.4, ACT3B_VAL_SPEAKER, ACT3B_VAL_RELIEF_LINE),
+            ),
+        ),
+        CinematicKeyframe(
+            keyframe_id="act3b_hellpod_drop",
+            duration=6.0,
+            scene_type=CINEMATIC_SCENE_HELLPOD_DROP,
+            camera_start=(0.0, 20.0, 1.2),
+            camera_end=(0.0, 40.0, 1.0),
+            fade_in=0.0,
+            audio_cue="explosion",
+            subtitles=(
+                _sub(0.3, 2.8, "", ACT3B_HELLPOD_NARRATION, _ALERT_COLOR),
+                _sub(3.0, 5.6, ACT3B_VAL_SPEAKER, "Apex...? You... you survived the factory raid?"),
+            ),
+        ),
+        CinematicKeyframe(
+            keyframe_id="act3b_viper_confrontation",
+            duration=10.0,
+            scene_type=CINEMATIC_SCENE_SCRAP_YARD_EXECUTION,
+            title_caption="THE JUDGMENT OF VIPER SQUAD",
+            camera_start=(0.0, 0.0, 1.0),
+            camera_end=(0.0, 10.0, 1.2),
+            audio_cue="radio_chatter",
+            subtitles=(
+                _sub(0.5, 3.0, _APEX, ACT3B_APEX_TRAITOR_LINE),
+                _sub(3.2, 6.2, ACT3B_VAL_SPEAKER, "Apex, listen to me! Look at this place! Super Earth sent you down here to die!"),
+                _sub(6.4, 9.4, ACT3B_VAL_SPEAKER, "They don't care about you! They don't care about any of us!"),
+            ),
+        ),
+        CinematicKeyframe(
+            keyframe_id="act3b_braker_doc",
+            duration=10.0,
+            scene_type=CINEMATIC_SCENE_SCRAP_YARD_EXECUTION,
+            camera_start=(0.0, 10.0, 1.2),
+            camera_end=(0.0, 20.0, 1.5),
+            subtitles=(
+                _sub(0.4, 2.6, _BRAKER, "You left us in the mud, Val. You threw away your oath."),
+                _sub(2.7, 4.6, _BRAKER, "You thought the clankers would give you peace?"),
+                _sub(4.8, 7.6, _DOC, ACT3B_DOC_LINE, _ECHO_COLOR),
+                _sub(7.8, 9.6, ACT3B_VAL_SPEAKER, ACT3B_VAL_FINAL_LINE),
+            ),
+        ),
+        CinematicKeyframe(
+            keyframe_id="act3b_for_democracy",
+            duration=3.0,
+            scene_type=CINEMATIC_SCENE_SCRAP_YARD_EXECUTION,
+            title_caption="BRAKER'S HEAVY REVOLVER",
+            camera_start=(0.0, 20.0, 1.5),
+            camera_end=(0.0, 20.0, 1.9),
+            fade_out=0.0,
+            audio_cue="stop_music",
+            subtitles=(
+                _sub(0.6, 2.8, _APEX, ACT3B_APEX_FINAL_LINE),
+            ),
+        ),
+        CinematicKeyframe(
+            keyframe_id="act3b_gunshot_cut",
+            duration=2.5,
+            scene_type=CINEMATIC_SCENE_EPILOGUE_CARD,
+            fade_in=0.0,
+            fade_out=0.0,
+            audio_cue=ACT3B_GUNSHOT_CUE,
+        ),
+        CinematicKeyframe(
+            keyframe_id="act3b_ministry_notice",
+            duration=9.0,
+            scene_type=CINEMATIC_SCENE_EPILOGUE_CARD,
+            title_caption="MINISTRY OF DEFENSE // OFFICIAL NOTICE",
+            fade_in=1.0,
+            fade_out=1.0,
+            subtitles=(
+                _sub(1.0, 3.6, "", ACT3B_EXECUTION_NOTICE_LINES[0]),
+                _sub(3.7, 5.9, "", ACT3B_EXECUTION_NOTICE_LINES[1]),
+                _sub(6.0, 8.0, "", ACT3B_EXECUTION_NOTICE_LINES[2]),
+            ),
+        ),
+    )
+    return CinematicSequence(
+        sequence_id=ACT3B_SEQUENCE_ID,
+        ending_branch=BRANCH_DISSIDENT_SURRENDER,
+        title=ACT3B_SEQUENCE_TITLE,
+        keyframes=keyframes,
+        epilogue_lines=ACT3B_EXECUTION_NOTICE_LINES,
+    )
+
+
+def build_act3b_epilogue_stats(story_manager: Optional[StoryManager]) -> EpilogueSummaryStats:
+    """Return the Act III-B epilogue statistics with the Ministry of Defense execution notice.
+
+    Without a StoryManager the canonical dissident path is assumed: loyalty 0.0, no casualties.
+    """
+    story = story_manager if isinstance(story_manager, StoryManager) else None
+    return EpilogueSummaryStats(
+        ending_branch=BRANCH_DISSIDENT_SURRENDER,
+        ending_title=ACT3B_ENDING_TITLE,
+        final_loyalty=_clamp_dissident(story.loyalty) if story is not None else MIN_LOYALTY,
+        total_casualties=story.total_casualties if story is not None else 0,
+        sorties_completed=ACT3B_SORTIES_COMPLETED,
+        pilot_status=ACT3B_PILOT_STATUS,
+        epilogue_lines=ACT3B_EXECUTION_NOTICE_LINES,
     )
