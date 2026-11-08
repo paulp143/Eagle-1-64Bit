@@ -21,7 +21,9 @@ from typing import TYPE_CHECKING, Any, Optional, Tuple
 from eagle1.story.cinematic_player import (
     CINEMATIC_SCENE_EPILOGUE_CARD,
     CINEMATIC_SCENE_HANGAR_CLONES,
+    CINEMATIC_SCENE_FLIR_SENSOR_FEED,
     CINEMATIC_SCENE_HELLPOD_DROP,
+    CINEMATIC_SCENE_OBSERVATION_DECK_FUNERAL,
     CINEMATIC_SCENE_SCRAP_PLAIN,
     CINEMATIC_SCENE_SCRAP_YARD_EXECUTION,
     CINEMATIC_SCENE_SUICIDE_DIVE,
@@ -45,6 +47,7 @@ from eagle1.story.narrative_trigger_manager import (
     SortieEventTrigger,
 )
 from eagle1.story.story_manager import (
+    BRANCH_COLD_PROTOCOL,
     BRANCH_DISSIDENT_SURRENDER,
     BRANCH_OBEDIENCE_PURGE,
     DEFAULT_LOYALTY,
@@ -1433,3 +1436,166 @@ def resolve_act3c_choice(
             story_manager, ground_support_manager, mission_controller, comms_hud
         ).objective
     return None
+
+
+# -----------------------------------------------------------------------------
+# Act III-C cinematic epilogue: The Funeral of Viper Squad
+# -----------------------------------------------------------------------------
+
+ACT3C_ENDING_TITLE: str = "THE PATH OF COLD PROTOCOL"
+ACT3C_SEQUENCE_TITLE: str = "ACT III-C: " + ACT3C_ENDING_TITLE
+ACT3C_ADDITIONAL_SORTIES: int = 32
+ACT3C_SORTIES_COMPLETED: int = SORTIE5C_NUM + ACT3C_ADDITIONAL_SORTIES
+ACT3C_PILOT_STATUS: str = "ACTIVE DUTY // CITATION OF PROCEDURAL EXCELLENCE"
+ACT3C_HYMN_CUE: str = "ceremony_fanfare"
+ACT3C_FLIR_NARRATION: str = (
+    "Red machine signatures converge over the four blue beacons. One by one, the pings flicker... and turn black."
+)
+ACT3C_STATIC_NARRATION: str = "Static fills the cockpit speakers."
+ACT3C_COFFINS_NARRATION: str = (
+    "Four polished silver coffins, each draped in the flag of Super Earth. All four are empty."
+)
+ACT3C_HYMN_NARRATION: str = "The Hymn of the Fallen Citizen plays over the observation deck speakers."
+ACT3C_REINER_EULOGY_LINES: Tuple[str, ...] = (
+    "Citizens of the Fleet! Today we commemorate the glorious, statistically optimal sacrifice of Viper Detachment.",
+    "They held the line with unwavering democratic obedience, allowing our valuable airframes to withdraw fully intact.",
+)
+ACT3C_CITATION_LINE: str = "The Federation hereby awards Flight Lieutenant Val the Citation of Procedural Excellence."
+ACT3C_ORTIZ_NARRATION: str = (
+    "Chief Ortiz does not clap. He looks at the silver ribbon on Val's chest, then into her eyes, "
+    "with quiet, devastating pity."
+)
+ACT3C_ORTIZ_EXIT_NARRATION: str = "He shakes his head once and walks away."
+ACT3C_REINER_WHISPER_LINE: str = "You did the right thing, Lieutenant. A disciplined pilot is an investment."
+ACT3C_NEXT_SORTIE_LINE: str = "Your next sortie departs at 0700."
+ACT3C_VAL_FINAL_LINE: str = "I followed the rules. I just... followed the rules..."
+ACT3C_ARCHIVE_EPILOGUE_LINES: Tuple[str, ...] = (
+    "Sector 7 was declared pacified.",
+    "The names of Viper Squad were entered into the archives of the Ministry of Defense.",
+    "Flight Lieutenant Val completed thirty-two additional sorties.",
+    "She never spoke of Viper Squad again.",
+)
+_REINER: str = "Officer Reiner"
+
+
+def build_act3c_cinematic_sequence() -> CinematicSequence:
+    """Return the Act III-C cutscene: FLIR beacon loss on the RTB climb and the Funeral of Viper Squad."""
+    keyframes = (
+        CinematicKeyframe(
+            keyframe_id="act3c_rtb_climb",
+            duration=11.0,
+            scene_type=CINEMATIC_SCENE_FLIR_SENSOR_FEED,
+            title_caption="SORTIE 5C // DOWNWARD SENSOR FEED",
+            fade_in=0.5,
+            fade_out=0.5,
+            audio_cue="radio_chatter",
+            subtitles=(
+                _sub(0.5, 3.4, _DOC, ACT3C_DOC_FINAL_LINE, _ECHO_COLOR),
+                _sub(3.6, 6.4, _BRAKER, ACT3C_BRAKER_FINAL_LINE, _ECHO_COLOR),
+                _sub(6.6, 10.4, "", ACT3C_FLIR_NARRATION, _ALERT_COLOR),
+            ),
+        ),
+        CinematicKeyframe(
+            keyframe_id="act3c_static_log",
+            duration=6.0,
+            scene_type=CINEMATIC_SCENE_EPILOGUE_CARD,
+            fade_in=0.0,
+            fade_out=1.0,
+            audio_cue="radio_squelch",
+            subtitles=(
+                _sub(0.3, 2.2, "", ACT3C_STATIC_NARRATION, _ECHO_COLOR),
+                _sub(2.4, 4.9, ACT3C_VAL_SPEAKER, ACT3C_VAL_LOG_LINE),
+            ),
+        ),
+        CinematicKeyframe(
+            keyframe_id="act3c_funeral_hymn",
+            duration=9.0,
+            scene_type=CINEMATIC_SCENE_OBSERVATION_DECK_FUNERAL,
+            title_caption="THE FUNERAL OF VIPER SQUAD",
+            camera_start=(0.0, -60.0, 0.9),
+            camera_end=(0.0, 40.0, 1.0),
+            fade_in=1.0,
+            fade_out=0.5,
+            audio_cue=ACT3C_HYMN_CUE,
+            subtitles=(
+                _sub(1.0, 4.6, "", ACT3C_COFFINS_NARRATION, _ECHO_COLOR),
+                _sub(4.8, 8.4, "", ACT3C_HYMN_NARRATION, _ECHO_COLOR),
+            ),
+        ),
+        CinematicKeyframe(
+            keyframe_id="act3c_reiner_eulogy",
+            duration=12.0,
+            scene_type=CINEMATIC_SCENE_OBSERVATION_DECK_FUNERAL,
+            title_caption="CITATION OF PROCEDURAL EXCELLENCE",
+            camera_start=(0.0, 40.0, 1.0),
+            camera_end=(0.0, 80.0, 1.2),
+            subtitles=(
+                _sub(0.4, 3.8, _REINER, ACT3C_REINER_EULOGY_LINES[0]),
+                _sub(4.0, 7.6, _REINER, ACT3C_REINER_EULOGY_LINES[1]),
+                _sub(7.8, 11.4, _REINER, ACT3C_CITATION_LINE),
+            ),
+        ),
+        CinematicKeyframe(
+            keyframe_id="act3c_ortiz_pity",
+            duration=11.0,
+            scene_type=CINEMATIC_SCENE_OBSERVATION_DECK_FUNERAL,
+            camera_start=(120.0, 80.0, 1.2),
+            camera_end=(0.0, 100.0, 1.4),
+            subtitles=(
+                _sub(0.4, 3.8, "", ACT3C_ORTIZ_NARRATION, _ECHO_COLOR),
+                _sub(4.0, 5.6, "", ACT3C_ORTIZ_EXIT_NARRATION, _ECHO_COLOR),
+                _sub(5.8, 8.4, _REINER, ACT3C_REINER_WHISPER_LINE),
+                _sub(8.6, 10.4, _REINER, ACT3C_NEXT_SORTIE_LINE),
+            ),
+        ),
+        CinematicKeyframe(
+            keyframe_id="act3c_alone_before_coffins",
+            duration=9.0,
+            scene_type=CINEMATIC_SCENE_OBSERVATION_DECK_FUNERAL,
+            camera_start=(0.0, 120.0, 1.4),
+            camera_end=(0.0, 0.0, 0.6),
+            fade_in=0.5,
+            fade_out=2.0,
+            audio_cue="stop_music",
+            subtitles=(_sub(0.6, 5.0, ACT3C_VAL_SPEAKER, ACT3C_VAL_FINAL_LINE),),
+        ),
+        CinematicKeyframe(
+            keyframe_id="act3c_archive_notice",
+            duration=11.0,
+            scene_type=CINEMATIC_SCENE_EPILOGUE_CARD,
+            title_caption="MINISTRY OF DEFENSE // ARCHIVE ENTRY",
+            fade_in=1.0,
+            fade_out=1.0,
+            subtitles=(
+                _sub(1.0, 3.2, "", ACT3C_ARCHIVE_EPILOGUE_LINES[0]),
+                _sub(3.3, 5.6, "", ACT3C_ARCHIVE_EPILOGUE_LINES[1]),
+                _sub(5.7, 8.0, "", ACT3C_ARCHIVE_EPILOGUE_LINES[2]),
+                _sub(8.1, 10.0, "", ACT3C_ARCHIVE_EPILOGUE_LINES[3]),
+            ),
+        ),
+    )
+    return CinematicSequence(
+        sequence_id=ACT3C_SEQUENCE_ID,
+        ending_branch=BRANCH_COLD_PROTOCOL,
+        title=ACT3C_SEQUENCE_TITLE,
+        keyframes=keyframes,
+        epilogue_lines=ACT3C_ARCHIVE_EPILOGUE_LINES,
+    )
+
+
+def build_act3c_epilogue_stats(story_manager: Optional[StoryManager]) -> EpilogueSummaryStats:
+    """Return the Act III-C epilogue statistics with the Ministry of Defense archive entry.
+
+    Without a StoryManager the canonical path is assumed: loyalty DEFAULT_LOYALTY and the
+    four lost Viper Squad members as casualties.
+    """
+    story = story_manager if isinstance(story_manager, StoryManager) else None
+    return EpilogueSummaryStats(
+        ending_branch=BRANCH_COLD_PROTOCOL,
+        ending_title=ACT3C_ENDING_TITLE,
+        final_loyalty=_clamp_protocol(story.loyalty) if story is not None else DEFAULT_LOYALTY,
+        total_casualties=story.total_casualties if story is not None else VIPER_SQUAD_SIZE,
+        sorties_completed=ACT3C_SORTIES_COMPLETED,
+        pilot_status=ACT3C_PILOT_STATUS,
+        epilogue_lines=ACT3C_ARCHIVE_EPILOGUE_LINES,
+    )

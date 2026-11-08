@@ -1710,3 +1710,164 @@ def test_act3c_funeral_draws_silver_coffins_flags_and_ribbon():
 
 def test_act3c_keyframe_progress_idle_is_zero():
     assert CinematicPlayer(1280, 720)._keyframe_progress() == 0.0
+
+
+# -----------------------------------------------------------------------------
+# Act III-C: The Funeral of Viper Squad cinematic and epilogue (#76)
+# -----------------------------------------------------------------------------
+
+from eagle1.story.campaign_act3 import (  # noqa: E402
+    ACT3C_ARCHIVE_EPILOGUE_LINES,
+    ACT3C_HYMN_CUE,
+    ACT3C_PILOT_STATUS as ACT3C_PILOT_STATUS_EXPORTED,
+    ACT3C_VAL_FINAL_LINE,
+    build_act3c_cinematic_sequence,
+    build_act3c_epilogue_stats,
+)
+from eagle1.story.cinematic_player import (  # noqa: E402
+    CINEMATIC_SCENE_OBSERVATION_DECK_FUNERAL,
+    wrap_cinematic_text,
+)
+
+ACT3C_SCENE_ORDER = [
+    CINEMATIC_SCENE_FLIR_SENSOR_FEED,
+    CINEMATIC_SCENE_EPILOGUE_CARD,
+    CINEMATIC_SCENE_OBSERVATION_DECK_FUNERAL,
+    CINEMATIC_SCENE_OBSERVATION_DECK_FUNERAL,
+    CINEMATIC_SCENE_OBSERVATION_DECK_FUNERAL,
+    CINEMATIC_SCENE_OBSERVATION_DECK_FUNERAL,
+    CINEMATIC_SCENE_EPILOGUE_CARD,
+]
+
+
+def test_act3c_cinematic_sequence_is_valid():
+    sequence = build_act3c_cinematic_sequence()
+    assert validate_cinematic_sequence(sequence) is True
+    assert sequence.sequence_id == ACT3C_SEQUENCE_ID == SORTIE_5C_CONFIG.debrief_node_id
+    assert sequence.ending_branch == BRANCH_COLD_PROTOCOL
+    assert sequence.epilogue_lines == ACT3C_ARCHIVE_EPILOGUE_LINES
+
+
+def test_act3c_cinematic_story_order():
+    keyframes = build_act3c_cinematic_sequence().keyframes
+    assert [kf.keyframe_id for kf in keyframes] == [
+        "act3c_rtb_climb",
+        "act3c_static_log",
+        "act3c_funeral_hymn",
+        "act3c_reiner_eulogy",
+        "act3c_ortiz_pity",
+        "act3c_alone_before_coffins",
+        "act3c_archive_notice",
+    ]
+    assert [kf.scene_type for kf in keyframes] == ACT3C_SCENE_ORDER
+
+
+def test_act3c_cinematic_contains_canonical_beats():
+    text = _all_subtitle_text(build_act3c_cinematic_sequence())
+    for expected in (
+        "why are you flying away",
+        "Close your eyes",
+        "turn black",
+        "Flight logs confirmed. Return to base completed within standard fuel parameters.",
+        "Four polished silver coffins",
+        "All four are empty.",
+        "Hymn of the Fallen Citizen",
+        "statistically optimal sacrifice of Viper Detachment",
+        "Citation of Procedural Excellence",
+        "Chief Ortiz does not clap.",
+        "devastating pity",
+        "Your next sortie departs at 0700.",
+        "I followed the rules. I just... followed the rules...",
+        *ACT3C_ARCHIVE_EPILOGUE_LINES,
+    ):
+        assert expected in text
+    assert ACT3C_ARCHIVE_EPILOGUE_LINES[2] == "Flight Lieutenant Val completed thirty-two additional sorties."
+
+
+def test_act3c_val_final_line_is_last_spoken_before_archive():
+    keyframe = next(kf for kf in build_act3c_cinematic_sequence().keyframes if kf.keyframe_id == "act3c_alone_before_coffins")
+    assert len(keyframe.subtitles) == 1
+    assert keyframe.subtitles[0].speaker == "Val"
+    assert keyframe.subtitles[0].text == ACT3C_VAL_FINAL_LINE
+    assert keyframe.camera_end[2] < keyframe.camera_start[2]
+
+
+def test_act3c_cinematic_audio_cues_have_assets():
+    sfx_dir = PROJECT_ROOT / "audio" / "sfx"
+    cues = [kf.audio_cue for kf in build_act3c_cinematic_sequence().keyframes if kf.audio_cue]
+    assert ACT3C_HYMN_CUE in cues
+    for cue in cues:
+        if cue != "stop_music":
+            assert (sfx_dir / f"{cue}.wav").is_file(), cue
+
+
+def test_act3c_subtitles_fit_two_lines():
+    player = CinematicPlayer(1280, 720)
+    if player.font_subtitle is None:
+        pytest.skip("fonts unavailable")
+    for kf in build_act3c_cinematic_sequence().keyframes:
+        for sub in kf.subtitles:
+            lines = wrap_cinematic_text(sub.text, 1040, lambda s: player.font_subtitle.size(s)[0])
+            assert len(lines) <= 2, sub.text
+
+
+def test_act3c_cinematic_plays_through_player_to_epilogue(protocol_story):
+    resolve_act3c_protocol_abort(protocol_story)
+    sequence = build_act3c_cinematic_sequence()
+    player = CinematicPlayer(1280, 720)
+    received = []
+    player.on_audio_cue = received.append
+    player.start_sequence(sequence, build_act3c_epilogue_stats(protocol_story))
+    canvas = pygame.Surface((1280, 720))
+    seen_subtitles = set()
+
+    total = sum(kf.duration for kf in sequence.keyframes)
+    for _ in range(int(total * 60) + 30):
+        player.update(1.0 / 60.0)
+        player.draw(canvas)
+        seen_subtitles.update(sub.text for sub in player.get_active_subtitles())
+        if player.is_epilogue:
+            break
+
+    assert player.is_epilogue
+    assert player.skipped is False
+    assert received == [kf.audio_cue.strip() for kf in sequence.keyframes if kf.audio_cue]
+    assert seen_subtitles == {sub.text for kf in sequence.keyframes for sub in kf.subtitles}
+    assert player.get_epilogue_lines() == ACT3C_ARCHIVE_EPILOGUE_LINES
+
+
+def test_act3c_epilogue_stats_after_abort(protocol_story):
+    protocol_story.total_casualties = 3
+    protocol_story.loyalty = 40.0
+    resolve_act3c_protocol_abort(protocol_story, None)
+    stats = build_act3c_epilogue_stats(protocol_story)
+    assert stats.ending_branch == BRANCH_COLD_PROTOCOL
+    assert stats.ending_title == "THE PATH OF COLD PROTOCOL"
+    assert stats.pilot_status == ACT3C_PILOT_STATUS_EXPORTED == "ACTIVE DUTY // CITATION OF PROCEDURAL EXCELLENCE"
+    assert stats.final_loyalty == 40.0
+    assert stats.total_casualties == 7
+    assert stats.sorties_completed == 37
+    assert stats.epilogue_lines == ACT3C_ARCHIVE_EPILOGUE_LINES
+
+
+def test_act3c_epilogue_stats_without_story_manager():
+    stats = build_act3c_epilogue_stats(None)
+    assert stats.final_loyalty == 70.0
+    assert stats.total_casualties == 4
+    assert stats.pilot_status == "ACTIVE DUTY // CITATION OF PROCEDURAL EXCELLENCE"
+
+
+@pytest.mark.parametrize("loyalty, expected", [(5.0, 16.0), (95.0, 89.0), (float("nan"), 70.0)])
+def test_act3c_epilogue_stats_clamp_loyalty(protocol_story, loyalty, expected):
+    protocol_story.loyalty = loyalty
+    assert build_act3c_epilogue_stats(protocol_story).final_loyalty == expected
+
+
+@pytest.mark.parametrize("scene_type", [CINEMATIC_SCENE_FLIR_SENSOR_FEED, CINEMATIC_SCENE_OBSERVATION_DECK_FUNERAL])
+def test_act3c_scene_renderers_draw_something(scene_type):
+    player = CinematicPlayer(1280, 720)
+    canvas = pygame.Surface((1280, 720))
+    canvas.fill((0, 0, 0))
+    keyframe = next(kf for kf in build_act3c_cinematic_sequence().keyframes if kf.scene_type == scene_type)
+    player._draw_scene(canvas, keyframe)
+    assert canvas.get_at((640, 360))[:3] != (0, 0, 0)
