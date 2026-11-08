@@ -2,6 +2,7 @@
 
 from types import SimpleNamespace
 
+import pygame
 import pytest
 
 from eagle1.story.campaign_act3 import (
@@ -41,7 +42,9 @@ from eagle1.story.campaign_act3 import (
     SORTIE5C_ABORT_NODE_ID,
 )
 from eagle1.story.campaign_save import CampaignSaveManager
+from eagle1.story import SuperDestroyerView
 from eagle1.story.campaign_session import CampaignSortieSession, build_campaign_mission_config
+from eagle1.story.mission_controller import CAMPAIGN_SORTIE_REGISTRY
 from eagle1.story.cinematic_player import CinematicPlayer, validate_cinematic_sequence
 from eagle1.story.dialogue_db import get_dialogue_node
 from eagle1.story.narrative_trigger_manager import NarrativeTriggerManager
@@ -447,3 +450,72 @@ def test_get_act3_hub_briefing(tmp_path):
     assert session.get_act3_hub_briefing() == (SORTIE_5C_CONFIG, "npc_vance")
     story.extra["act2_completed"] = False
     assert session.get_act3_hub_briefing() == (None, None)
+
+
+# ---------------------------------------------------------------- Task 4: hub briefing and launch gate
+
+def _hub(tmp_path, branch):
+    story = make_finale_story(tmp_path, branch)
+    return SuperDestroyerView(story_manager=story), story
+
+
+def test_hub_briefing_card_shows_act3_sortie(tmp_path):
+    view, _ = _hub(tmp_path, BRANCH_COLD_PROTOCOL)
+    view.set_act3_briefing(SORTIE_5C_CONFIG, "npc_vance")
+    briefing = view.get_current_sortie_briefing()
+    assert briefing["title"] == SORTIE_5C_CONFIG.title
+    assert briefing["mission_id"] == "base_defense"
+
+
+@pytest.mark.parametrize("branch", ALL_BRANCHES)
+def test_hub_briefing_npc_returns_branch_node(tmp_path, branch):
+    view, _ = _hub(tmp_path, branch)
+    cfg = ACT3_SORTIE_CONFIGS[branch]
+    npc = ACT3_BRIEFING_NPC_IDS[branch]
+    view.set_act3_briefing(cfg, npc)
+    assert view.resolve_npc_dialogue(npc).node_id == cfg.briefing_node_id
+
+
+def test_hub_other_bridge_npc_keeps_its_node(tmp_path):
+    view, _ = _hub(tmp_path, BRANCH_COLD_PROTOCOL)
+    view.set_act3_briefing(SORTIE_5C_CONFIG, "npc_vance")
+    assert view.resolve_npc_dialogue("npc_reiner").node_id == "bridge_reiner_scrutiny"
+
+
+def test_launch_opens_briefing_until_choice_recorded(tmp_path):
+    view, story = _hub(tmp_path, BRANCH_COLD_PROTOCOL)
+    view.set_act3_briefing(SORTIE_5C_CONFIG, "npc_vance")
+    first = view.trigger_catapult_launch()
+    assert first["action"] == "interact_npc"
+    assert first["briefing_required"] is True
+    assert view.launch_initiated is False
+    assert view._dialogue_open is True
+    assert view.select_dialogue_stance("neutral") is not None
+    view.close_dialogue()
+    second = view.trigger_catapult_launch()
+    assert second["action"] == "launch_sortie"
+    assert second["mission_id"] == "base_defense"
+    assert story.dialogue_history[-1]["node"] == SORTIE_5C_CONFIG.briefing_node_id
+
+
+def test_set_act3_briefing_none_restores_default(tmp_path):
+    view, _ = _hub(tmp_path, BRANCH_COLD_PROTOCOL)
+    view.set_act3_briefing(SORTIE_5C_CONFIG, "npc_vance")
+    view.set_act3_briefing(None, None)
+    assert view.get_current_sortie_briefing()["title"] == CAMPAIGN_SORTIE_REGISTRY[4].title
+    assert view.resolve_npc_dialogue("npc_reiner").node_id == "bridge_reiner_scrutiny"
+
+
+@pytest.mark.parametrize("config, npc", [("cfg", "npc_vance"), (SORTIE_5C_CONFIG, ""), (SORTIE_5C_CONFIG, None)])
+def test_set_act3_briefing_rejects_bad_types(tmp_path, config, npc):
+    view, _ = _hub(tmp_path, BRANCH_COLD_PROTOCOL)
+    with pytest.raises(TypeError):
+        view.set_act3_briefing(config, npc)
+
+
+def test_hub_draw_with_act3_briefing_smoke(tmp_path):
+    view, _ = _hub(tmp_path, BRANCH_COLD_PROTOCOL)
+    view.set_act3_briefing(SORTIE_5C_CONFIG, "npc_vance")
+    surface = pygame.Surface((1280, 720))
+    view.draw(surface, (0, 0))
+    view.draw(surface, (0, 0))

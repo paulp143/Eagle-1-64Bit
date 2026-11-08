@@ -19,6 +19,7 @@ from eagle1.paths import get_base_dir, verify_path_exact_casing
 from eagle1.ui import theme, widgets
 from eagle1.ui.layout import VerticalStackLayout, validate_rects_no_overlap
 from eagle1.story.dialogue_data import get_debrief_dialogue_node
+from eagle1.story.mission_controller import CampaignSortieConfig
 from eagle1.story.dialogue_db import (
     SHIP_NPC_PROFILES,
     DialogueNode,
@@ -153,6 +154,8 @@ class SuperDestroyerView:
         self.hovered_launch: bool = False
         self.npc_focus_index: int = 0
         self.launch_initiated: bool = False
+        self.act3_sortie_config: Optional[CampaignSortieConfig] = None
+        self.act3_briefing_npc_id: Optional[str] = None
         self._portrait_cache: Dict[Tuple[str, str, Tuple[int, int]], pygame.Surface] = {}
         self._modal_text_cache: Dict[str, Any] = {}
         self._modal_prompt_lines: List[str] = []
@@ -873,6 +876,9 @@ class SuperDestroyerView:
         if profile is None:
             return None
 
+        if self.act3_sortie_config is not None and profile.npc_id == self.act3_briefing_npc_id:
+            return get_dialogue_node(self.act3_sortie_config.briefing_node_id)
+
         act, sortie = self._get_current_sortie_key()
 
         # Bridge Personnel
@@ -917,11 +923,15 @@ class SuperDestroyerView:
 
     def get_current_sortie_mission_id(self) -> str:
         """Return the campaign mission ID corresponding to the current sortie."""
+        if self.act3_sortie_config is not None:
+            return self.act3_sortie_config.mission_mode
         _act, sortie = self._get_current_sortie_key()
         return SORTIE_MISSION_MAP.get(sortie, "outpost_demolition")
 
     def get_current_sortie_briefing(self) -> Dict[str, str]:
         """Return tactical briefing metadata dictionary for the next sortie."""
+        if self.act3_sortie_config is not None:
+            return self.act3_sortie_config.to_briefing_dict()
         _act, sortie = self._get_current_sortie_key()
         briefing = dict(SORTIE_BRIEFING_METADATA.get(sortie, SORTIE_BRIEFING_METADATA[3]))
         briefing["mission_id"] = self.get_current_sortie_mission_id()
@@ -986,10 +996,40 @@ class SuperDestroyerView:
             "ortiz_commentary": ortiz_commentary,
         }
 
+    def set_act3_briefing(self, config: Optional[CampaignSortieConfig], npc_id: Optional[str]) -> None:
+        """Show an Act III sortie briefing in the hub; None restores the default sortie briefing."""
+        if config is None:
+            self.act3_sortie_config = None
+            self.act3_briefing_npc_id = None
+            return
+        if not isinstance(config, CampaignSortieConfig):
+            raise TypeError("config must be a CampaignSortieConfig or None")
+        if not isinstance(npc_id, str) or not npc_id.strip():
+            raise TypeError("npc_id must be a non-empty string")
+        self.act3_sortie_config = config
+        self.act3_briefing_npc_id = npc_id.strip().lower()
+
+    def is_act3_briefing_pending(self) -> bool:
+        """True while the Act III briefing node has not been answered yet."""
+        config = self.act3_sortie_config
+        if config is None:
+            return False
+        history = getattr(self.story_manager, "dialogue_history", [])
+        return not any(isinstance(entry, dict) and entry.get("node") == config.briefing_node_id for entry in history)
+
     def trigger_catapult_launch(self) -> Optional[Dict[str, Any]]:
         """Trigger catapult launch if no modal is active and emit structured action payload."""
         if self._dialogue_open:
             return None
+
+        if self.is_act3_briefing_pending():
+            node = self.open_npc_dialogue(self.act3_briefing_npc_id)
+            return {
+                "action": "interact_npc",
+                "npc_id": self.act3_briefing_npc_id,
+                "node": node,
+                "briefing_required": True,
+            }
 
         self.launch_initiated = True
         self._play_ui_sound("ui_click")
@@ -1660,7 +1700,7 @@ class SuperDestroyerView:
         pygame.draw.lines(surface, theme.INFO, False, [(brect.x, brect.y + bcw), (brect.x, brect.y), (brect.x + bcw, brect.y)], 1)
         pygame.draw.lines(surface, theme.INFO, False, [(brect.right - bcw, brect.y), (brect.right - 1, brect.y), (brect.right - 1, brect.y + bcw)], 1)
 
-        brief_key = self._get_current_sortie_key()
+        brief_key = (self._get_current_sortie_key(), self.act3_sortie_config.sortie_id if self.act3_sortie_config else None)
         cached_brief = self._cached_dynamic_surfaces.get("hangar_briefing")
         if cached_brief and cached_brief[0] == brief_key:
             b_hdr_surf, b_title_surf, b_mode_surf, b_threat_surf, b_obj_surfs = cached_brief[1]
