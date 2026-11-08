@@ -1634,3 +1634,79 @@ def test_resolve_act3c_choice_routes_nodes(protocol_story):
 def test_resolve_act3c_choice_rejects_invalid_input(protocol_story, node_id, stance):
     assert resolve_act3c_choice(node_id, stance, protocol_story) is None
     assert PROTOCOL_84C_EXTRA_KEY not in protocol_story.extra
+
+
+# -----------------------------------------------------------------------------
+# Act III-C: FLIR sensor feed and observation deck funeral renderers (#76)
+# -----------------------------------------------------------------------------
+
+from eagle1.story.cinematic_player import (  # noqa: E402
+    CINEMATIC_SCENE_FLIR_SENSOR_FEED,
+    VALID_CINEMATIC_SCENE_TYPES,
+    CinematicKeyframe,
+    CinematicSequence,
+)
+
+
+def _single_scene_player(scene_type, duration=10.0):
+    sequence = CinematicSequence(
+        sequence_id="act3c_scene_probe",
+        ending_branch=BRANCH_COLD_PROTOCOL,
+        title="probe",
+        keyframes=(
+            CinematicKeyframe(
+                keyframe_id="probe", duration=duration, scene_type=scene_type, fade_in=0.0, fade_out=0.0
+            ),
+        ),
+        epilogue_lines=(),
+    )
+    player = CinematicPlayer(1280, 720)
+    player.start_sequence(sequence, build_act3b_epilogue_stats(None))
+    return player
+
+
+def test_act3c_flir_scene_type_registered():
+    assert CINEMATIC_SCENE_FLIR_SENSOR_FEED == "flir_sensor_feed"
+    assert CINEMATIC_SCENE_FLIR_SENSOR_FEED in VALID_CINEMATIC_SCENE_TYPES
+
+
+def test_act3c_flir_beacons_turn_black_one_by_one():
+    player = _single_scene_player(CINEMATIC_SCENE_FLIR_SENSOR_FEED)
+    canvas = pygame.Surface((1280, 720))
+    beacons = [(640 + bx, 360 + by) for bx, by in ((-90, 40), (-30, 60), (30, 60), (90, 40))]
+    blue, black = (60, 140, 255), (0, 0, 0)
+
+    player.update(0.0)
+    player._draw_scene(canvas, player.current_keyframe)
+    assert [canvas.get_at(p)[:3] for p in beacons] == [blue] * 4
+
+    player.update(5.0)  # t = 0.5
+    player._draw_scene(canvas, player.current_keyframe)
+    assert [canvas.get_at(p)[:3] for p in beacons] == [black, black, blue, blue]
+
+    player.update(4.0)  # t = 0.9
+    player._draw_scene(canvas, player.current_keyframe)
+    assert [canvas.get_at(p)[:3] for p in beacons] == [black] * 4
+
+
+def test_act3c_flir_scene_background_is_thermal_green():
+    player = _single_scene_player(CINEMATIC_SCENE_FLIR_SENSOR_FEED)
+    canvas = pygame.Surface((1280, 720))
+    player.update(0.0)
+    player._draw_scene(canvas, player.current_keyframe)
+    assert canvas.get_at((680, 380))[:3] == (10, 22, 16)
+
+
+def test_act3c_funeral_draws_silver_coffins_flags_and_ribbon():
+    player = CinematicPlayer(1280, 720)
+    canvas = pygame.Surface((1280, 720))
+    canvas.fill((0, 0, 0))
+    player._draw_scene_observation_deck_funeral(canvas)
+    for x in (-270, -90, 90, 270):
+        assert canvas.get_at((640 + x - 55, 360 + 220))[:3] == (178, 184, 196)
+        assert canvas.get_at((640 + x, 360 + 194))[:3] == (28, 58, 140)
+    assert canvas.get_at((635, 486))[:3] == (214, 218, 228)
+
+
+def test_act3c_keyframe_progress_idle_is_zero():
+    assert CinematicPlayer(1280, 720)._keyframe_progress() == 0.0
