@@ -1,0 +1,1 @@
+# Keep data/ directory tracked in git so it exists on fresh checkouts.

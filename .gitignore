@@ -72,6 +72,7 @@ instance/
 docs/
 
 # User Data & Save Files (Profiles, Campaign Saves, Settings & Highscores)
+!data/.gitkeep
 data/campaign_save.json
 data/player_profile.json
 data/audio_settings.json
