@@ -124,6 +124,14 @@ ACT3A_BANTER_CATEGORIES = (
     "act3a_s5_reiner_commendation",
 )
 ACT3B_NODE_IDS = ("act3b_ready_room_confrontation", "sortie_5b_surrender_broadcast")
+ACT3C_NODE_IDS = ("act3c_timetable_briefing", "sortie_5c_protocol_abort")
+ACT3C_BANTER_CATEGORIES = (
+    "act3c_s5_pelican_touchdown",
+    "act3c_s5_pelican_hull",
+    "act3c_s5_doc_plea",
+    "act3c_s5_apex_plea",
+    "act3c_s5_vance_override",
+)
 
 
 # -----------------------------------------------------------------------------
@@ -1222,3 +1230,63 @@ def test_act3b_review_symbols_exported():
                  "SORTIE5B_SCRAP_YARD_POS", "is_in_scrap_yard_landing_zone"):
         assert name in story_pkg.__all__
         assert hasattr(story_pkg, name)
+
+
+# -----------------------------------------------------------------------------
+# Act III-C: dialogue nodes and banter (#76)
+# -----------------------------------------------------------------------------
+
+
+def test_act3c_dialogue_nodes_pass_validation():
+    for node_id in ACT3C_NODE_IDS:
+        assert node_id in DIALOGUE_DATABASE
+    assert validate_dialogue_database({k: DIALOGUE_DATABASE[k] for k in ACT3C_NODE_IDS}) is True
+    assert validate_dialogue_database(DIALOGUE_DATABASE) is True
+
+
+def test_act3c_nodes_are_act3_sortie5():
+    ids = {node.node_id for node in get_nodes_for_act_and_sortie(3, 5)}
+    assert set(ACT3C_NODE_IDS) <= ids
+    for node_id in ACT3C_NODE_IDS:
+        node = get_dialogue_node(node_id)
+        assert node.act == 3
+        assert node.sortie == 5
+
+
+def test_act3c_briefing_establishes_timetable():
+    node = get_dialogue_node("act3c_timetable_briefing")
+    for phrase in ("45 seconds", "Outpost Epsilon", "Fleet Regulation 84-C"):
+        assert phrase in node.prompt
+    assert node.options["neutral"].label == (
+        "[2. NEUTRAL] Understood, Commander. Adhering strictly to flight schedule."
+    )
+    assert "Discipline is survival, Lieutenant." in node.options["loyal"].response
+
+
+def test_act3c_abort_node_is_vance_override_at_zero():
+    node = get_dialogue_node("sortie_5c_protocol_abort")
+    assert "preserve the airframes!" in node.prompt
+    assert "00:00" in node.prompt
+    assert "Obeying abort directive. RTB to orbit." in node.options["neutral"].label
+    assert "why are you flying away" in node.options["neutral"].response
+
+
+def test_act3c_texts_fit_comms_and_modal_limits():
+    for node_id in ACT3C_NODE_IDS:
+        node = get_dialogue_node(node_id)
+        assert len(node.prompt) <= 300
+        for option in node.options.values():
+            assert len(option.label) <= 110
+            assert len(option.response) <= 126
+
+
+def test_act3c_banter_categories_exist():
+    for category in ACT3C_BANTER_CATEGORIES:
+        lines = BANTER_QUEUES[category]
+        assert len(lines) == 1
+        assert lines[0].category == category
+    assert "We're fifty meters out!" in BANTER_QUEUES["act3c_s5_doc_plea"][0].text
+    assert "Give us ten seconds!" in BANTER_QUEUES["act3c_s5_apex_plea"][0].text
+    assert "Hull integrity at 40%!" in BANTER_QUEUES["act3c_s5_pelican_hull"][0].text
+    assert "Fleet Regulation 84-C: preserve the airframes!" in BANTER_QUEUES["act3c_s5_vance_override"][0].text
+    assert validate_viper_dialogue_data() is True
