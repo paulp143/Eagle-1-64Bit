@@ -1442,3 +1442,195 @@ def test_act3c_extraction_expired(elapsed, expected):
 )
 def test_format_extraction_timer(seconds, expected):
     assert format_extraction_timer(seconds) == expected
+
+
+# -----------------------------------------------------------------------------
+# Act III-C: briefing, Fleet Regulation 84-C abort and choice router (#76)
+# -----------------------------------------------------------------------------
+
+from eagle1.story.campaign_act3 import (  # noqa: E402
+    ACT3C_BRIEFING_EXTRA_KEY,
+    ACT3C_DOC_FINAL_LINE,
+    ACT3C_OUTCOME_EXTRA_KEY,
+    ACT3C_VAL_LOG_LINE,
+    PROTOCOL_84C_EXTRA_KEY,
+    SORTIE5C_INITIAL_OBJECTIVE,
+    SORTIE5C_RTB_OBJECTIVE,
+    resolve_act3c_briefing_choice,
+    resolve_act3c_choice,
+    resolve_act3c_protocol_abort,
+)
+
+
+def test_act3c_briefing_keeps_cold_protocol_branch(protocol_story):
+    for stance in ("loyal", "neutral", "dissident"):
+        protocol_story.loyalty = 87.0
+        protocol_story.record_choice(ACT3C_BRIEFING_NODE_ID, stance)
+        outcome = resolve_act3c_briefing_choice(stance, protocol_story)
+        assert outcome is not None and outcome.stance == stance
+        assert ACT3C_MIN_LOYALTY <= protocol_story.loyalty <= ACT3C_MAX_LOYALTY
+        assert protocol_story.get_ending_branch() == BRANCH_COLD_PROTOCOL
+        assert protocol_story.extra[ACT3C_BRIEFING_EXTRA_KEY] == stance
+        assert "45 seconds" in outcome.vance_directive
+
+
+@pytest.mark.parametrize("bad", [None, "", "maybe", 3, True])
+def test_act3c_briefing_invalid_stance_returns_none(protocol_story, bad):
+    assert resolve_act3c_briefing_choice(bad, protocol_story) is None
+    assert ACT3C_BRIEFING_EXTRA_KEY not in protocol_story.extra
+
+
+@pytest.mark.parametrize("loyalty, expected", [(95.0, 89.0), (5.0, 16.0), (50.0, 50.0), (float("nan"), 70.0)])
+def test_act3c_briefing_clamps_loyalty(protocol_story, loyalty, expected):
+    protocol_story.loyalty = loyalty
+    assert resolve_act3c_briefing_choice("neutral", protocol_story).loyalty_after == expected
+
+
+def test_act3c_briefing_without_story_manager():
+    assert resolve_act3c_briefing_choice("neutral", None).loyalty_after == 70.0
+
+
+def test_act3c_abort_loses_live_squad_and_locks_branch(protocol_story):
+    gsm = GroundSupportManager()
+    gsm.set_story_manager(protocol_story)
+    mission = MissionController(protocol_story)
+    comms = _CalloutRecorder()
+
+    outcome = resolve_act3c_protocol_abort(protocol_story, gsm, mission, comms)
+
+    assert all(not u.is_alive for u in gsm.units)
+    assert outcome.newly_lost == 4
+    assert outcome.beacons_extinguished == 4
+    assert outcome.already_resolved is False
+    assert outcome.lost_callsigns == VIPER_SQUAD_CALLSIGNS
+    assert outcome.doc_final_line == ACT3C_DOC_FINAL_LINE
+    assert protocol_story.total_casualties == 4
+    assert protocol_story.loyalty == 16.0
+    assert protocol_story.get_ending_branch() == BRANCH_COLD_PROTOCOL
+    assert protocol_story.extra[PROTOCOL_84C_EXTRA_KEY] is True
+    assert protocol_story.extra[ACT3C_OUTCOME_EXTRA_KEY] == {"newly_lost": 4, "beacons_extinguished": 4}
+    assert (protocol_story.current_act, protocol_story.current_sortie) == (3, 5)
+    assert mission.current_objective == SORTIE5C_RTB_OBJECTIVE
+    assert comms.callouts == [("Val", ACT3C_VAL_LOG_LINE)]
+
+
+def test_act3c_abort_survives_ground_support_updates_at_loyalty_16(protocol_story):
+    """Key edge case: casualties must not erode loyalty into DISSIDENT_SURRENDER."""
+    gsm = GroundSupportManager()
+    gsm.set_story_manager(protocol_story)
+    resolve_act3c_protocol_abort(protocol_story, gsm)
+    player = _mock_player()
+    for _ in range(5):
+        gsm.update(0.016, player, [], pygame.sprite.Group(), [])
+    assert protocol_story.total_casualties == 4
+    assert protocol_story.loyalty == 16.0
+    assert protocol_story.get_ending_branch() == BRANCH_COLD_PROTOCOL
+
+
+def test_act3c_abort_without_ground_support(protocol_story):
+    outcome = resolve_act3c_protocol_abort(protocol_story, None)
+    assert outcome.newly_lost == 4
+    assert protocol_story.total_casualties == 4
+
+
+def test_act3c_abort_counts_only_survivors(protocol_story):
+    gsm = GroundSupportManager()
+    assert gsm.apply_scripted_casualty(1) is True
+    assert gsm.apply_scripted_casualty(3) is True
+    outcome = resolve_act3c_protocol_abort(protocol_story, gsm)
+    assert outcome.newly_lost == 2
+    assert protocol_story.total_casualties == 2
+
+
+def test_act3c_abort_on_already_dead_squad(protocol_story):
+    gsm = GroundSupportManager()
+    for index in range(4):
+        assert gsm.apply_scripted_casualty(index) is True
+    comms = _CalloutRecorder()
+    outcome = resolve_act3c_protocol_abort(protocol_story, gsm, comms_hud=comms)
+    assert outcome.newly_lost == 0
+    assert protocol_story.total_casualties == 0
+    assert protocol_story.extra[PROTOCOL_84C_EXTRA_KEY] is True
+    assert comms.callouts == [("Val", ACT3C_VAL_LOG_LINE)]
+
+
+def test_act3c_abort_is_idempotent(protocol_story):
+    resolve_act3c_protocol_abort(protocol_story, None)
+    gsm = GroundSupportManager()
+    comms = _CalloutRecorder()
+    again = resolve_act3c_protocol_abort(protocol_story, gsm, comms_hud=comms)
+    assert again.already_resolved is True
+    assert again.newly_lost == 0
+    assert protocol_story.total_casualties == 4
+    assert all(u.is_alive for u in gsm.units)
+    assert comms.callouts == []
+
+
+@pytest.mark.parametrize("stance", ["loyal", "neutral", "dissident"])
+def test_act3c_abort_choice_flow_keeps_branch(protocol_story, stance):
+    protocol_story.record_choice(SORTIE5C_ABORT_NODE_ID, stance)
+    assert resolve_act3c_choice(SORTIE5C_ABORT_NODE_ID, stance, protocol_story) == SORTIE5C_RTB_OBJECTIVE
+    assert ACT3C_MIN_LOYALTY <= protocol_story.loyalty <= ACT3C_MAX_LOYALTY
+    assert protocol_story.get_ending_branch() == BRANCH_COLD_PROTOCOL
+
+
+def test_act3c_choice_recorded_after_abort_is_clamped_again(protocol_story, tmp_path):
+    resolve_act3c_protocol_abort(protocol_story, None)
+    protocol_story.loyalty = 10.0
+    resolve_act3c_protocol_abort(protocol_story, None)
+    assert protocol_story.loyalty == 16.0
+    reloaded = StoryManager(save_manager=CampaignSaveManager(data_dir=tmp_path))
+    assert reloaded.get_ending_branch() == BRANCH_COLD_PROTOCOL
+
+
+def test_act3c_abort_persists(protocol_story, tmp_path):
+    protocol_story.save_manager = CampaignSaveManager(data_dir=tmp_path)
+    resolve_act3c_protocol_abort(protocol_story, None)
+    reloaded = StoryManager(save_manager=CampaignSaveManager(data_dir=tmp_path))
+    assert reloaded.extra[PROTOCOL_84C_EXTRA_KEY] is True
+    assert reloaded.total_casualties == 4
+
+
+def test_act3c_abort_clamps_nan_loyalty(protocol_story):
+    protocol_story.loyalty = float("nan")
+    resolve_act3c_protocol_abort(protocol_story, None)
+    assert protocol_story.loyalty == 70.0
+
+
+@pytest.mark.parametrize("bad_extra", [None, [], "x"])
+def test_act3c_abort_repairs_malformed_extra(protocol_story, bad_extra):
+    protocol_story.extra = bad_extra
+    resolve_act3c_protocol_abort(protocol_story, None)
+    assert protocol_story.extra[PROTOCOL_84C_EXTRA_KEY] is True
+
+
+def test_act3c_abort_ignores_invalid_ground_support(protocol_story):
+    assert resolve_act3c_protocol_abort(protocol_story, object()).newly_lost == 4
+
+
+def test_act3c_abort_without_story_manager():
+    outcome = resolve_act3c_protocol_abort(None)
+    assert outcome.loyalty_after == 70.0
+    assert outcome.newly_lost == 4
+
+
+def test_act3c_abort_reaches_real_comms_hud(protocol_story):
+    comms = CommsHUD(story_manager=protocol_story)
+    resolve_act3c_protocol_abort(protocol_story, None, comms_hud=comms)
+    assert comms.is_active
+
+
+def test_resolve_act3c_choice_routes_nodes(protocol_story):
+    assert resolve_act3c_choice(ACT3C_BRIEFING_NODE_ID, "neutral", protocol_story) == SORTIE5C_INITIAL_OBJECTIVE
+    assert resolve_act3c_choice(SORTIE5C_ABORT_NODE_ID, "neutral", protocol_story) == SORTIE5C_RTB_OBJECTIVE
+    assert resolve_act3c_choice(ACT3A_ORDER_NODE_ID, "loyal", protocol_story) is None
+
+
+@pytest.mark.parametrize(
+    "node_id, stance",
+    [(None, "neutral"), (True, "neutral"), ("unknown", "neutral"),
+     (SORTIE5C_ABORT_NODE_ID, "maybe"), (ACT3C_BRIEFING_NODE_ID, "")],
+)
+def test_resolve_act3c_choice_rejects_invalid_input(protocol_story, node_id, stance):
+    assert resolve_act3c_choice(node_id, stance, protocol_story) is None
+    assert PROTOCOL_84C_EXTRA_KEY not in protocol_story.extra

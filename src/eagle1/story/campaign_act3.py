@@ -47,6 +47,7 @@ from eagle1.story.narrative_trigger_manager import (
 from eagle1.story.story_manager import (
     BRANCH_DISSIDENT_SURRENDER,
     BRANCH_OBEDIENCE_PURGE,
+    DEFAULT_LOYALTY,
     MAX_LOYALTY,
     MIN_LOYALTY,
     THRESHOLD_DISSIDENT_SURRENDER,
@@ -1257,3 +1258,178 @@ def format_extraction_timer(seconds: Any) -> str:
     if whole > 99 * 60 + 59:
         return SORTIE5C_TIMER_MAX_TEXT
     return f"{whole // 60:02d}:{whole % 60:02d}"
+
+
+ACT3C_VAL_SPEAKER: str = "Val"
+ACT3C_VANCE_DIRECTIVE: str = (
+    "Pelican-1 will hold the deck for exactly 45 seconds. No loitering. "
+    "No deviations from the timeline. Fleet regulations are non-negotiable."
+)
+ACT3C_DOC_FINAL_LINE: str = "Val... you're flying away... why are you flying away...?"
+ACT3C_BRAKER_FINAL_LINE: str = "Don't look at them, Doc. Just close your eyes. Close your eyes..."
+ACT3C_VAL_LOG_LINE: str = "Flight logs confirmed. Return to base completed within standard fuel parameters."
+
+
+@dataclass(frozen=True)
+class Act3CBriefingOutcome:
+    """Result of the pilot's answer to the Scene 3C.1 timetable briefing."""
+
+    stance: str
+    loyalty_after: float
+    vance_directive: str
+
+
+@dataclass(frozen=True)
+class Act3CProtocolAbortOutcome:
+    """Result of the Fleet Regulation 84-C abort at 00:00 over Outpost Epsilon."""
+
+    lost_callsigns: Tuple[str, ...]
+    newly_lost: int
+    beacons_extinguished: int
+    already_resolved: bool
+    loyalty_after: float
+    doc_final_line: str
+    val_log_line: str
+    objective: str
+
+
+def _clamp_protocol(value: Any) -> float:
+    """Clamp loyalty into [ACT3C_MIN_LOYALTY, ACT3C_MAX_LOYALTY]; bools, NaN, inf and garbage become DEFAULT_LOYALTY."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return DEFAULT_LOYALTY
+    return min(ACT3C_MAX_LOYALTY, max(ACT3C_MIN_LOYALTY, float(value)))
+
+
+def resolve_act3c_briefing_choice(stance: str, story_manager: Optional[StoryManager]) -> Optional[Act3CBriefingOutcome]:
+    """Apply the outcome of Scene 3C.1 after StoryManager.record_choice().
+
+    Vance's timetable stands whatever Val answers; loyalty is clamped back into the
+    Cold Protocol band so the briefing choice cannot flip the ending branch.
+
+    Returns:
+        The outcome, or None if stance is invalid.
+    """
+    canonical = _normalize_stance(stance)
+    if canonical is None:
+        logger.warning("Ignoring invalid stance %r for Act III-C node '%s'", stance, ACT3C_BRIEFING_NODE_ID)
+        return None
+
+    story = _as_story(story_manager)
+    if story is None:
+        loyalty_after = DEFAULT_LOYALTY
+    else:
+        story.loyalty = _clamp_protocol(story.loyalty)
+        loyalty_after = story.loyalty
+        story.extra[ACT3C_BRIEFING_EXTRA_KEY] = canonical
+        story.save_campaign_state()
+
+    logger.info("Act III-C briefing resolved: stance=%s loyalty=%.1f", canonical, loyalty_after)
+    return Act3CBriefingOutcome(stance=canonical, loyalty_after=loyalty_after, vance_directive=ACT3C_VANCE_DIRECTIVE)
+
+
+def resolve_act3c_protocol_abort(
+    story_manager: Optional[StoryManager],
+    ground_support_manager: Optional["GroundSupportManager"] = None,
+    mission_controller: Optional[MissionController] = None,
+    comms_hud: Optional["CommsHUD"] = None,
+) -> Act3CProtocolAbortOutcome:
+    """Enforce Fleet Regulation 84-C at 00:00: Eagle-1 climbs to orbit and Viper Squad is lost.
+
+    Every Helldiver still alive is downed via GroundSupportManager.apply_scripted_casualty()
+    and the automatic squad-wipe report is suppressed. Without a ground support manager all
+    four are assumed alive. Casualties go straight into StoryManager.total_casualties (not
+    on_helldiver_death()/on_squad_wipe(), whose loyalty erosion would push 16.0 into
+    DISSIDENT_SURRENDER); loyalty is clamped into [16.0, 89.0] so the COLD_PROTOCOL branch
+    is locked, and story.extra["protocol_84c_enforced"] is set. A second call only
+    re-applies the clamp (already_resolved=True). The sortie is not advanced: the Funeral
+    of Viper Squad cinematic follows (wired in #77).
+    """
+    story = _as_story(story_manager)
+    gsm = _as_ground_support(ground_support_manager)
+
+    if story is not None and story.extra.get(PROTOCOL_84C_EXTRA_KEY) is True:
+        logger.info("Act III-C protocol abort already resolved; ignoring repeat call")
+        clamped = _clamp_protocol(story.loyalty)
+        if clamped != story.loyalty:
+            story.loyalty = clamped
+            story.save_campaign_state()
+        return Act3CProtocolAbortOutcome(
+            lost_callsigns=VIPER_SQUAD_CALLSIGNS,
+            newly_lost=0,
+            beacons_extinguished=VIPER_SQUAD_SIZE,
+            already_resolved=True,
+            loyalty_after=story.loyalty,
+            doc_final_line=ACT3C_DOC_FINAL_LINE,
+            val_log_line=ACT3C_VAL_LOG_LINE,
+            objective=SORTIE5C_RTB_OBJECTIVE,
+        )
+
+    if gsm is None:
+        newly_lost = VIPER_SQUAD_SIZE
+    else:
+        newly_lost = sum(1 for index in VIPER_SQUAD_INDICES if gsm.apply_scripted_casualty(index))
+        # Scripted squad wipe; on_squad_wipe() (-8.0) would push loyalty at 16.0 into DISSIDENT_SURRENDER.
+        mark_wipe = getattr(gsm, "mark_squad_wipe_reported", None)
+        if callable(mark_wipe):
+            mark_wipe()
+
+    if story is None:
+        loyalty_after = DEFAULT_LOYALTY
+    else:
+        story.total_casualties += newly_lost
+        story.loyalty = _clamp_protocol(story.loyalty)
+        loyalty_after = story.loyalty
+        story.extra[PROTOCOL_84C_EXTRA_KEY] = True
+        story.extra[ACT3C_OUTCOME_EXTRA_KEY] = {"newly_lost": newly_lost, "beacons_extinguished": VIPER_SQUAD_SIZE}
+        story.save_campaign_state()
+
+    if isinstance(mission_controller, MissionController):
+        mission_controller.set_active_objective_text(SORTIE5C_RTB_OBJECTIVE)
+
+    if comms_hud is not None:
+        comms_hud.trigger_callout(ACT3C_VAL_SPEAKER, ACT3C_VAL_LOG_LINE, portrait=None)
+
+    logger.info("Act III-C protocol abort resolved: newly_lost=%d loyalty=%.1f", newly_lost, loyalty_after)
+    return Act3CProtocolAbortOutcome(
+        lost_callsigns=VIPER_SQUAD_CALLSIGNS,
+        newly_lost=newly_lost,
+        beacons_extinguished=VIPER_SQUAD_SIZE,
+        already_resolved=False,
+        loyalty_after=loyalty_after,
+        doc_final_line=ACT3C_DOC_FINAL_LINE,
+        val_log_line=ACT3C_VAL_LOG_LINE,
+        objective=SORTIE5C_RTB_OBJECTIVE,
+    )
+
+
+def resolve_act3c_choice(
+    node_id: str,
+    stance: str,
+    story_manager: Optional[StoryManager],
+    ground_support_manager: Optional["GroundSupportManager"] = None,
+    mission_controller: Optional[MissionController] = None,
+    comms_hud: Optional["CommsHUD"] = None,
+) -> Optional[str]:
+    """Route a recorded Act III-C choice to its effect.
+
+    Every answer at 00:00 ends in the abort: Command slaves the autopilot to the RTB vector.
+    Call after StoryManager.record_choice().
+
+    Returns:
+        The HUD objective text that follows the choice, or None if node_id is not an
+        Act III-C node or the stance is invalid.
+    """
+    if isinstance(node_id, bool) or not isinstance(node_id, str):
+        return None
+    clean_id = node_id.strip()
+    if clean_id == ACT3C_BRIEFING_NODE_ID:
+        outcome = resolve_act3c_briefing_choice(stance, story_manager)
+        return SORTIE5C_INITIAL_OBJECTIVE if outcome is not None else None
+    if clean_id == SORTIE5C_ABORT_NODE_ID:
+        if _normalize_stance(stance) is None:
+            logger.warning("Ignoring invalid stance %r for Act III-C node '%s'", stance, clean_id)
+            return None
+        return resolve_act3c_protocol_abort(
+            story_manager, ground_support_manager, mission_controller, comms_hud
+        ).objective
+    return None
