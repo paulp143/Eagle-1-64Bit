@@ -5,6 +5,9 @@ purge, Scene 3A.2 hangar clone interlude, Sortie 6A terminal dive cinematic and 
 
 Act III-B "The Path of the Dissident" (#75): Scene 3B.1 ready-room confrontation, Sortie 5B
 weapon disarmament and surrender, and the Judgment of Viper Squad execution cinematic.
+
+Act III-C "The Path of Cold Protocol" (#76): Scene 3C.1 timetable briefing, Sortie 5C extraction
+countdown and Fleet Regulation 84-C abort, and the Funeral of Viper Squad cinematic.
 """
 
 import math
@@ -1871,3 +1874,41 @@ def test_act3c_scene_renderers_draw_something(scene_type):
     keyframe = next(kf for kf in build_act3c_cinematic_sequence().keyframes if kf.scene_type == scene_type)
     player._draw_scene(canvas, keyframe)
     assert canvas.get_at((640, 360))[:3] != (0, 0, 0)
+
+
+# -----------------------------------------------------------------------------
+# Act III-C: package exports (#76)
+# -----------------------------------------------------------------------------
+
+
+def test_act3c_symbols_exported_from_story_package():
+    import eagle1.story as story_pkg
+
+    expected = {
+        "ACT3C_ARCHIVE_EPILOGUE_LINES",
+        "ACT3C_BRIEFING_NODE_ID",
+        "ACT3C_PILOT_STATUS",
+        "ACT3C_SEQUENCE_ID",
+        "ACT3C_TRIGGERS",
+        "Act3CBriefingOutcome",
+        "Act3CProtocolAbortOutcome",
+        "PROTOCOL_84C_EXTRA_KEY",
+        "SORTIE5C_ABORT_NODE_ID",
+        "SORTIE5C_EXTRACTION_DEADLINE_SECONDS",
+        "SORTIE5C_EXTRACTION_WINDOW_SECONDS",
+        "SORTIE_5C_CONFIG",
+        "CINEMATIC_SCENE_FLIR_SENSOR_FEED",
+        "build_act3c_cinematic_sequence",
+        "build_act3c_epilogue_stats",
+        "format_extraction_timer",
+        "get_act3c_extraction_timer_seconds",
+        "is_act3c_extraction_expired",
+        "register_act3c_triggers",
+        "resolve_act3c_briefing_choice",
+        "resolve_act3c_choice",
+        "resolve_act3c_protocol_abort",
+    }
+    assert expected <= set(story_pkg.__all__)
+    for name in expected:
+        assert hasattr(story_pkg, name), name
+    assert story_pkg.resolve_act3c_protocol_abort is resolve_act3c_protocol_abort

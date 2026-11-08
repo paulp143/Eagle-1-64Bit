@@ -8,9 +8,14 @@ Act III-B "The Path of the Dissident" (DISSIDENT_SURRENDER, docs/story.md Sectio
 Scene 3B.1 ready-room confrontation, Sortie 5B weapon disarmament and surrender broadcast,
 and the Judgment of Viper Squad execution cinematic in the Automaton scrap yard.
 
-Both endings are tragedies without an exit: whatever the pilot answers, the resolvers keep
-loyalty at zealot level (>= THRESHOLD_OBEDIENCE_PURGE) or dissident level
-(<= THRESHOLD_DISSIDENT_SURRENDER) so the branch can never flip.
+Act III-C "The Path of Cold Protocol" (COLD_PROTOCOL, docs/story.md Section 8):
+Scene 3C.1 timetable briefing, the Sortie 5C 45-second extraction countdown, the Fleet
+Regulation 84-C abort at 00:00 with the FLIR beacon loss, and the Funeral of Viper Squad.
+
+All three endings are tragedies without an exit: whatever the pilot answers, the resolvers keep
+loyalty at zealot level (>= THRESHOLD_OBEDIENCE_PURGE), dissident level
+(<= THRESHOLD_DISSIDENT_SURRENDER) or inside the Cold Protocol band ([16.0, 89.0]) so the
+branch can never flip.
 """
 
 from dataclasses import dataclass
