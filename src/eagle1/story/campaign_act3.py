@@ -1127,9 +1127,9 @@ SORTIE5C_TOUCHDOWN_SECONDS: float = 3.0
 SORTIE5C_EXTRACTION_WINDOW_SECONDS: float = 45.0
 SORTIE5C_EXTRACTION_DEADLINE_SECONDS: float = SORTIE5C_TOUCHDOWN_SECONDS + SORTIE5C_EXTRACTION_WINDOW_SECONDS
 # Radio beats in the final seconds, as remaining-window seconds before 00:00.
-SORTIE5C_HULL_REMAINING: float = 8.0
-SORTIE5C_DOC_REMAINING: float = 6.0
-SORTIE5C_APEX_REMAINING: float = 4.0
+SORTIE5C_HULL_REMAINING: float = 5.0
+SORTIE5C_DOC_REMAINING: float = 4.0
+SORTIE5C_APEX_REMAINING: float = 3.0
 SORTIE5C_VANCE_REMAINING: float = 2.0
 SORTIE5C_TIMER_MAX_TEXT: str = "99:59"
 
@@ -1376,6 +1376,11 @@ def resolve_act3c_protocol_abort(
         newly_lost = VIPER_SQUAD_SIZE
     else:
         newly_lost = sum(1 for index in VIPER_SQUAD_INDICES if gsm.apply_scripted_casualty(index))
+        # A Helldiver that fell after the last update() is lost too; without this mark the next
+        # update() would report it via on_helldiver_death() (-3.5) and flip the branch at 16.0.
+        mark_fallen = getattr(gsm, "mark_casualties_reported", None)
+        if callable(mark_fallen):
+            newly_lost += mark_fallen(VIPER_SQUAD_INDICES)
         # Scripted squad wipe; on_squad_wipe() (-8.0) would push loyalty at 16.0 into DISSIDENT_SURRENDER.
         mark_wipe = getattr(gsm, "mark_squad_wipe_reported", None)
         if callable(mark_wipe):

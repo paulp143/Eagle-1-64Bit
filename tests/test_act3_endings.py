@@ -1806,8 +1806,7 @@ def test_act3c_cinematic_audio_cues_have_assets():
 
 def test_act3c_subtitles_fit_two_lines():
     player = CinematicPlayer(1280, 720)
-    if player.font_subtitle is None:
-        pytest.skip("fonts unavailable")
+    assert player.font_subtitle is not None, "bundled subtitle font must load"
     for kf in build_act3c_cinematic_sequence().keyframes:
         for sub in kf.subtitles:
             lines = wrap_cinematic_text(sub.text, 1040, lambda s: player.font_subtitle.size(s)[0])
@@ -1912,3 +1911,85 @@ def test_act3c_symbols_exported_from_story_package():
     for name in expected:
         assert hasattr(story_pkg, name), name
     assert story_pkg.resolve_act3c_protocol_abort is resolve_act3c_protocol_abort
+
+
+# -----------------------------------------------------------------------------
+# Act III-C: ship-review follow-ups (#76)
+# -----------------------------------------------------------------------------
+
+
+def test_act3c_abort_counts_dead_but_unreported_unit_and_blocks_later_erosion(protocol_story):
+    """A Helldiver that died after the last update() must not erode loyalty after the abort."""
+    gsm = GroundSupportManager()
+    gsm.set_story_manager(protocol_story)
+    gsm.units[0].health = 0.0  # dead, but not yet reported to the StoryManager by update()
+    assert 0 not in gsm._downed_unit_ids
+
+    outcome = resolve_act3c_protocol_abort(protocol_story, gsm)
+
+    assert outcome.newly_lost == 4
+    assert protocol_story.total_casualties == 4
+    for _ in range(5):
+        gsm.update(0.016, _mock_player(), [], pygame.sprite.Group(), [])
+    assert protocol_story.total_casualties == 4
+    assert protocol_story.loyalty == 16.0
+    assert protocol_story.get_ending_branch() == BRANCH_COLD_PROTOCOL
+
+
+def test_act3c_abort_does_not_count_extracted_unit_as_casualty(protocol_story):
+    gsm = GroundSupportManager()
+    gsm.units[0].state = "EXTRACTED"
+    outcome = resolve_act3c_protocol_abort(protocol_story, gsm)
+    assert outcome.newly_lost == 3
+
+
+def test_act3c_triggers_fire_once_each_in_story_order_over_time(protocol_story):
+    manager = NarrativeTriggerManager(protocol_story)
+    register_act3c_triggers(manager)
+    manager.reset_for_sortie(5)
+    order = []
+    elapsed = 0.0
+    while elapsed <= SORTIE5C_EXTRACTION_DEADLINE_SECONDS:
+        order.extend(manager.evaluate(CombatTelemetrySnapshot(elapsed_seconds=elapsed)))
+        elapsed += 0.5
+    assert order == [trigger.trigger_id for trigger in ACT3C_TRIGGERS]
+
+
+def test_act3c_flir_signatures_converge_toward_the_beacons():
+    player = _single_scene_player(CINEMATIC_SCENE_FLIR_SENSOR_FEED)
+    canvas = pygame.Surface((1280, 720))
+    red = (255, 50, 40)
+
+    player.update(0.0)
+    player._draw_scene(canvas, player.current_keyframe)
+    assert canvas.get_at((640 + 420, 360 + 50))[:3] == red  # outer ring at t = 0
+    assert canvas.get_at((640 + 60, 360 + 50))[:3] != red
+
+    player.update(9.99)
+    player._draw_scene(canvas, player.current_keyframe)
+    assert canvas.get_at((640 + 60, 360 + 50))[:3] == red  # inner ring at t ~ 1
+    assert canvas.get_at((640 + 420, 360 + 50))[:3] != red
+
+
+def test_act3c_funeral_draws_flag_stripes_honor_guard_and_ortiz():
+    player = CinematicPlayer(1280, 720)
+    canvas = pygame.Surface((1280, 720))
+    canvas.fill((0, 0, 0))
+    player._draw_scene_observation_deck_funeral(canvas)
+    for x in (-270, -90, 90, 270):
+        assert canvas.get_at((640 + x, 360 + 200))[:3] == (255, 215, 0)
+    for x in (-440, 440):
+        assert canvas.get_at((640 + x, 360 + 140))[:3] == (22, 22, 28)
+    assert canvas.get_at((640 + 330, 360 + 140))[:3] == (96, 74, 52)
+    # Exactly four coffins: nothing is drawn in the gap between the two middle ones.
+    assert canvas.get_at((640, 360 + 205))[:3] == (8, 10, 20)
+
+
+def test_mark_casualties_reported_only_marks_fallen_units():
+    gsm = GroundSupportManager()
+    gsm.units[0].health = 0.0
+    gsm.units[1].state = "DOWNED"
+    assert gsm.mark_casualties_reported([0, 1, 2, True, "x", None]) == 2
+    assert {0, 1} <= gsm._downed_unit_ids
+    assert 2 not in gsm._downed_unit_ids
+    assert gsm.mark_casualties_reported([0, 1]) == 0
