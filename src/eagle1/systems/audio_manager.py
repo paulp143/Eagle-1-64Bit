@@ -8,6 +8,7 @@ mute toggle, and settings persistence.
 
 import os
 import json
+import math
 import time
 import pygame
 
@@ -95,6 +96,9 @@ SOUND_MIN_INTERVALS = {
     "radio_beep": 60,
     "gunshot": 500,
 }
+
+
+DEFAULT_CINEMATIC_FADE_MS = 400  # fade used when a cutscene starts or ends
 
 
 class AudioManager:
@@ -498,6 +502,25 @@ class AudioManager:
             self.current_music = None
         except Exception:
             pass
+
+    def stop_cinematic_audio(self, fade_ms=DEFAULT_CINEMATIC_FADE_MS):
+        """Stop the engine loop and fade out every SFX channel and the music stream (cutscene enter/exit)."""
+        if not self.enabled:
+            return
+        if isinstance(fade_ms, bool) or not isinstance(fade_ms, (int, float)) or not math.isfinite(fade_ms):
+            fade = DEFAULT_CINEMATIC_FADE_MS
+        else:
+            fade = max(0, int(fade_ms))
+        self.stop_engine_sound()
+        try:
+            if pygame.mixer.get_init():
+                if fade > 0:
+                    pygame.mixer.fadeout(fade)
+                else:
+                    pygame.mixer.stop()
+        except pygame.error as e:
+            print(f"[AudioManager] Warning: Could not stop cinematic audio: {e}")
+        self.stop_music(fade_ms=fade)
 
     def pause_music(self):
         if not self.enabled or self.music_paused:

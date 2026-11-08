@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 CINEMATIC_LETTERBOX_HEIGHT: int = 72
 CINEMATIC_EPILOGUE_CONFIRM_DELAY: float = 0.4
+CINEMATIC_SKIP_AUDIO_FADE_MS: int = 250  # fade for the mixer when a skip ends the timeline early
 CINEMATIC_ACTION_RETURN_MAIN_MENU: str = "return_main_menu"
 
 CINEMATIC_PHASE_IDLE: str = "idle"
@@ -532,6 +533,19 @@ class CinematicPlayer:
         if self.phase == CINEMATIC_PHASE_PLAYING:
             self.skipped = True
             self._enter_epilogue()
+            self._stop_cue_audio()
+
+    def _stop_cue_audio(self) -> None:
+        """Silence cue audio still playing when a skip cuts the timeline short (duck-typed audio)."""
+        if self.audio is None:
+            return
+        stop = getattr(self.audio, "stop_cinematic_audio", None)
+        if not callable(stop):
+            return
+        try:
+            stop(fade_ms=CINEMATIC_SKIP_AUDIO_FADE_MS)
+        except (pygame.error, TypeError, ValueError, AttributeError, OSError) as exc:
+            logger.warning("Cinematic audio stop failed: %s", exc)
 
     def reset(self) -> None:
         """Return to IDLE and clear timeline and per-sequence caches (fonts and surfaces are kept)."""
