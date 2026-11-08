@@ -34,8 +34,15 @@ from eagle1.story.campaign_act3 import (
     register_act3_triggers_for_branch,
     resolve_act3_choice,
 )
+from eagle1.story.campaign_act3 import (
+    ACT3_OUTRO_SECONDS,
+    SORTIE5B_LANDING_MIN_DELAY_SECONDS,
+    SORTIE5B_SURRENDER_NODE_ID,
+    SORTIE5C_ABORT_NODE_ID,
+)
 from eagle1.story.campaign_save import CampaignSaveManager
-from eagle1.story.cinematic_player import validate_cinematic_sequence
+from eagle1.story.campaign_session import CampaignSortieSession, build_campaign_mission_config
+from eagle1.story.cinematic_player import CinematicPlayer, validate_cinematic_sequence
 from eagle1.story.dialogue_db import get_dialogue_node
 from eagle1.story.narrative_trigger_manager import NarrativeTriggerManager
 from eagle1.story.story_manager import (
@@ -201,3 +208,242 @@ def test_sortie_config_lookup():
     assert get_act3_sortie_config("BOGUS") is None
     assert SORTIE5A_TRENCH_NODE_ID in SORTIE_5A_CONFIG.inflight_node_ids
     assert ACT3B_CONFRONTATION_NODE_ID == SORTIE_5B_CONFIG.briefing_node_id
+
+
+# ---------------------------------------------------------------- Task 2: flight in CampaignSortieSession
+
+FRAME_DT = 1.0 / 60.0
+MAX_FRAMES = 6000
+BASE_CONFIGS = {
+    "air_superiority": {"id": "air_superiority", "has_ground": False, "has_base": False, "max_waves": 5},
+    "base_defense": {"id": "base_defense", "has_ground": False, "has_base": True, "has_bombers": True, "max_waves": 5},
+}
+
+
+def _pump(session, seconds, gsm=None):
+    for _ in range(round(seconds / FRAME_DT)):
+        session.update(FRAME_DT, 1, 0, gsm)
+
+
+def _pump_until_node(session, story, node_id):
+    for _ in range(MAX_FRAMES):
+        session.update(FRAME_DT, 1, 0, None)
+        if story.active_dialogue is not None and story.active_dialogue.node_id == node_id:
+            return True
+    return False
+
+
+@pytest.mark.parametrize("branch", ALL_BRANCHES)
+def test_pending_launch_starts_branch_sortie(tmp_path, branch):
+    story = make_finale_story(tmp_path, branch)
+    session = CampaignSortieSession(story_manager=story)
+    cfg = session.launch_sortie()
+    assert cfg is ACT3_SORTIE_CONFIGS[branch]
+    assert session.is_act3_flight
+    assert session.active_sortie_num == 5
+    assert story.current_sortie == 5
+    assert session.mission_controller.get_active_objective_text() == cfg.initial_objective
+    ids = {t.trigger_id for t in session.trigger_manager.get_triggers_for_sortie(5)}
+    expected = {
+        BRANCH_OBEDIENCE_PURGE: ACT3A_TRIGGERS,
+        BRANCH_DISSIDENT_SURRENDER: ACT3B_TRIGGERS,
+        BRANCH_COLD_PROTOCOL: ACT3C_TRIGGERS,
+    }[branch]
+    assert ids == {t.trigger_id for t in expected}
+
+
+def test_launch_without_act2_flag_stays_sortie4_replay(tmp_path):
+    story = StoryManager(save_manager=CampaignSaveManager(data_dir=tmp_path))
+    story.advance_sortie(act=3, sortie=4)
+    session = CampaignSortieSession(story_manager=story)
+    cfg = session.launch_sortie()
+    assert session.is_replay is True
+    assert cfg.sortie_num == 4
+    assert not session.is_act3_flight
+
+
+def test_launch_after_finale_replays_sortie4(tmp_path):
+    story = make_finale_story(tmp_path, BRANCH_COLD_PROTOCOL)
+    story.extra["campaign_finale_completed"] = True
+    session = CampaignSortieSession(story_manager=story)
+    session.launch_sortie()
+    assert session.is_replay is True
+    assert session.active_sortie_num == 4
+    assert not session.is_act3_flight
+
+
+@pytest.mark.parametrize("branch", ALL_BRANCHES)
+def test_act3_mission_config_overrides(branch):
+    cfg = ACT3_SORTIE_CONFIGS[branch]
+    mission = build_campaign_mission_config(cfg, BASE_CONFIGS)
+    assert mission["has_ground"] is ACT3_MISSION_OVERRIDES[cfg.sortie_id]["has_ground"]
+    assert mission["has_base"] is False
+    assert mission["has_bombers"] is False
+    assert mission["max_waves"] == 99
+    assert mission["campaign_sortie"] == 5
+
+
+@pytest.mark.parametrize("branch", ALL_BRANCHES)
+def test_inflight_choice_resolves_climax(tmp_path, branch):
+    story = make_finale_story(tmp_path, branch)
+    session = CampaignSortieSession(story_manager=story)
+    cfg = session.launch_sortie()
+    player = make_player()
+    session.attach_player(player)
+    node_id = cfg.inflight_node_ids[0]
+    assert _pump_until_node(session, story, node_id)
+    assert session.is_act3_resolved is False
+    assert session.resolve_choice(node_id, "neutral") is not None
+    assert session.is_act3_resolved is True
+    if branch == BRANCH_DISSIDENT_SURRENDER:
+        assert player.weapons_disarmed is True
+
+
+def test_briefing_choice_in_flight_does_not_resolve(tmp_path):
+    story = make_finale_story(tmp_path, BRANCH_COLD_PROTOCOL)
+    session = CampaignSortieSession(story_manager=story)
+    session.launch_sortie()
+    assert session.resolve_choice(ACT3C_BRIEFING_NODE_ID, "neutral") == SORTIE5C_INITIAL_OBJECTIVE
+    assert session.is_act3_resolved is False
+
+
+def test_attached_player_used_for_disarmament(tmp_path):
+    story = make_finale_story(tmp_path, BRANCH_DISSIDENT_SURRENDER)
+    session = CampaignSortieSession(story_manager=story)
+    session.launch_sortie()
+    player = make_player()
+    session.attach_player(player)
+    session.resolve_choice(SORTIE5B_SURRENDER_NODE_ID, "neutral")
+    assert player.weapons_disarmed is True
+
+
+@pytest.mark.parametrize("branch", [BRANCH_OBEDIENCE_PURGE, BRANCH_COLD_PROTOCOL])
+def test_outro_completion_obedience_and_cold(tmp_path, branch):
+    story = make_finale_story(tmp_path, branch)
+    session = CampaignSortieSession(story_manager=story)
+    cfg = session.launch_sortie()
+    session.resolve_choice(cfg.inflight_node_ids[0], "neutral", None, make_player())
+    assert session.is_act3_climax_complete(0.0, 0.0, 0.0, 0.0, True) is False
+    _pump(session, ACT3_OUTRO_SECONDS + 0.1)
+    assert session.is_act3_climax_complete(0.0, 0.0, 0.0, 0.0, True) is True
+
+
+def test_dead_player_completes_only_after_resolution(tmp_path):
+    story = make_finale_story(tmp_path, BRANCH_COLD_PROTOCOL)
+    session = CampaignSortieSession(story_manager=story)
+    session.launch_sortie()
+    assert session.is_act3_climax_complete(0.0, 0.0, 0.0, 0.0, False) is False
+    session.resolve_choice(SORTIE5C_ABORT_NODE_ID, "neutral", None, make_player())
+    assert session.is_act3_climax_complete(0.0, 0.0, 0.0, 0.0, False) is True
+
+
+def test_dissident_landing_rules(tmp_path):
+    story = make_finale_story(tmp_path, BRANCH_DISSIDENT_SURRENDER)
+    session = CampaignSortieSession(story_manager=story)
+    session.launch_sortie()
+    session.resolve_choice(SORTIE5B_SURRENDER_NODE_ID, "neutral", None, make_player())
+    cx, cy = 1500.0, 1500.0
+    assert session.is_act3_climax_complete(cx, cy, 2.0, 2.0, True) is False
+    _pump(session, SORTIE5B_LANDING_MIN_DELAY_SECONDS + 0.1)
+    assert session.is_act3_climax_complete(cx, cy, 2.0, 2.0, True) is True
+    assert session.is_act3_climax_complete(100.0, 100.0, 2.0, 2.0, True) is False
+    assert session.is_act3_climax_complete(cx, cy, 5.0, 2.0, True) is False
+    assert session.is_act3_climax_complete(cx, cy, float("nan"), 2.0, True) is False
+
+
+def test_extraction_timer_text(tmp_path):
+    story = make_finale_story(tmp_path, BRANCH_COLD_PROTOCOL)
+    session = CampaignSortieSession(story_manager=story)
+    session.launch_sortie()
+    assert session.get_act3_extraction_timer_text() == "00:45"
+    _pump(session, 40.5)  # 7.5 s left; a float-sum just below 40.0 would round up to 00:09
+    assert session.get_act3_extraction_timer_text() == "00:08"
+    assert session.is_act3_extraction_timer_urgent() is True
+    session.resolve_choice(SORTIE5C_ABORT_NODE_ID, "neutral", None, make_player())
+    assert session.get_act3_extraction_timer_text() is None
+
+
+def test_extraction_timer_hidden_outside_cold_protocol(tmp_path):
+    story = make_finale_story(tmp_path, BRANCH_OBEDIENCE_PURGE)
+    session = CampaignSortieSession(story_manager=story)
+    session.launch_sortie()
+    assert session.get_act3_extraction_timer_text() is None
+
+
+def test_restart_act3_flight_uses_act3_config(tmp_path):
+    story = make_finale_story(tmp_path, BRANCH_OBEDIENCE_PURGE)
+    session = CampaignSortieSession(story_manager=story)
+    session.launch_sortie()
+    session.resolve_choice(SORTIE5A_TRENCH_NODE_ID, "neutral", None, make_player())
+    cfg = session.restart_flight()
+    assert cfg is SORTIE_5A_CONFIG
+    assert session.is_act3_flight
+    assert session.is_act3_resolved is False
+
+
+def test_complete_act3_climax_ends_flight(tmp_path):
+    story = make_finale_story(tmp_path, BRANCH_OBEDIENCE_PURGE)
+    session = CampaignSortieSession(story_manager=story)
+    session.launch_sortie()
+    assert session.complete_act3_climax() == BRANCH_OBEDIENCE_PURGE
+    assert session.is_flight_active is False
+    assert session.act3_branch is None
+    assert session.complete_act3_climax() is None
+
+
+def test_complete_sortie_ignored_during_act3_flight(tmp_path):
+    story = make_finale_story(tmp_path, BRANCH_COLD_PROTOCOL)
+    session = CampaignSortieSession(story_manager=story)
+    session.launch_sortie()
+    assert session.complete_sortie({}) == {}
+    assert session.is_act3_flight
+
+
+def test_start_act3_climax_cinematic_plays_branch(tmp_path):
+    story = make_finale_story(tmp_path, BRANCH_COLD_PROTOCOL)
+    session = CampaignSortieSession(story_manager=story)
+    session.launch_sortie()
+    player = CinematicPlayer(1280, 720)
+    assert session.start_act3_climax_cinematic(player) == BRANCH_COLD_PROTOCOL
+    assert player.is_playing
+    assert player.sequence.ending_branch == BRANCH_COLD_PROTOCOL
+    assert session.is_flight_active is False
+    with pytest.raises(TypeError):
+        session.start_act3_climax_cinematic(object())
+
+
+def test_resolve_hub_choice_clamps_loyalty(tmp_path):
+    story = make_finale_story(tmp_path, BRANCH_COLD_PROTOCOL)
+    story.loyalty = 88.0
+    session = CampaignSortieSession(story_manager=story)
+    story.record_choice(ACT3C_BRIEFING_NODE_ID, "loyal")
+    assert story.loyalty > 89.0
+    assert session.resolve_hub_choice(ACT3C_BRIEFING_NODE_ID, "loyal") == SORTIE5C_INITIAL_OBJECTIVE
+    assert story.loyalty <= 89.0
+    assert session.resolve_hub_choice("bridge_vance_logistics", "neutral") is None
+
+
+def test_hub_choice_outside_finale_is_ignored(tmp_path):
+    story = StoryManager(save_manager=CampaignSaveManager(data_dir=tmp_path))
+    session = CampaignSortieSession(story_manager=story)
+    assert session.resolve_hub_choice(ACT3C_BRIEFING_NODE_ID, "neutral") is None
+
+
+def test_should_skip_to_finale_cinematic(tmp_path):
+    story = make_finale_story(tmp_path, BRANCH_OBEDIENCE_PURGE)
+    session = CampaignSortieSession(story_manager=story)
+    assert session.should_skip_to_finale_cinematic() is False
+    story.extra["viper_squad_purged"] = True
+    assert session.should_skip_to_finale_cinematic() is True
+    story.extra["ending_branch"] = BRANCH_DISSIDENT_SURRENDER
+    assert session.should_skip_to_finale_cinematic() is False
+    fresh = StoryManager(save_manager=CampaignSaveManager(data_dir=tmp_path / "fresh"))
+    assert CampaignSortieSession(story_manager=fresh).should_skip_to_finale_cinematic() is False
+
+
+def test_get_act3_hub_briefing(tmp_path):
+    story = make_finale_story(tmp_path, BRANCH_COLD_PROTOCOL)
+    session = CampaignSortieSession(story_manager=story)
+    assert session.get_act3_hub_briefing() == (SORTIE_5C_CONFIG, "npc_vance")
+    story.extra["act2_completed"] = False
+    assert session.get_act3_hub_briefing() == (None, None)
