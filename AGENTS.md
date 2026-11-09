@@ -101,7 +101,8 @@ Always keep coordinate spaces strictly separated:
 - **Hostile Ground Units**: Automaton Troopers (35 HP), Heavy Walkers (120 HP), and Fabricators (220 HP, spawns troops every 8s).
 
 ### 4. Mission Flow & States
-- State machine managed in `src/eagle1/app/game.py` (`game_state`): `"main_menu"`, `"mission_select"`, `"stratagem_select"`, `"settings_menu"`, `"help_menu"`, `"pause_menu"`, `"enlistment"`, `"mission_debriefing"`, `"super_destroyer"`; the empty string `""` means active gameplay (game over is `""` with `player.health <= 0`).
+- State machine managed in `src/eagle1/app/game.py` (`game_state`): `"main_menu"`, `"mission_select"`, `"stratagem_select"`, `"settings_menu"`, `"help_menu"`, `"pause_menu"`, `"enlistment"`, `"mission_debriefing"`, `"super_destroyer"`, `"cinematic"`; the empty string `""` means active gameplay (game over is `""` with `player.health <= 0`).
+- Act III (after Sortie 4): the locked ending branch (`campaign_act3.py`) launches Sortie 5A/5B/5C through `CampaignSortieSession`, resolves its climax and plays the ending cinematic in `game_state == "cinematic"` (skip `ESC`/`SPACE`, confirm `ENTER`/`SPACE`/`ESC`). The finale is marked in `StoryManager.extra["campaign_finale_completed"]`.
 - Main-menu and game-over key handling live in `handle_main_menu_keydown` / `handle_gameover_keydown` (ESC/Q pressed twice quits from the main menu). The arcade `mission_select` list is opened from the debriefing screen (`MISSIONS`); the campaign runs through the Super Destroyer hub.
 - 6 operational modes (`MissionType`): *Academy Tutorial*, *Air Superiority*, *Orbital Base Defense*, *Factory Strider Boss Raid*, *Outpost Demolition*, and *Endless War*.
 - Always ensure `respawn()` properly resets wave timers, mission goals, entity lists, and HUD state.

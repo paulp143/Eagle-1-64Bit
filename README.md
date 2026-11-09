@@ -20,6 +20,7 @@ A 2D top-down space combat arcade game built in Python using Pygame. The game fe
 - [Key Features](#key-features)
 - [Story Campaign Subsystem (Acts I & II)](#story-campaign-subsystem-acts-i--ii)
   - [Campaign Structure & Canonical Sorties 1–4](#campaign-structure--canonical-sorties-14)
+  - [Act III Endings (Sorties 5A–5C)](#act-iii-endings-sorties-5a5c)
   - [In-Flight Narrative Dilemmas & Slow-Motion](#in-flight-narrative-dilemmas--slow-motion)
   - [The 500kg Friendly-Fire Crisis (Sortie 3)](#the-500kg-friendly-fire-crisis-sortie-3)
   - [Factory Strider Boss Raid & Dynamic Banter (Sortie 4)](#factory-strider-boss-raid--dynamic-banter-sortie-4)
@@ -152,6 +153,16 @@ Before Pelican-1 extraction in Sortie 4, `emit_sortie4_casualty_check` queries b
 ![Factory Strider boss with boss health bar and squad danger banner](images/screenshots/strider_raid.png)
 *The Factory Strider raid: boss health bar under the objective, squad danger banner and the walking fortress top right.*
 
+
+### Act III Endings (Sorties 5A–5C)
+
+After Sortie 4 the campaign locks one of three endings from the loyalty vector (`StoryManager.get_ending_branch()`):
+
+- **Obedience Purge (loyalty ≥ 90):** Sortie 5A, the trench purge of Viper Squad on Order Vermilion-Nine.
+- **Dissident Surrender (loyalty ≤ 15):** Sortie 5B, Eagle-1 surrenders, its weapons go cold and the ship lands in the scrap yard (green ring on the map).
+- **Cold Protocol (15 < loyalty < 90):** Sortie 5C, the 45-second Pelican-1 extraction. A countdown is shown top right; at `00:00` Fleet Regulation 84-C aborts the attack run.
+
+The Super Destroyer hub shows the branch briefing (Officer Reiner, or Ship Master Vance for Cold Protocol) first. When the climax is resolved, the ending cinematic plays in its own state. Press `ESC` or `SPACE` to skip it, then `ENTER`, `SPACE` or `ESC` to return to the main menu. The finale is recorded as completed, and the next hub launch replays Sortie 4. A new enlistment starts the campaign again from Act I.
 
 ### Super Destroyer Catapult Launch & Debriefing Loop
 

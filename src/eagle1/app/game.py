@@ -46,6 +46,15 @@ from eagle1.story import (
     SuperDestroyerView,
     build_campaign_mission_config,
 )
+from eagle1.story.campaign_act3 import (
+    PLAYER_WEAPONS_DISARMED_ATTR,
+    SORTIE5B_LANDING_RADIUS,
+    SORTIE5B_SCRAP_YARD_POS,
+    mark_campaign_finale_completed,
+    restore_act3b_weapons,
+)
+from eagle1.story.story_manager import BRANCH_DISSIDENT_SURRENDER
+from eagle1.story.cinematic_player import CINEMATIC_ACTION_RETURN_MAIN_MENU, CinematicPlayer
 
 BASE_DIR = str(PROJECT_ROOT)
 audio_manager = get_audio_manager()
@@ -1185,6 +1194,8 @@ class Player(pygame.Rect):
     def set_shoot(self):
         if self.reloading:
             return
+        if getattr(self, PLAYER_WEAPONS_DISARMED_ATTR, False):
+            return
 
         if not self.shooting and self.used_bullets < self.max_bullets:
             self.shooting = True
@@ -1230,6 +1241,8 @@ class Player(pygame.Rect):
     def set_shoot_rocket(self, target=None):
         """Feuert eine zielsuchende Rakete ab."""
         if self.rocket_reloading:
+            return
+        if getattr(self, PLAYER_WEAPONS_DISARMED_ATTR, False):
             return
 
         if not self.rocket_shooting and self.used_rockets < self.max_rockets:
@@ -1809,6 +1822,8 @@ def trigger_mission_complete():
     global game_state
     if game_state == "mission_debriefing":
         return
+    if get_campaign_session().is_act3_flight:
+        return  # Act III ends in the ending cinematic, never in a debriefing
     if player.score > player.highscore:
         player.highscore = player.score
         add_highscore(player.score)
@@ -2219,6 +2234,7 @@ def respawn(mission_config=None, selected_stratagems=None):
     elif mission_config is None and session.is_flight_active:
         session.restart_flight()
 
+    restore_act3b_weapons(player, story_manager)
     player.pos_x = float(PLAYER_X)
     player.pos_y = float(PLAYER_Y)
     player.x = PLAYER_X
@@ -2658,6 +2674,16 @@ def draw(mouse_pos=None):
         # --- POWER-UP HUD OVERLAY ---
         powerup_manager.draw_hud(canvas, GAME_WIDTH, GAME_HEIGHT)
 
+        # --- SORTIE 5B SCRAP YARD LANDING MARKER (after the surrender) ---
+        landing_session = get_campaign_session()
+        if landing_session.is_act3_resolved and landing_session.act3_branch == BRANCH_DISSIDENT_SURRENDER:
+            zone_x, zone_y = SORTIE5B_SCRAP_YARD_POS
+            pygame.draw.circle(
+                canvas, theme.SUCCESS,
+                (int(zone_x - camera_x), int(zone_y - camera_y)),
+                int(SORTIE5B_LANDING_RADIUS), 2,
+            )
+
         # --- GROUND SUPPORT HUD OVERLAY & WEAPON ARSENAL ---
         ground_support_manager.draw_hud(canvas, GAME_WIDTH, GAME_HEIGHT, font, title_font, speed_font, hud_small_font, player, mouse_pos)
 
@@ -2696,11 +2722,17 @@ def draw(mouse_pos=None):
             else:
                 obj_text = f"OBJECTIVE: AIR SUPERIORITY [WAVE {wave_manager.wave}/{active_mission_config.get('max_waves', 5)}]"
 
+        if get_campaign_session().is_act3_flight:
+            obj_text = f"OBJECTIVE: {active_mission_config['name']}"
         hud_renderer.draw_objective_banner(canvas, obj_text, active_mission_config.get("icon_color", theme.ACCENT))
 
         # --- CAMPAIGN NARRATIVE OBJECTIVE (campaign sorties only) ---
         if campaign_objective_surf is not None:
             hud_renderer.draw_campaign_objective(canvas, campaign_objective_surf)
+
+        timer_text = get_campaign_session().get_act3_extraction_timer_text()
+        if timer_text is not None:
+            hud_renderer.draw_extraction_timer(canvas, timer_text, get_campaign_session().is_act3_extraction_timer_urgent())
 
         # --- SLOW-MOTION VIGNETTE OVERLAY ---
         if ground_support_manager.is_slow_mo:
@@ -2739,7 +2771,81 @@ def get_campaign_session():
     """Return the campaign session, rebinding it if the module-level StoryManager was replaced."""
     if campaign_session.story_manager is not story_manager:
         campaign_session.bind_story_manager(story_manager)
+    if campaign_session.player is not player:
+        campaign_session.attach_player(player)
     return campaign_session
+
+
+cinematic_player = CinematicPlayer(GAME_WIDTH, GAME_HEIGHT, audio_manager=audio_manager)
+FINALE_ENTER_AUDIO_FADE_MS = 600
+FINALE_EXIT_AUDIO_FADE_MS = 400
+_FINALE_CLEARED_EVENTS = [pygame.KEYDOWN, pygame.KEYUP, pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP]
+
+
+def _clear_input_events():
+    """Drop queued key and mouse events so a finale key press cannot fire on the next screen."""
+    try:
+        pygame.event.clear(_FINALE_CLEARED_EVENTS)
+    except (pygame.error, AttributeError):
+        pass
+
+
+def _stop_flight_input():
+    """Release every held flight control before a cutscene takes over the screen."""
+    player.shooting = False
+    player.rocket_shooting = False
+    player.reloading = False
+    player.rocket_reloading = False
+    ground_support_manager.stop_aiming()
+    ground_support_manager.weapon_menu.is_open = False
+
+
+def start_campaign_finale():
+    """Enter the Act III ending cinematic; returns the ending branch, or None if already playing."""
+    global game_state
+    if game_state == "cinematic":
+        return None
+    _stop_flight_input()
+    comms_hud.dismiss()
+    restore_act3b_weapons(player, None)
+    audio_manager.stop_cinematic_audio(fade_ms=FINALE_ENTER_AUDIO_FADE_MS)
+    _clear_input_events()
+    branch = get_campaign_session().start_act3_climax_cinematic(cinematic_player)
+    game_state = "cinematic"
+    return branch
+
+
+def finish_campaign_finale():
+    """Leave the ending cinematic: fade the audio, mark the finale done and return to the main menu."""
+    audio_manager.stop_cinematic_audio(fade_ms=FINALE_EXIT_AUDIO_FADE_MS)
+    mark_campaign_finale_completed(story_manager)
+    cinematic_player.reset()
+    super_destroyer_view.set_act3_briefing(None, None)
+    _clear_input_events()
+    return_to_main_menu()
+
+
+def handle_cinematic_keydown(event):
+    """Route one key press during the ending cinematic; True when the pilot returned to the main menu."""
+    if cinematic_player.handle_event(event) == CINEMATIC_ACTION_RETURN_MAIN_MENU:
+        finish_campaign_finale()
+        return True
+    return False
+
+
+def check_act3_finale_transition():
+    """Start the ending cinematic once the resolved Act III climax may end; True if it started."""
+    if game_state != "":
+        return False
+    session = get_campaign_session()
+    if not session.is_act3_flight:
+        return False
+    center_x = player.pos_x + PLAYER_WIDTH / 2
+    center_y = player.pos_y + PLAYER_HEIGHT / 2
+    if not session.is_act3_climax_complete(center_x, center_y, player.velocity_x, player.min_speed, player.health > 0):
+        return False
+    start_campaign_finale()
+    return True
 
 
 CAMPAIGN_OBJECTIVE_MAX_CHARS = 110
@@ -2786,6 +2892,8 @@ def enter_super_destroyer(debrief_results=None):
     ground_support_manager.stop_aiming()
     ground_support_manager.weapon_menu.is_open = False
     super_destroyer_view.on_enter_hub(debrief_results)
+    act3_cfg, act3_npc = get_campaign_session().get_act3_hub_briefing()
+    super_destroyer_view.set_act3_briefing(act3_cfg, act3_npc)
     game_state = "super_destroyer"
 
 
@@ -2799,6 +2907,14 @@ def return_to_super_destroyer_from_debrief():
     return progression
 
 
+def start_new_campaign():
+    """Reset the story campaign for a newly enlisted pilot (Act I, no finale, no Act III state)."""
+    story_manager.reset_campaign()
+    get_campaign_session().bind_story_manager(story_manager)
+    cinematic_player.reset()
+    super_destroyer_view.set_act3_briefing(None, None)
+
+
 def handle_super_destroyer_action(action):
     """Handle structured action payloads from SuperDestroyerView."""
     global game_state
@@ -2806,6 +2922,11 @@ def handle_super_destroyer_action(action):
         return None
     act_type = action.get("action")
     if act_type == "launch_sortie":
+        if get_campaign_session().should_skip_to_finale_cinematic():
+            super_destroyer_view.close_dialogue()
+            super_destroyer_view.launch_initiated = False
+            start_campaign_finale()
+            return action
         sortie_cfg = get_campaign_session().launch_sortie()
         mission_cfg = build_campaign_mission_config(sortie_cfg, MISSION_CONFIGS)
         super_destroyer_view.close_dialogue()
@@ -2828,6 +2949,8 @@ def handle_super_destroyer_action(action):
             pass
         respawn(mission_config=mission_cfg)
         game_state = ""
+    elif act_type == "dialogue_choice":
+        get_campaign_session().resolve_hub_choice(action.get("node_id"), action.get("stance"))
     elif act_type in ("main_menu", "exit_to_menu"):
         return_to_main_menu()
     return action
@@ -2947,6 +3070,20 @@ def show_menu_toast(text, duration_ms=1500):
     menu_toast_until = pygame.time.get_ticks() + duration_ms
 
 
+def on_reload_end():
+    """End the cannon reload; a disarmed Eagle-1 keeps an empty magazine (Sortie 5B)."""
+    if not getattr(player, PLAYER_WEAPONS_DISARMED_ATTR, False):
+        player.used_bullets = 0
+    player.reloading = False
+
+
+def on_rocket_reload_end():
+    """End the rocket reload; a disarmed Eagle-1 keeps an empty rack (Sortie 5B)."""
+    if not getattr(player, PLAYER_WEAPONS_DISARMED_ATTR, False):
+        player.used_rockets = 0
+    player.rocket_reloading = False
+
+
 def run_game():
     global window, game_state, previous_game_state, light_enemy, wave_manager, health_drops, ground_support_manager, pending_mission_config
     running = True
@@ -2977,11 +3114,9 @@ def run_game():
                         if not enemy.exploding and enemy.health > 0:
                             enemy.set_shoot(player)
             if event.type == RELOAD_END:
-                player.used_bullets = 0
-                player.reloading = False
+                on_reload_end()
             if event.type == ROCKET_RELOAD_END:
-                player.used_rockets = 0
-                player.rocket_reloading = False
+                on_rocket_reload_end()
             if event.type == LIGHT_ENEMY_EXPLOSION:
                 pass
             if event.type == INVINCIBLE_END:
@@ -3050,6 +3185,7 @@ def run_game():
                 elif game_state == "enlistment":
                     action = enlistment_screen.handle_event(event, canvas_mouse_pos)
                     if action == "start_academy":
+                        start_new_campaign()
                         respawn(mission_config=MISSION_CONFIGS[MissionType.ACADEMY_TUTORIAL])
                         game_state = ""
                     elif action == "back":
@@ -3166,6 +3302,7 @@ def run_game():
                 elif game_state == "enlistment":
                     action = enlistment_screen.handle_event(event, canvas_mouse_pos)
                     if action == "start_academy":
+                        start_new_campaign()
                         respawn(mission_config=MISSION_CONFIGS[MissionType.ACADEMY_TUTORIAL])
                         game_state = ""
                     elif action == "back":
@@ -3242,6 +3379,9 @@ def run_game():
                         is_muted = audio_manager.toggle_mute()
                         status_str = "MUTED" if is_muted else "UNMUTED"
                         ground_support_manager.add_combat_popup(f"AUDIO {status_str}", player.pos_x, player.pos_y, (255, 80, 80) if is_muted else (80, 255, 120))
+
+                elif game_state == "cinematic":
+                    handle_cinematic_keydown(event)
 
                 elif game_state == "":
                     if player.health <= 0:
@@ -3330,6 +3470,8 @@ def run_game():
         if not running:
             break
 
+        check_act3_finale_transition()
+
         comms_hud.update(1.0 / 60.0 if (game_state == "" and player.health > 0) else 0.0)
         keys = pygame.key.get_pressed()
 
@@ -3375,6 +3517,10 @@ def run_game():
         elif game_state == "super_destroyer":
             super_destroyer_view.update(1.0 / 60.0)
             super_destroyer_view.draw(canvas, canvas_mouse_pos)
+
+        elif game_state == "cinematic":
+            cinematic_player.update(1.0 / 60.0)
+            cinematic_player.draw(canvas)
 
         elif game_state == "":
             if player.health > 0:
@@ -3453,6 +3599,8 @@ def run_game():
         # Background Music & Engine Audio Loop Updates
         if game_state in ("main_menu", "mission_select", "stratagem_select", "mission_debriefing", "super_destroyer"):
             audio_manager.play_music("menu_theme")
+            audio_manager.stop_engine_sound()
+        elif game_state == "cinematic":
             audio_manager.stop_engine_sound()
         elif game_state in ("pause_menu", "settings_menu", "help_menu"):
             audio_manager.stop_engine_sound()
